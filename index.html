@@ -9,6 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;600;700&family=Noto+Sans+Arabic:wght@400;600;700&family=Noto+Sans+Devanagari:wght@400;600;700&family=Noto+Sans+Hebrew:wght@400;600;700&family=Noto+Sans+Tamil:wght@400;600;700&family=Noto+Sans+Thai:wght@400;600;700&family=Noto+Nastaliq+Urdu:wght@400;700&display=swap" rel="stylesheet">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
   <script src="https://unpkg.com/mammoth@1.6.0/mammoth.browser.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/docx@7.8.2/build/index.js"></script>
   <style>
@@ -340,10 +341,10 @@
   <div class="upload-zone" id="upload-zone"
        onclick="document.getElementById('file-input').click()"
        ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
-    <input type="file" id="file-input" accept=".pdf,.docx,.doc,.txt" multiple onchange="handleFileInput(event)">
+    <input type="file" id="file-input" accept=".pdf,.docx,.doc,.txt,.idml" multiple onchange="handleFileInput(event)">
     <div class="icon">📄</div>
     <h3>Drop your document here</h3>
-    <small>PDF, Word (.docx), plain text · Multiple files supported</small>
+    <small>PDF, Word (.docx), InDesign (.idml), plain text · Multiple files supported</small>
     <div class="hint">Click to browse</div>
   </div>
 
@@ -603,7 +604,7 @@
     <h3>ℹ️ About</h3>
     <p class="help" style="font-size:12px">
       Checks for <strong>Typos, Spelling, Grammar, Punctuation, Capitalization, Style, Consistency, Clarity,</strong> and <strong>Factual</strong> errors. Query severity flags ambiguous items for author review.
-      Supports PDF (single-page &amp; double-page spread), Word (.docx), plain text, paste, and batch upload.
+      Supports PDF (single-page &amp; double-page spread), Word (.docx), <strong>InDesign (.idml — direct from source, no extraction artifacts)</strong>, plain text, paste, and batch upload.
       Models: Claude Sonnet/Opus/Haiku (Anthropic) and GPT-4o / GPT-4o mini (OpenAI).
       Multi-language: Arabic, Hebrew, Persian (RTL), Bengali, Hindi, Tamil, Thai, Japanese, Korean and all major Latin-script languages.
       Exports: PDF, Word, corrected document, shareable HTML, JSON.
@@ -630,7 +631,7 @@
 <footer class="app-footer">
   <span>© 2026 Explorer Publishing &amp; Distribution LLC · All rights reserved</span>
   <span id="cost-footer" style="font-size:10px;color:var(--muted);opacity:.65"></span>
-  <span class="app-footer-version">v3.1.4</span>
+  <span class="app-footer-version">v3.2.0</span>
 </footer>
 
 <div class="toast" id="toast"></div>
@@ -974,7 +975,174 @@ async function extractText(file) {
     populateDocInfo(text, estPages, imgCount||null, tableCount, 'docx', paraCount);
     return text;
   }
+  if (ext==='idml') {
+    return await extractIDML(file);
+  }
   throw new Error(`Unsupported file type: .${ext}`);
+}
+
+// ══════════════════════════════════════════════
+// IDML extraction — reads the InDesign source directly (no PDF artifacts)
+//
+// An .idml file is a ZIP containing:
+//   Stories/Story_*.xml   — actual text content in <Content> nodes
+//   Spreads/Spread_*.xml  — which TextFrame is on which page (refs a Story)
+//   designmap.xml         — top-level wiring
+//
+// We extract per-story text, then map each story to its first occurrence
+// in a spread to assign a page number. Stories never referenced from a
+// spread (master-page placeholders etc.) are skipped.
+// ══════════════════════════════════════════════
+async function extractIDML(file) {
+  if (typeof JSZip === 'undefined') {
+    throw new Error('JSZip library failed to load — reload the page and try again.');
+  }
+  setProgressStage('extracting', 'Reading InDesign IDML…');
+  const buf = await file.arrayBuffer();
+
+  let zip;
+  try { zip = await JSZip.loadAsync(buf); }
+  catch(e) { throw new Error('Not a valid IDML file (could not unzip).'); }
+
+  const parser = new DOMParser();
+
+  // ── 1. Build storyId → pageNumber map by walking spreads ──
+  // Each Spread XML has a `PageReference` order and TextFrames that have
+  // a `ParentStory` attribute pointing at a story. The first spread that
+  // references a story wins that story's page number.
+  const storyToPage = new Map();
+  const spreadFiles = Object.keys(zip.files)
+    .filter(n => /^Spreads\/Spread_.*\.xml$/i.test(n))
+    .sort();
+
+  let pageCounter = 0;
+  for (const name of spreadFiles) {
+    const xml = await zip.file(name).async('string');
+    let doc;
+    try { doc = parser.parseFromString(xml, 'application/xml'); } catch(_) { continue; }
+    // Walk pages in document order; each <Page> increments the counter.
+    // Within each Page, find TextFrames whose ParentStory hasn't been seen.
+    const spreadEl = doc.documentElement;
+    // Pages are typically siblings of TextFrames inside <Spread>. We just
+    // enumerate <Page> nodes and assign each subsequent TextFrame to its page.
+    const pages = spreadEl.getElementsByTagName('Page');
+    if (pages.length === 0) {
+      // Some spreads have no <Page> — treat whole spread as one page bump
+      pageCounter++;
+      const frames = spreadEl.getElementsByTagName('TextFrame');
+      for (const f of frames) {
+        const sid = f.getAttribute('ParentStory');
+        if (sid && !storyToPage.has(sid)) storyToPage.set(sid, pageCounter);
+      }
+      continue;
+    }
+    for (const page of pages) {
+      pageCounter++;
+      // TextFrames can be nested as siblings; for simplicity assign all frames
+      // in the spread that haven't been claimed yet to the first page seen.
+      // (More precise per-page assignment would require geometry math; fine
+      // for proofreading where ±1 page is acceptable.)
+    }
+    // Assign any still-unmapped frames in this spread to its first page
+    const firstPageOfSpread = pageCounter - pages.length + 1;
+    const frames = spreadEl.getElementsByTagName('TextFrame');
+    for (const f of frames) {
+      const sid = f.getAttribute('ParentStory');
+      if (sid && !storyToPage.has(sid)) storyToPage.set(sid, firstPageOfSpread);
+    }
+  }
+
+  // ── 2. Extract text from each Story ──
+  const storyFiles = Object.keys(zip.files)
+    .filter(n => /^Stories\/Story_.*\.xml$/i.test(n))
+    .sort();
+
+  if (storyFiles.length === 0) {
+    throw new Error('No Stories/ XML found inside the IDML — file may be corrupt.');
+  }
+
+  // Map: pageNumber → array of paragraph strings
+  const pageBuckets = new Map();
+  let totalChars = 0;
+
+  for (const name of storyFiles) {
+    setProgressStage('extracting', `Reading IDML — ${name.split('/').pop()}…`);
+    const xml = await zip.file(name).async('string');
+    let doc;
+    try { doc = parser.parseFromString(xml, 'application/xml'); } catch(_) { continue; }
+
+    // Story id is the <Story Self="..."> attribute (matches ParentStory in spreads)
+    const storyEl = doc.getElementsByTagName('Story')[0];
+    const storyId = storyEl ? storyEl.getAttribute('Self') : null;
+    const page = (storyId && storyToPage.get(storyId)) || 0; // 0 = unattached (master/pasteboard)
+
+    // Walk every ParagraphStyleRange; each is one paragraph (or list item)
+    const paras = doc.getElementsByTagName('ParagraphStyleRange');
+    const paraStrings = [];
+    for (const p of paras) {
+      // Concatenate all <Content> text nodes inside this paragraph,
+      // preserving CharacterStyleRange order. <Br/> = line break within a paragraph.
+      const parts = [];
+      // walk children depth-first to keep document order
+      (function walk(node) {
+        for (const child of node.childNodes) {
+          if (child.nodeType === 1) {
+            const tag = child.nodeName;
+            if (tag === 'Content') {
+              parts.push(child.textContent || '');
+            } else if (tag === 'Br') {
+              parts.push('\n');
+            } else {
+              walk(child);
+            }
+          }
+        }
+      })(p);
+      const para = parts.join('').trim();
+      if (para) paraStrings.push(para);
+    }
+
+    if (paraStrings.length === 0) continue;
+    const storyText = paraStrings.join('\n\n');
+    totalChars += storyText.length;
+
+    if (!pageBuckets.has(page)) pageBuckets.set(page, []);
+    pageBuckets.get(page).push(storyText);
+  }
+
+  // ── 3. Assemble per-page text array, in page order; page 0 = unattached, push to end ──
+  const sortedPages = [...pageBuckets.keys()].sort((a,b) => {
+    if (a === 0) return 1;
+    if (b === 0) return -1;
+    return a - b;
+  });
+
+  // Build a 1-indexed pageTexts array (fill gaps with '')
+  const maxPage = sortedPages.filter(p => p > 0).reduce((m,p) => Math.max(m,p), 0);
+  const pageTexts = [];
+  for (let i = 1; i <= maxPage; i++) {
+    pageTexts.push((pageBuckets.get(i) || []).join('\n\n'));
+  }
+  // Append unattached stories (page 0) as the last "page" if any
+  if (pageBuckets.has(0)) {
+    pageTexts.push(pageBuckets.get(0).join('\n\n'));
+  }
+
+  const fullText = pageTexts.join('\n\n').trim();
+  if (!fullText) throw new Error('IDML contained no extractable text.');
+
+  // NFC normalize (cheap insurance for combining marks in Indic scripts)
+  let normalized = fullText;
+  try { normalized = fullText.normalize('NFC'); } catch(_) {}
+
+  docInfo.pageTexts = pageTexts;
+  docInfo.isSpread = false;   // IDML pages are logical pages, not spreads
+  docInfo.scriptDir = isRTLLang(detectLanguage(normalized)) ? 'rtl' : 'ltr';
+
+  populateDocInfo(normalized, maxPage || pageTexts.length, null, null, 'idml', null);
+
+  toast(`✨ IDML source extracted — ${maxPage || pageTexts.length} pages, no rendering artifacts.`, 'success', 4000);
+  return normalized;
 }
 
 function populateDocInfo(text, pages, images, tables, ext, knownParas) {
