@@ -385,6 +385,7 @@
       <label>Language</label>
       <select id="language" onchange="toggleOtherLang(this.value)">
         <option value="auto" selected>Auto-detect</option>
+        <option value="bilingual-en-ar">Bilingual — English + Arabic (IDML)</option>
         <option value="arabic">Arabic (عربي)</option>
         <option value="azerbaijani">Azerbaijani (Azərbaycanca)</option>
         <option value="bengali">Bengali (বাংলা)</option>
@@ -631,7 +632,7 @@
 <footer class="app-footer">
   <span>© 2026 Explorer Publishing &amp; Distribution LLC · All rights reserved</span>
   <span id="cost-footer" style="font-size:10px;color:var(--muted);opacity:.65"></span>
-  <span class="app-footer-version">v3.2.0</span>
+  <span class="app-footer-version">v3.3.0</span>
 </footer>
 
 <div class="toast" id="toast"></div>
@@ -1061,9 +1062,13 @@ async function extractIDML(file) {
     throw new Error('No Stories/ XML found inside the IDML — file may be corrupt.');
   }
 
-  // Map: pageNumber → array of paragraph strings
+  // Map: pageNumber → array of { text, script } story records
+  // script is 'en' | 'ar' | 'mixed' so bilingual mode can filter by language.
   const pageBuckets = new Map();
+  const ARABIC_RE = /[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]/g;
+  const LATIN_RE  = /[A-Za-z]/g;
   let totalChars = 0;
+  let totalEn = 0, totalAr = 0; // script-distribution totals for bilingual auto-detect
 
   for (const name of storyFiles) {
     setProgressStage('extracting', `Reading IDML — ${name.split('/').pop()}…`);
@@ -1106,8 +1111,17 @@ async function extractIDML(file) {
     const storyText = paraStrings.join('\n\n');
     totalChars += storyText.length;
 
+    // Classify story by script content (used by bilingual mode to filter)
+    const arCount = (storyText.match(ARABIC_RE) || []).length;
+    const enCount = (storyText.match(LATIN_RE)  || []).length;
+    totalAr += arCount; totalEn += enCount;
+    let script = 'en';
+    if (arCount > 0 && enCount > 0) script = 'mixed';
+    else if (arCount > enCount)     script = 'ar';
+    else                            script = 'en';
+
     if (!pageBuckets.has(page)) pageBuckets.set(page, []);
-    pageBuckets.get(page).push(storyText);
+    pageBuckets.get(page).push({ text: storyText, script });
   }
 
   // ── 3. Assemble per-page text array, in page order; page 0 = unattached, push to end ──
@@ -1117,16 +1131,28 @@ async function extractIDML(file) {
     return a - b;
   });
 
-  // Build a 1-indexed pageTexts array (fill gaps with '')
+  // Helper: collect a per-page text array from pageBuckets, optionally filtering
+  // by script. `filter` is 'all' | 'en' | 'ar' — for 'en' and 'ar' we include
+  // matching-script stories AND mixed stories (each language sees the bilingual
+  // headings in its pass).
   const maxPage = sortedPages.filter(p => p > 0).reduce((m,p) => Math.max(m,p), 0);
-  const pageTexts = [];
-  for (let i = 1; i <= maxPage; i++) {
-    pageTexts.push((pageBuckets.get(i) || []).join('\n\n'));
-  }
-  // Append unattached stories (page 0) as the last "page" if any
-  if (pageBuckets.has(0)) {
-    pageTexts.push(pageBuckets.get(0).join('\n\n'));
-  }
+  const collect = (filter) => {
+    const out = [];
+    const keep = (s) => filter === 'all' || s.script === filter || s.script === 'mixed';
+    for (let i = 1; i <= maxPage; i++) {
+      const stories = (pageBuckets.get(i) || []).filter(keep);
+      out.push(stories.map(s => s.text).join('\n\n'));
+    }
+    if (pageBuckets.has(0)) {
+      const stories = pageBuckets.get(0).filter(keep);
+      if (stories.length) out.push(stories.map(s => s.text).join('\n\n'));
+    }
+    return out;
+  };
+
+  const pageTexts   = collect('all');
+  const pageTextsEN = collect('en');
+  const pageTextsAR = collect('ar');
 
   const fullText = pageTexts.join('\n\n').trim();
   if (!fullText) throw new Error('IDML contained no extractable text.');
@@ -1139,9 +1165,27 @@ async function extractIDML(file) {
   docInfo.isSpread = false;   // IDML pages are logical pages, not spreads
   docInfo.scriptDir = isRTLLang(detectLanguage(normalized)) ? 'rtl' : 'ltr';
 
+  // Stash the bilingual split — used by runBilingualProofread() when the user
+  // picks the "Bilingual (English + Arabic)" language option. Only attach
+  // when BOTH scripts have meaningful content (>200 chars each), otherwise
+  // it's a monolingual doc and bilingual mode wouldn't make sense.
+  if (totalEn > 200 && totalAr > 200) {
+    docInfo._bilingualSplit = {
+      en: { pageTexts: pageTextsEN, fullText: pageTextsEN.join('\n\n').trim() },
+      ar: { pageTexts: pageTextsAR, fullText: pageTextsAR.join('\n\n').trim() },
+      enChars: totalEn,
+      arChars: totalAr,
+    };
+  } else {
+    docInfo._bilingualSplit = null;
+  }
+
   populateDocInfo(normalized, maxPage || pageTexts.length, null, null, 'idml', null);
 
-  toast(`✨ IDML source extracted — ${maxPage || pageTexts.length} pages, no rendering artifacts.`, 'success', 4000);
+  const biNote = docInfo._bilingualSplit
+    ? ` · bilingual EN+AR detected (use Language: Bilingual to proofread both)`
+    : '';
+  toast(`✨ IDML source extracted — ${maxPage || pageTexts.length} pages, no rendering artifacts${biNote}.`, 'success', 5000);
   return normalized;
 }
 
@@ -1593,7 +1637,110 @@ async function confirmAndProofread() {
   const args = _pendingProofreadArgs;
   hideConfirmModal();
   if (!args) return;
+  // Route to bilingual orchestrator when user picked "Bilingual EN+AR" AND
+  // the extractor populated a bilingual split (only IDML does this today).
+  const langPick = document.getElementById('language').value;
+  if (langPick === 'bilingual-en-ar' && docInfo._bilingualSplit) {
+    await runBilingualProofread(args.file, args.apiKey);
+    return;
+  }
+  if (langPick === 'bilingual-en-ar' && !docInfo._bilingualSplit) {
+    toast('Bilingual mode needs an IDML file containing both English and Arabic. Falling back to a single pass.', 'warn', 6000);
+  }
   await proofreadOne(args.file, args.pasteText, args.apiKey, true);
+}
+
+// ══════════════════════════════════════════════
+// Bilingual (EN + AR) orchestrator — runs two proofreads back-to-back,
+// each filtered to its own language via the IDML story-script split, then
+// merges into a single tagged report. Only meaningful for IDML inputs that
+// contain both scripts (extractIDML sets docInfo._bilingualSplit).
+// ══════════════════════════════════════════════
+async function runBilingualProofread(file, apiKey) {
+  const split = docInfo._bilingualSplit;
+  if (!split) { toast('No bilingual split available.', 'err'); return; }
+
+  setLoading(true);
+  resetProgress();
+
+  // Save originals so we can restore after both passes
+  const origPageTexts = docInfo.pageTexts;
+  const origScriptDir = docInfo.scriptDir;
+  const origLanguage  = docInfo.language;
+  const origLastText  = lastExtractedText;
+  const origLangPick  = document.getElementById('language').value;
+  const langSel       = document.getElementById('language');
+
+  // Helper: run one language pass and return its lastReport
+  async function runPass(passLabel, langCode, langName, scriptDir, slice) {
+    document.getElementById('loading-title').textContent = `Bilingual pass ${passLabel} — ${langName}`;
+    document.getElementById('loading-sub').textContent   = `Filtering ${langName}-side stories…`;
+    docInfo.pageTexts  = slice.pageTexts;
+    docInfo.scriptDir  = scriptDir;
+    docInfo.language   = langName;
+    lastExtractedText  = slice.fullText;
+    langSel.value      = langCode; // proofreadOne reads from the dropdown for resolvedLang
+    await proofreadOne(file, '', apiKey, true, { suppressFinalize: true });
+    return lastReport;
+  }
+
+  let enReport = null, arReport = null;
+  try {
+    enReport = await runPass('1/2', 'english', 'English', 'ltr', split.en);
+    arReport = await runPass('2/2', 'arabic',  'Arabic',  'rtl', split.ar);
+  } catch(err) {
+    toast('Bilingual proofread failed: ' + err.message, 'err');
+  } finally {
+    // Restore originals regardless of success
+    docInfo.pageTexts  = origPageTexts;
+    docInfo.scriptDir  = origScriptDir;
+    docInfo.language   = origLanguage;
+    lastExtractedText  = origLastText;
+    langSel.value      = origLangPick;
+  }
+
+  if (!enReport && !arReport) { setLoading(false); return; }
+
+  // Tag every error with its language and merge
+  const tag = (errs, lang) => (errs || []).map(e => ({ ...e, _lang: lang }));
+  const allErrors = [...tag(enReport?.errors, 'en'), ...tag(arReport?.errors, 'ar')];
+  allErrors.forEach((e, i) => { e.id = i + 1; });
+
+  // Combined summary by type (sum across passes)
+  const summary = { total_errors: allErrors.length };
+  ALL_TYPES.forEach(t => {
+    summary[t] = (enReport?.summary?.[t] || 0) + (arReport?.summary?.[t] || 0);
+  });
+
+  const merged = {
+    language: 'Bilingual (English + Arabic)',
+    word_count: (enReport?.word_count || 0) + (arReport?.word_count || 0),
+    summary,
+    errors: allErrors,
+    _checks: enReport?._checks || arReport?._checks || null,
+    _inputTok:  (enReport?._inputTok  || 0) + (arReport?._inputTok  || 0),
+    _outputTok: (enReport?._outputTok || 0) + (arReport?._outputTok || 0),
+    _model: enReport?._model || arReport?._model || null,
+    _cost:  (enReport?._cost || 0) + (arReport?._cost || 0),
+    _partial: null,
+    _docInfo: enReport?._docInfo || arReport?._docInfo || {...docInfo},
+    _bilingual: {
+      en: { errorCount: enReport?.errors?.length || 0, wordCount: enReport?.word_count || 0 },
+      ar: { errorCount: arReport?.errors?.length || 0, wordCount: arReport?.word_count || 0 },
+    },
+  };
+
+  lastReport = merged;
+  errorTriageState = {};
+  saveToHistory(merged);
+  saveLastReport(merged);
+  trackCost(merged._cost || 0);
+  completeProgress();
+  setLoading(false);
+  renderReport(merged);
+  showTab('report');
+  toast(`Bilingual proofread complete — ${merged._bilingual.en.errorCount} EN + ${merged._bilingual.ar.errorCount} AR issues.`, 'success', 5000);
+  sendCompletionNotification(merged);
 }
 
 // ══════════════════════════════════════════════
@@ -1799,7 +1946,12 @@ async function runBatch(items, apiKey) {
   toast(`${items.length} files proofread. ${totalErrors} total issues found.`);
 }
 
-async function proofreadOne(file, pasteText, apiKey, showOnDone) {
+async function proofreadOne(file, pasteText, apiKey, showOnDone, opts={}) {
+  // opts.suppressFinalize: when true, skip saveToHistory/saveLastReport/
+  // renderReport/showTab/toast/notification at the end so the orchestrator
+  // (e.g. runBilingualProofread) can collect lastReport and build a merged
+  // report itself.
+  const suppressFinalize = !!opts.suppressFinalize;
   if (!file && !pasteText) return;
   resetProgress();
   if (showOnDone) setLoading(true);
@@ -1833,7 +1985,8 @@ async function proofreadOne(file, pasteText, apiKey, showOnDone) {
     japanese:'Japanese',korean:'Korean',russian:'Russian',swedish:'Swedish',
     tagalog:'Tagalog',tamil:'Tamil',thai:'Thai',urdu:'Urdu',vietnamese:'Vietnamese',
     hebrew:'Hebrew',persian:'Persian (Farsi)',malayalam:'Malayalam',
-    mongolian:'Mongolian',uzbek:'Uzbek',italian:'Italian'};
+    mongolian:'Mongolian',uzbek:'Uzbek',italian:'Italian',
+    'bilingual-en-ar':'Bilingual (English + Arabic)'};
   const customLang=(lang==='other'?(document.getElementById('language-other').value.trim()||''):null);
   if (lang==='other'&&!customLang) { toast('Please enter the document language.','warn'); return; }
   const resolvedLang=customLang||LANG_NAMES[lang]||lang;
@@ -2136,16 +2289,18 @@ Return ONLY valid JSON (no markdown, no extra text):
       };
       lastReport = report;
       errorTriageState = {};
-      saveToHistory(report);
-      saveLastReport(report);
-      trackCost(report._cost || 0);
-      completeProgress();
-      if (showOnDone) {
-        renderReport(report);
-        showTab('report');
-        if (!partialFromChunk) {
-          toast(`Found ${report.summary.total_errors} issue${report.summary.total_errors!==1?'s':''}.`);
-          sendCompletionNotification(report);
+      if (!suppressFinalize) {
+        saveToHistory(report);
+        saveLastReport(report);
+        trackCost(report._cost || 0);
+        completeProgress();
+        if (showOnDone) {
+          renderReport(report);
+          showTab('report');
+          if (!partialFromChunk) {
+            toast(`Found ${report.summary.total_errors} issue${report.summary.total_errors!==1?'s':''}.`);
+            sendCompletionNotification(report);
+          }
         }
       }
     } else {
@@ -2388,6 +2543,7 @@ function renderTable(errors) {
       <td style="color:var(--muted);font-weight:700;font-size:11px">${e.id}</td>
       <td><span class="badge" style="background:${c}22;color:${c};border:1px solid ${c}44">${esc(e.type)}</span>
           ${e.severity?`<span class="sev-badge ${sevCls}">${e.severity}</span>`:''}
+          ${e._lang?`<span class="sev-badge" style="background:#64748b22;color:#64748b;border:1px solid #64748b44;text-transform:uppercase">${esc(e._lang)}</span>`:''}
       </td>
       <td class="pg-num"${hasPages?'':' style="display:none"'}>${hasPages?(e.page?`p.${e.page}`:'—'):''}</td>
       <td class="context-snippet">${buildCtx(e.context,e.original,'orig-mark')}</td>
