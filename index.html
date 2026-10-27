@@ -319,6 +319,17 @@
     .btn-share { background:transparent; color:var(--accent); border:1.5px solid var(--accent); }
     .btn-share:hover { background:var(--accent); color:#fff; }
     .nav-badge[hidden] { display:none; }
+    #team-card[hidden], #sr-setup-card[hidden], #team-admin[hidden] { display:none; }
+    .tm-row { display:flex; align-items:center; gap:8px; justify-content:space-between; padding:7px 0; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+    .tm-who span { color:var(--muted); font-size:12px; margin-left:4px; }
+    .tm-who em { color:var(--muted); font-size:12px; }
+    .tm-acts { display:flex; gap:6px; }
+    .user-chip { display:inline-flex; align-items:center; gap:8px; font-size:12px; color:var(--muted); margin-right:10px; }
+    .user-chip .who { color:var(--text); font-weight:600; }
+    .user-chip .who em { font-style:normal; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#10b981; border:1px solid rgba(16,185,129,.4); border-radius:6px; padding:1px 5px; margin-left:4px; }
+    .user-chip button { font:inherit; font-size:12px; color:var(--accent); background:none; border:1px solid var(--border); border-radius:8px; padding:4px 10px; cursor:pointer; }
+    .user-chip button.primary { background:var(--accent); color:#fff; border-color:transparent; font-weight:600; }
+    @media (max-width:560px) { .user-chip .who { display:none; } }
     .nav-badge { display:inline-block; min-width:17px; height:17px; line-height:17px; border-radius:9px; background:#10b981; color:#fff; font-size:10px; font-weight:800; text-align:center; margin-left:6px; padding:0 5px; vertical-align:1px; }
     .modal-box.wide { max-width:min(1040px, 96vw); width:96%; max-height:92vh; overflow:auto; }
     .modal-box.mid  { max-width:600px; max-height:92vh; overflow:auto; }
@@ -397,6 +408,7 @@
     <p>Professional proofreading · Powered by Claude</p>
   </div>
   <div class="header-actions">
+    <span class="user-chip" id="user-chip" hidden></span>
     <button class="theme-btn" id="theme-btn" onclick="toggleTheme()" title="Toggle dark/light mode">🌙</button>
   </div>
 </header>
@@ -689,55 +701,66 @@
     <br>
     <button class="btn btn-primary" onclick="saveSetup()">Save</button>
   </div>
+  <div class="card" id="team-card">
+    <h3 style="margin-bottom:2px">👥 Team workspace <span style="font-weight:400;font-size:12px;color:var(--muted)">(shared reviews &amp; one API key)</span></h3>
+    <div id="team-account" style="margin:8px 0 6px"></div>
+    <div id="team-status" class="sr-hint" style="margin:0 0 8px"></div>
+    <div id="team-admin" hidden>
+      <p class="sr-intro" style="margin-top:10px"><strong>Admin tools.</strong> Store the team&apos;s API key once. Every signed-in colleague receives it automatically, and a change reaches everyone within a few minutes. Colleagues need nothing else: send them the workspace link plus their username and password.</p>
+      <div class="row">
+        <button class="btn btn-primary btn-sm" onclick="teamSaveKeys()">Save API key for the team</button>
+        <button class="btn btn-secondary btn-sm" onclick="teamRemoveKeys()">Remove team key</button>
+        <button class="btn btn-secondary btn-sm" onclick="teamCreateLink()">Workspace link</button>
+      </div>
+      <div id="team-out"></div>
+      <div style="margin-top:16px"><h4 style="margin:0 0 6px;font-size:13px">Team members</h4>
+        <div id="team-members" class="sr-hint">Loading...</div>
+        <div class="row" style="margin-top:8px"><input type="text" id="tm-user" class="sr-input" placeholder="username, e.g. ben" autocomplete="off" spellcheck="false" style="flex:1;min-width:160px"><button class="btn btn-primary btn-sm" onclick="teamAddMember()">Add colleague</button></div>
+        <div class="sr-hint" style="margin-top:8px"><strong>To add someone:</strong> first create their login in Supabase (Authentication &rarr; Users &rarr; Add user, email <code>username@explorer.team</code>, a password, tick <em>Auto Confirm User</em>). Then type the username here and press Add. Tell them the username and password.<br><strong>To remove someone:</strong> press Remove next to their name. They are locked out immediately.</div>
+      </div>
+    </div>
+  </div>
   <div class="card" id="sr-setup-card">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:2px">
-      <h3 style="margin:0;flex:1">🔗 Review sharing <span style="font-weight:400;font-size:12px;color:var(--muted)">(links for translators &amp; proofreaders)</span></h3>
+      <h3 style="margin:0;flex:1">🔧 Workspace setup <span style="font-weight:400;font-size:12px;color:var(--muted)">(admin, one time)</span></h3>
       <span class="sr-pill todo" id="sr-status-pill">Not set up</span>
     </div>
-    <p class="sr-intro">Send a <strong>password-protected link</strong> to a translator or proofreader. They open it in their browser, decide on each flagged issue (<em>Agree / Disagree / Edit</em>) and press <em>Submit</em>. You see their answers in the <strong>Reviews</strong> tab and can export a ready-to-apply list for layout. One-time setup, about 5 minutes, using a free Supabase project.</p>
+    <p class="sr-intro">Gives your team personal accounts, one shared list of reviews with layout progress, one shared API key, and password-protected links for outside translators. About 10 minutes, once, using a free Supabase project. Colleagues do not do any of this.</p>
     <div class="sr-steps">
       <div class="sr-step" id="sr-s1">
         <h4>Create a free Supabase project</h4>
         <ol>
           <li>Go to <a href="https://supabase.com/dashboard" target="_blank" rel="noopener" style="color:var(--accent)">supabase.com/dashboard</a> and sign in with an <strong>Explorer-owned</strong> account.</li>
-          <li>Click <strong>New project</strong>, give it a name (for example <em>explorer-reviews</em>), pick a region close to your team, set a database password and press <strong>Create</strong>.</li>
+          <li>Click <strong>New project</strong>, give it a name (for example <em>explorer-team</em>), pick a region close to your team, set a database password and press <strong>Create</strong>.</li>
         </ol>
         <div class="row"><label style="font-size:12.5px;font-weight:500;text-transform:none;letter-spacing:0;color:var(--muted);display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" id="sr-s1-done" onchange="srSetupState()"> I have created the project</label></div>
       </div>
       <div class="sr-step" id="sr-s2">
-        <h4>Choose your creator passphrase</h4>
-        <p>Your private key for creating and managing reviews. Only you need it. Store it in a password manager and do not reuse another password.</p>
-        <div class="row"><input type="password" id="sr-creator" placeholder="At least 8 characters, or press Generate" autocomplete="off" oninput="srSetupState()" style="flex:1;min-width:200px"><button class="btn btn-secondary btn-sm" onclick="srGenCreator()">Generate</button><button class="btn btn-secondary btn-sm" id="sr-creator-eye" onclick="srToggleCreator()">Show</button></div>
+        <h4>Close public sign-up and create your account</h4>
+        <ol>
+          <li>In Supabase open <strong>Authentication</strong> &rarr; <strong>Sign In / Providers</strong> and turn <strong>off</strong> <em>Allow new users to sign up</em> (recommended). Even if it stays on, the portal only lets in people you add as team members.</li>
+          <li>Open <strong>Authentication &rarr; Users &rarr; Add user &rarr; Create new user</strong>. Use the email <code>yourname@explorer.team</code> (any email works), type a password, and tick <em>Auto Confirm User</em>. Do this for yourself first; add colleagues later.</li>
+        </ol>
+        <div class="sr-field" style="margin-top:8px"><label>Your username (the part before the @)</label><input type="text" id="sr-admin-user" class="sr-input" placeholder="e.g. anna" autocomplete="off" spellcheck="false" oninput="srSetupState()"><div class="sr-hint" id="sr-admin-email" style="margin-top:4px"></div></div>
       </div>
       <div class="sr-step" id="sr-s3">
         <h4>Run the setup SQL (one time)</h4>
         <ol>
-          <li>Click <strong>Copy setup SQL</strong> below (do step 2 first: your passphrase is included).</li>
-          <li>In Supabase open <strong>SQL Editor → New query</strong>, paste, and press <strong>Run</strong>. You should see <em>Success</em>.</li>
+          <li>Click <strong>Copy setup SQL</strong> below (it makes the account from step 2 the admin).</li>
+          <li>In Supabase open <strong>SQL Editor &rarr; New query</strong>, paste, and press <strong>Run</strong>. You should see <em>Success</em>.</li>
         </ol>
-        <p>This creates a locked table. Nobody can read it directly: reports are encrypted in the browser, and every action is checked against a password.</p>
+        <p>This creates locked tables. Nobody can read them directly: every action is checked against the signed-in account, and reports are encrypted in the browser.</p>
         <div class="row"><button class="btn btn-primary btn-sm" onclick="srCopySql()">Copy setup SQL</button><span id="sr-sql-msg" style="font-size:12px;color:var(--muted)"></span></div>
       </div>
       <div class="sr-step" id="sr-s4">
-        <h4>Connect this portal</h4>
-        <p>In Supabase open <strong>Project Settings → API</strong> and copy the <strong>Project URL</strong> and the <strong>anon / publishable key</strong>. That key is public by design, so it is safe to paste here.</p>
+        <h4>Connect this portal and sign in</h4>
+        <p>In Supabase open <strong>Project Settings &rarr; API</strong> and copy the <strong>Project URL</strong> and the <strong>anon / publishable key</strong>. That key is public by design, so it is safe to paste here.</p>
         <div class="sr-field" style="margin-top:10px"><label>Project URL</label><input type="text" id="sr-url" placeholder="https://xxxxxxxx.supabase.co" autocomplete="off" spellcheck="false"></div>
         <div class="sr-field"><label>anon / publishable key</label><input type="text" id="sr-key" placeholder="eyJ…  or  sb_publishable_…" autocomplete="off" spellcheck="false"></div>
         <div class="row"><button class="btn btn-primary btn-sm" id="sr-save-btn" onclick="srSaveAndTest()">Save &amp; test connection</button><button class="btn btn-secondary btn-sm" onclick="srDisconnect()">Remove</button></div>
         <div class="sr-checks" id="sr-checks"></div>
       </div>
     </div>
-  </div>
-  <div class="card" id="team-card">
-    <h3 style="margin-bottom:2px">👥 Team access <span style="font-weight:400;font-size:12px;color:var(--muted)">(colleagues type nothing)</span></h3>
-    <p class="sr-intro">Store <strong>one API key for the whole team</strong>. It is encrypted in your browser and kept in your Supabase project, so Supabase cannot read it. Then create a <strong>team link</strong>: a colleague who opens it is ready to proofread in one click, with no key and no passphrase to type. If you change the key here later, everyone picks up the new one automatically.</p>
-    <div id="team-status" class="sr-hint" style="margin:0 0 10px"></div>
-    <div class="row">
-      <button class="btn btn-primary btn-sm" onclick="teamSaveKeys()">Save API key for the team</button>
-      <button class="btn btn-secondary btn-sm" onclick="teamRemoveKeys()">Remove team key</button>
-      <button class="btn btn-secondary btn-sm" onclick="teamCreateLink()">Create team link</button>
-    </div>
-    <div id="team-out"></div>
   </div>
   <div class="card" style="border-color:rgba(99,102,241,.3)">
     <h3>ℹ️ About</h3>
@@ -777,11 +800,14 @@
 <div class="modal-overlay" id="team-modal">
   <div class="modal-box mid" id="team-box"></div>
 </div>
+<div class="modal-overlay" id="login-modal">
+  <div class="modal-box" id="login-box"></div>
+</div>
 
 <footer class="app-footer">
   <span>© 2026 Explorer Publishing &amp; Distribution LLC · All rights reserved</span>
   <span id="cost-footer" style="font-size:10px;color:var(--muted);opacity:.65"></span>
-  <span class="app-footer-version">v3.6.0</span>
+  <span class="app-footer-version">v4.0.0</span>
 </footer>
 
 <div class="toast" id="toast"></div>
@@ -963,7 +989,7 @@ function showTab(name) {
     document.querySelectorAll('nav button')[i].classList.toggle('active', t===name);
   });
   if (name === 'history') renderHistory();
-  if (name === 'setup')   { renderCostTracker(); renderShareSetup(); teamRenderCard(); }
+  if (name === 'setup')   { renderCostTracker(); renderShareSetup(); }
   if (name === 'reviews') { renderReviews(); srRefresh(false); }
 }
 
@@ -4061,82 +4087,174 @@ function updateCostFooter() {
 }
 
 // ══════════════════════════════════════════════
-// Review sharing — password-protected links for translators / proofreaders.
+// Team workspace: personal accounts, one shared list of reviews, one shared API key.
 // Crypto + server calls live in share-core.js; the reviewer page is share.html.
-// The creator passphrase and each review's password are kept in THIS browser only.
+// Colleagues sign in with the username and password the admin created in Supabase.
 // ══════════════════════════════════════════════
-const SRK = { url:'sr_sb_url', key:'sr_sb_key', creator:'sr_creator', shares:'sr_shares', verified:'sr_verified', s1:'sr_s1_done', applied:'sr_applied_' };
+const SRK = { url:'sr_sb_url', key:'sr_sb_key', s1:'sr_s1_done', admin:'sr_admin_user', last:'sr_last_user', seen:'sr_seen' };
 const srGet = (k) => { try { return localStorage.getItem(k); } catch(_) { return null; } };
 const srSet = (k, v) => { try { localStorage.setItem(k, v); } catch(_) {} };
 const srDel = (k) => { try { localStorage.removeItem(k); } catch(_) {} };
 const $sr = (id) => document.getElementById(id);
 const srCfg = () => { const url = (srGet(SRK.url) || '').trim(), key = (srGet(SRK.key) || '').trim(); return (url && key) ? { url, key } : null; };
-const srSecret = () => srGet(SRK.creator) || '';
-const srReady = () => !!(srCfg() && srSecret() && srGet(SRK.verified) === '1' && typeof SR !== 'undefined');
-const srList = () => { try { return JSON.parse(srGet(SRK.shares) || '[]'); } catch(_) { return []; } };
-const srSaveList = (a) => srSet(SRK.shares, JSON.stringify(a));
-const srPatch = (id, patch) => srSaveList(srList().map((m) => (m.id === id ? { ...m, ...patch } : m)));
+let SRU = null;      // the signed-in colleague { id, name, email, admin }, or null
+let SRL = [];        // the team's shared reviews, as last fetched from the server
+const srReady = () => !!(srCfg() && SRU && typeof SR !== 'undefined' && SR.hasSession());
 const srDate = (iso, time) => { try { return new Date(iso).toLocaleString(undefined, time ? { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' } : { day:'numeric', month:'short', year:'numeric' }); } catch(_) { return ''; } };
 async function srCopy(text) {
   try { await navigator.clipboard.writeText(text); return true; }
   catch(_) { try { const t = document.createElement('textarea'); t.value = text; t.style.cssText = 'position:fixed;opacity:0'; document.body.appendChild(t); t.select(); const ok = document.execCommand('copy'); t.remove(); return ok; } catch(__) { return false; } }
 }
+const srSeen = () => { try { return JSON.parse(srGet(SRK.seen) || '{}'); } catch(_) { return {}; } };
+const srMarkSeen = (id, v) => { const m = srSeen(); m[id] = v; srSet(SRK.seen, JSON.stringify(m)); };
+const srView = (s) => ({ id: s.id, title: s.title || 'Untitled review', status: s.status, version: s.version || 0, createdAt: s.created_at, expiresAt: s.expires_at, openedAt: s.opened_at, submittedAt: s.submitted_at,
+  issues: s.issues || 0, password: s.password || '', by: s.by || '', mine: !!s.mine, applied: s.applied || {}, link: SR.buildLink(s.id, srCfg()) });
+const srCanManage = (m) => !!(m && (m.mine || (SRU && SRU.admin)));
 
-// ── Setup wizard (Setup tab) ───────────────────────────────────────────
+// ── Who is signed in ───────────────────────────────────────────────────
+// Is the stored session still good, and whose is it? A network hiccup never signs anyone out.
+async function srSyncIdentity() {
+  const cfg = srCfg();
+  if (!cfg || !SR.hasSession()) { SRU = null; srPaintChip(); return false; }
+  try { SRU = await SR.whoami(cfg); }
+  catch (e) {
+    if (e.code === 'network' || e.code === 'server') return !!SRU;
+    SR.clearSession(); SRU = null; SRL = []; teamDrop(); srPaintChip();
+    return false;
+  }
+  if (!srGet('proof_user_name')) { srSet('proof_user_name', SRU.name); const un = $sr('user-name-input'); if (un) un.value = SRU.name; }
+  srPaintChip(); return true;
+}
+// A team call failed. If the cause is the session or the account, ask the person to sign in again.
+function srAuthLost(e) {
+  if (!e || !['signed_out', 'banned', 'denied'].includes(e.code)) return false;
+  SR.clearSession(); SRU = null; SRL = []; teamDrop(); srPaintChip(); renderReviews(); renderShareSetup();
+  srOpenLogin(SR.friendly(e)); return true;
+}
+function srPaintChip() {
+  const el = $sr('user-chip'); if (!el) return;
+  if (!srCfg()) { el.hidden = true; el.innerHTML = ''; srPaintBadge(); return; }
+  el.hidden = false;
+  el.innerHTML = SRU
+    ? '<span class="who" title="' + esc(SRU.email || '') + '">&#128100; ' + esc(SRU.name) + (SRU.admin ? '<em>admin</em>' : '') + '</span><button onclick="srSignOut()">Sign out</button>'
+    : '<button class="primary" onclick="srOpenLogin()">Sign in</button>';
+  srPaintBadge();
+}
+
+// ── Sign-in dialog ─────────────────────────────────────────────────────
+function srOpenLogin(msg) {
+  if (!srCfg()) { toast('Connect the team workspace first (Setup).', 'warn'); showTab('setup'); return; }
+  $sr('login-box').innerHTML = '<div class="modal-title">Sign in to the team workspace</div>' +
+    '<p class="sr-hint" style="margin:0 0 12px;font-size:13px">Use the username and password your admin gave you. The team API key is applied automatically after you sign in.</p>' +
+    (msg ? '<div class="sr-check bad" style="margin-bottom:10px"><span>!</span><span><b>' + esc(msg) + '</b></span></div>' : '') +
+    '<div class="sr-field"><label>Username</label><input class="sr-input" id="lg-user" autocomplete="username" autocapitalize="none" spellcheck="false" value="' + esc(srGet(SRK.last) || (srGet(SRK.admin) || '').toLowerCase()) + '"></div>' +
+    '<div class="sr-field"><label>Password</label><div class="sr-pw"><input class="sr-input" id="lg-pw" type="password" autocomplete="current-password"><button class="btn btn-secondary btn-sm" id="lg-eye" onclick="srLoginEye()">Show</button></div></div>' +
+    '<div id="lg-err"></div>' +
+    '<div class="modal-actions"><button class="btn btn-secondary" onclick="srCloseLogin()">Not now</button><button class="btn btn-primary" id="lg-go" onclick="srDoLogin()">Sign in</button></div>' +
+    '<p class="sr-hint" style="margin-top:10px">No account yet, or forgotten your password? Ask your admin.</p>';
+  $sr('login-modal').classList.add('open');
+  ['lg-user', 'lg-pw'].forEach((id) => $sr(id).addEventListener('keydown', (ev) => { if (ev.key === 'Enter') srDoLogin(); }));
+  setTimeout(() => { const f = $sr('lg-user'); const g = f && f.value ? $sr('lg-pw') : f; if (g) g.focus(); }, 60);
+}
+function srCloseLogin() { $sr('login-modal').classList.remove('open'); }
+function srLoginEye() { const f = $sr('lg-pw'), show = f.type === 'password'; f.type = show ? 'text' : 'password'; $sr('lg-eye').textContent = show ? 'Hide' : 'Show'; }
+async function srDoLogin() {
+  const u = $sr('lg-user').value.trim(), p = $sr('lg-pw').value, btn = $sr('lg-go');
+  btn.disabled = true; btn.textContent = 'Signing in...'; $sr('lg-err').innerHTML = '';
+  try {
+    await SR.signIn(srCfg(), u, p);
+    if (!(await srSyncIdentity())) throw new SR.SRError('denied');
+    srSet(SRK.last, u.toLowerCase());
+    srCloseLogin(); srAfterLogin();
+  } catch (e) {
+    SR.clearSession();                       // a half-finished sign-in must not leave a session behind
+    btn.disabled = false; btn.textContent = 'Sign in';
+    $sr('lg-err').innerHTML = '<div class="sr-check bad"><span>&#10007;</span><span><b>' + esc(SR.friendly(e)) + '</b></span></div>';
+    const pw = $sr('lg-pw'); if (pw) { pw.value = ''; pw.focus(); }
+  }
+}
+async function srAfterLogin() {
+  renderShareSetup(); srPaintChecks();
+  toast('Welcome, ' + SRU.name + '.');
+  await teamPull(true);
+  srRefresh(false);
+}
+async function srSignOut() {
+  await SR.signOut(srCfg()); SRU = null; SRL = []; teamDrop();
+  srPaintChip(); renderShareSetup(); renderReviews(); srPaintChecks(); toast('Signed out.');
+}
+
+// ── Workspace setup wizard (Setup tab, admin, one time) ────────────────
+let SRCHK = { db: null, dbErr: null, signup: null };
 function renderShareSetup() {
   const cfg = srCfg();
   $sr('sr-url').value = cfg ? cfg.url : '';
   $sr('sr-key').value = cfg ? cfg.key : '';
-  $sr('sr-creator').value = srSecret();
-  $sr('sr-s1-done').checked = srGet(SRK.s1) === '1' || srReady();
-  srSetupState();
+  $sr('sr-admin-user').value = srGet(SRK.admin) || '';
+  $sr('sr-s1-done').checked = srGet(SRK.s1) === '1' || !!cfg;
+  const card = $sr('sr-setup-card'); if (card) card.hidden = !!(SRU && !SRU.admin);   // colleagues do not need the wizard
+  srSetupState(); teamRenderCard();
 }
 function srSetupState() {
   const s1 = $sr('sr-s1-done').checked; s1 ? srSet(SRK.s1, '1') : srDel(SRK.s1);
-  const ok = srReady();
+  const user = $sr('sr-admin-user').value.trim(); user ? srSet(SRK.admin, user) : srDel(SRK.admin);
+  $sr('sr-admin-email').textContent = user ? 'Account email: ' + SR.emailFor(user) : '';
+  const ok = srReady(), cfg = !!srCfg();
   const mark = (id, done) => $sr(id).classList.toggle('done', !!done);
-  mark('sr-s1', s1); mark('sr-s2', $sr('sr-creator').value.trim().length >= 8); mark('sr-s3', ok); mark('sr-s4', ok);
-  const pill = $sr('sr-status-pill'); pill.className = 'sr-pill ' + (ok ? 'ready' : 'todo'); pill.textContent = ok ? 'Ready ✓' : 'Not set up';
+  mark('sr-s1', s1); mark('sr-s2', user.length >= 2); mark('sr-s3', SRCHK.db === true); mark('sr-s4', ok);
+  const pill = $sr('sr-status-pill'); pill.className = 'sr-pill ' + (ok ? 'ready' : 'todo'); pill.textContent = ok ? 'Ready ✓' : cfg ? 'Sign in to finish' : 'Not set up';
 }
-function srGenCreator() { const f = $sr('sr-creator'); f.value = SR.newPassphrase() + '-' + SR.newPassphrase().split('-')[0]; f.type = 'text'; $sr('sr-creator-eye').textContent = 'Hide'; srSetupState(); toast('Generated. Store it in a password manager before you continue.'); }
-function srToggleCreator() { const f = $sr('sr-creator'); const show = f.type === 'password'; f.type = show ? 'text' : 'password'; $sr('sr-creator-eye').textContent = show ? 'Hide' : 'Show'; }
 async function srCopySql() {
-  const msg = $sr('sr-sql-msg'); const secret = $sr('sr-creator').value.trim();
-  if (secret.length < 8) { msg.style.color = '#f97316'; msg.textContent = 'Do step 2 first: choose a passphrase of at least 8 characters.'; return; }
+  const msg = $sr('sr-sql-msg'), user = $sr('sr-admin-user').value.trim();
+  if (user.length < 2) { msg.style.color = '#f97316'; msg.textContent = 'Do step 2 first: type your username.'; return; }
   try {
     const base = await (await fetch('supabase/setup.sql', { cache: 'no-cache' })).text();
     if (!/create table/i.test(base)) throw new Error('setup.sql not found');
-    const sql = base + '\n-- ── Your creator passphrase: registers you as the owner of this database ──\n' + await SR.creatorSql(secret) + '\n';
+    const sql = base + '\n-- ── Make your account an admin (the account from step 2 must already exist) ──\n' + SR.adminSql(user) + '\n';
     const ok = await srCopy(sql);
     msg.style.color = ok ? '#10b981' : '#f97316';
     msg.textContent = ok ? 'Copied. Paste it into Supabase → SQL Editor → New query, then press Run.' : 'Copy was blocked by the browser. Open supabase/setup.sql in the project instead.';
-    srSet(SRK.creator, secret);
+    srSet(SRK.admin, user);
   } catch (e) { msg.style.color = '#f97316'; msg.textContent = 'Could not load the SQL file (' + e.message + '). Open the portal from its web address and try again.'; }
 }
-function srChecks(list) {
-  $sr('sr-checks').innerHTML = list.map((c) => '<div class="sr-check ' + (c.ok ? 'ok' : 'bad') + '"><span>' + (c.ok ? '✓' : '✗') + '</span><span><b>' + esc(c.title) + '</b>' + (c.hint ? '<small>' + esc(c.hint) + '</small>' : '') + '</span></div>').join('');
+function srCheckMsg(title, hint) {
+  $sr('sr-checks').innerHTML = '<div class="sr-check bad"><span>✗</span><span><b>' + esc(title) + '</b>' + (hint ? '<small>' + esc(hint) + '</small>' : '') + '</span></div>';
+}
+function srPaintChecks() {
+  const box = $sr('sr-checks'); if (!box) return;
+  if (!srCfg()) { box.innerHTML = ''; return; }
+  const out = [];
+  if (SRCHK.db === true) out.push({ ok: true, title: 'Connected to Supabase, database is ready' });
+  else if (SRCHK.dbErr) out.push({ ok: false, title: SR.friendly(SRCHK.dbErr), hint: SRCHK.dbErr.code === 'setup_missing' ? 'Run step 3 (Copy setup SQL, then Run in the Supabase SQL Editor).' : SRCHK.dbErr.code === 'bad_key' ? 'Check the key in step 4 (use the anon / publishable key, not the service role key).' : '' });
+  if (SRCHK.db === true && SRCHK.signup === true) out.push({ ok: false, warn: true, title: 'Public sign-up is still switched on in Supabase', hint: 'Your data stays protected (only members you add can get in), but turn it off in step 2 so strangers cannot even create accounts.' });
+  if (SRCHK.db === true) {
+    if (SRU) {
+      out.push({ ok: true, title: 'Signed in as ' + SRU.name + (SRU.admin ? ' (admin)' : '') });
+      if (!SRU.admin) out.push({ ok: false, title: 'This account is not an admin yet', hint: 'Make sure the account from step 2 exists, type its username there, then copy and run the SQL in step 3 again (it is safe to re-run).' });
+    } else out.push({ ok: false, title: 'Sign in to finish', hint: 'Use the account you created in step 2.', action: true });
+  }
+  box.innerHTML = out.map((c) => '<div class="sr-check ' + (c.ok ? 'ok' : 'bad') + '"><span>' + (c.ok ? '✓' : c.warn ? '!' : '✗') + '</span><span><b>' + esc(c.title) + '</b>' + (c.hint ? '<small>' + esc(c.hint) + '</small>' : '') + (c.action ? '<small><button class="btn btn-primary btn-sm" style="margin-top:6px" onclick="srOpenLogin()">Sign in</button></small>' : '') + '</span></div>').join('');
 }
 async function srSaveAndTest() {
-  const url = $sr('sr-url').value.trim().replace(/\/+$/, ''), key = $sr('sr-key').value.trim(), secret = $sr('sr-creator').value.trim();
-  if (secret.length < 8) { srChecks([{ ok: false, title: 'Passphrase missing', hint: 'Do step 2: choose a passphrase of at least 8 characters.' }]); return; }
-  if (!/^https:\/\/[^\s/]+\.[^\s/]+$/i.test(url) && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(url)) { srChecks([{ ok: false, title: 'That does not look like a Project URL', hint: 'It should look like https://abcdefgh.supabase.co (Supabase → Project Settings → API).' }]); return; }
-  if (key.length < 20) { srChecks([{ ok: false, title: 'The key looks too short', hint: 'Copy the full anon / publishable key from Supabase → Project Settings → API.' }]); return; }
-  srSet(SRK.url, url); srSet(SRK.key, key); srSet(SRK.creator, secret); srDel(SRK.verified);
+  const url = $sr('sr-url').value.trim().replace(/\/+$/, ''), key = $sr('sr-key').value.trim();
+  if (!/^https:\/\/[^\s/]+\.[^\s/]+$/i.test(url) && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(url)) { srCheckMsg('That does not look like a Project URL', 'It should look like https://abcdefgh.supabase.co (Supabase → Project Settings → API).'); return; }
+  if (key.length < 20) { srCheckMsg('The key looks too short', 'Copy the full anon / publishable key from Supabase → Project Settings → API.'); return; }
+  const prev = srCfg();
+  if (!prev || prev.url !== url) { SR.clearSession(); SRU = null; SRL = []; teamDrop(); }
+  srSet(SRK.url, url); srSet(SRK.key, key);
   const btn = $sr('sr-save-btn'); btn.disabled = true; btn.textContent = 'Testing…';
-  const out = []; const cfg = { url, key };
-  try { await SR.testDatabase(cfg); out.push({ ok: true, title: 'Connected to Supabase, database is ready' }); }
-  catch (e) { out.push({ ok: false, title: SR.friendly(e), hint: e.code === 'setup_missing' ? 'Run step 3 (Copy setup SQL, then Run in the Supabase SQL Editor).' : e.code === 'bad_key' ? 'Check the key in step 4 (use the anon / publishable key, not the service role key).' : '' }); }
-  if (out[0].ok) {
-    try { await SR.testCreator(cfg, secret); out.push({ ok: true, title: 'Creator passphrase accepted' }); srSet(SRK.verified, '1'); }
-    catch (e) { out.push({ ok: false, title: SR.friendly(e), hint: e.code === 'denied' ? 'The passphrase typed in step 2 differs from the one in the SQL you ran. Press Copy setup SQL again and Run it (it updates the passphrase).' : '' }); }
-  }
-  srChecks(out); btn.disabled = false; btn.textContent = 'Save & test connection';
-  srSetupState(); srPaintBadge();
-  if (srReady()) toast('Review sharing is ready. Open a report and press "Share for review".');
+  SRCHK = { db: null, dbErr: null, signup: null };
+  try { if (!(await SR.testDatabase({ url, key }))) throw new SR.SRError('setup_missing'); SRCHK.db = true; SRCHK.signup = await SR.signupOpen({ url, key }); } catch (e) { SRCHK = { db: false, dbErr: e, signup: null }; }
+  if (SRCHK.db && SR.hasSession()) await srSyncIdentity();
+  btn.disabled = false; btn.textContent = 'Save & test connection';
+  srSetupState(); srPaintChecks(); srPaintChip(); renderReviews();
+  if (SRCHK.db && !SRU) srOpenLogin();
 }
-function srDisconnect() {
-  if (!confirm('Remove the connection from this browser? Existing links keep working, but you will no longer see their feedback here until you reconnect.')) return;
-  [SRK.url, SRK.key, SRK.creator, SRK.verified].forEach(srDel); renderShareSetup(); $sr('sr-checks').innerHTML = ''; srPaintBadge();
+async function srDisconnect() {
+  if (!confirm('Disconnect this browser from the team workspace? You will be signed out here. Nothing is deleted on the server.')) return;
+  await SR.signOut(srCfg()); [SRK.url, SRK.key].forEach(srDel);
+  SRU = null; SRL = []; SRCHK = { db: null, dbErr: null, signup: null }; teamDrop();
+  renderShareSetup(); srPaintChecks(); srPaintChip(); renderReviews();
 }
 
 // ── Share modal (Report → Share for review) ────────────────────────────
@@ -4163,7 +4281,8 @@ function srShareData() {
 }
 function srShareStep1() {
   if (!srReady()) {
-    srShareBox(1, '<div class="sr-empty"><h3>Set up review sharing first</h3><p>It takes about 5 minutes and is done once. Follow the 4 numbered steps in Setup, then come back here.</p><button class="btn btn-primary" onclick="closeShareModal();showTab(\'setup\');srScrollSetup()">Open Setup</button></div><div class="modal-actions"><button class="btn btn-secondary" onclick="closeShareModal()">Close</button></div>');
+    const hasCfg = !!srCfg();
+    srShareBox(1, '<div class="sr-empty"><h3>' + (hasCfg ? 'Sign in to share this report' : 'Set up the team workspace first') + '</h3><p>' + (hasCfg ? 'Review links are created with your team account, so your colleagues can see the answers too.' : 'It takes about 10 minutes and is done once by the admin. Follow the numbered steps in Setup, then come back here.') + '</p><button class="btn btn-primary" onclick="closeShareModal();' + (hasCfg ? 'srOpenLogin()' : 'showTab(\'setup\');srScrollSetup()') + '">' + (hasCfg ? 'Sign in' : 'Open Setup') + '</button></div><div class="modal-actions"><button class="btn btn-secondary" onclick="closeShareModal()">Close</button></div>');
     return;
   }
   const { di, all, open } = srShareData();
@@ -4201,18 +4320,18 @@ async function srCreateShare() {
   const payload = {
     v: 1, kind: 'proofread', title: (SRS.title || '').trim() || di.filename || 'Document review',
     language: r.language || di.language || '', pages: di.pages || null, wordCount: di.wordCount || null,
-    createdBy: srGet('proof_user_name') || '', createdAt: new Date().toISOString(), note: (SRS.note || '').trim(),
+    createdBy: srGet('proof_user_name') || (SRU && SRU.name) || '', createdAt: new Date().toISOString(), note: (SRS.note || '').trim(),
     issues: src.map((e) => ({ id: e.id, type: e.type || '', severity: e.severity || '', page: e.page || null, loc: e._loc || undefined, context: e.context || '', original: e.original || '', corrected: e.corrected || '', explanation: e.explanation || '', source: e._source || undefined })),
   };
   try {
     const cfg = srCfg();
-    const { id } = await SR.createShare(cfg, srSecret(), payload, pw, SRS.days);
-    const meta = { id, title: payload.title, createdAt: payload.createdAt, expiresAt: new Date(Date.now() + SRS.days * 864e5).toISOString(), password: pw, issues: src.length, link: SR.buildLink(id, cfg), status: 'pending', version: 0, seenVersion: 0 };
-    srSaveList([meta].concat(srList()));
+    const { id } = await SR.createShare(cfg, payload, pw, SRS.days, { title: payload.title });
+    await srRefresh(false);
+    const meta = SRL.find((x) => x.id === id) || { id, title: payload.title, issues: src.length, password: pw, link: SR.buildLink(id, cfg), expiresAt: new Date(Date.now() + SRS.days * 864e5).toISOString() };
     SRS.meta = meta; srShareStep3(meta); srPaintBadge();
   } catch (e) {
     btn.disabled = false; btn.textContent = 'Create secure link';
-    $sr('sr-err').innerHTML = '<div class="sr-check bad"><span>✗</span><span><b>' + esc(SR.friendly(e)) + '</b>' + (e.code === 'denied' ? '<small>Open Setup and press &ldquo;Save &amp; test connection&rdquo; to re-check your passphrase.</small>' : '') + '</span></div>';
+    $sr('sr-err').innerHTML = '<div class="sr-check bad"><span>✗</span><span><b>' + esc(SR.friendly(e)) + '</b>' + (['denied', 'signed_out', 'banned'].includes(e.code) ? '<small>Sign in again with the button at the top right, then retry.</small>' : '') + '</span></div>';
   }
 }
 function srInviteText(m) {
@@ -4231,93 +4350,95 @@ function srShareStep3(m) {
     '<div class="sr-field"><label>2 · The password <span style="font-weight:500;text-transform:none;letter-spacing:0">(send it separately)</span></label><div class="sr-copyrow"><div class="sr-box">' + esc(m.password) + '</div><button class="btn btn-secondary btn-sm" data-copy="pw">Copy password</button></div></div>' +
     '<div class="sr-field"><label>Ready-to-send message <span style="font-weight:500;text-transform:none;letter-spacing:0">(you can edit it)</span></label><textarea class="sr-input" id="sr-invite">' + esc(srInviteText(m)) + '</textarea>' +
     '<div class="row" style="margin-top:8px"><button class="btn btn-secondary btn-sm" data-copy="invite">Copy message</button></div></div>' +
-    '<p class="sr-hint">When the reviewer submits, a green badge appears on the <strong>Reviews</strong> tab and you can open their answers there.</p>' +
+    '<p class="sr-hint">When the reviewer submits, a green badge appears on the <strong>Reviews</strong> tab for everyone on the team, and anyone can open the answers there.</p>' +
     '<div class="modal-actions"><button class="btn btn-secondary" onclick="closeShareModal()">Done</button><button class="btn btn-primary" onclick="closeShareModal();showTab(\'reviews\')">Go to Reviews</button></div>');
   $sr('share-box').querySelectorAll('[data-copy]').forEach((b) => {
     b.onclick = async () => { const t = b.dataset.copy === 'link' ? m.link : b.dataset.copy === 'pw' ? m.password : $sr('sr-invite').value; const ok = await srCopy(t); toast(ok ? 'Copied' : 'Copy was blocked. Select the text and copy it manually.', ok ? undefined : 'warn'); };
   });
 }
 
-// ── Reviews tab ────────────────────────────────────────────────────────
+// ── Reviews tab (shared by the whole team) ─────────────────────────────
 const SR_STATUS = { pending: 'Waiting for reviewer', in_progress: 'Review in progress', submitted: 'Submitted', expired: 'Expired', revoked: 'Withdrawn' };
 function srFlowTiles() {
-  return '<div class="sr-flow"><div><b>1 · Share</b>Press &ldquo;Share for review&rdquo; on any report.</div><div><b>2 · Review</b>The translator opens the link, enters the password and answers each item.</div><div><b>3 · Receive</b>Their answers appear here when they press Submit.</div><div><b>4 · Apply</b>Export a list for layout and tick items off as they are applied.</div></div>';
+  return '<div class="sr-flow"><div><b>1 · Share</b>Press &ldquo;Share for review&rdquo; on any report.</div><div><b>2 · Review</b>The translator opens the link, enters the password and answers each item.</div><div><b>3 · Receive</b>Their answers appear here for the whole team when they press Submit.</div><div><b>4 · Apply</b>Export a list for layout; the designer ticks items off and everyone sees the progress.</div></div>';
 }
 function renderReviews() {
   const body = $sr('sr-reviews-body'); if (!body) return;
-  const ready = srReady(), list = srList();
-  if (!ready) {
-    body.innerHTML = '<div class="sr-empty"><h3>Send reports to translators and proofreaders</h3><p>Share a password-protected link. They decide on each flagged issue in their browser and send the answers back to you. No accounts or files to email.</p><button class="btn btn-primary" onclick="showTab(\'setup\');srScrollSetup()">Set up review sharing (5 min)</button>' + srFlowTiles() + '</div>';
+  if (!srCfg()) {
+    body.innerHTML = '<div class="sr-empty"><h3>Send reports to translators and proofreaders</h3><p>Your team shares one list of reviews. Share a password-protected link; the translator decides on each flagged issue in their browser and sends the answers back. Everyone on the team sees the answers and the layout progress.</p><button class="btn btn-primary" onclick="showTab(\'setup\');srScrollSetup()">Set up the team workspace (admin, 10 min)</button>' + srFlowTiles() + '</div>';
     return;
   }
-  if (!list.length) {
-    body.innerHTML = '<div class="sr-empty"><h3>No reviews yet</h3><p>Open a proofreading report and press <strong>Share for review</strong>. Your links and the answers you receive will show up here.</p><button class="btn btn-primary" onclick="showTab(\'report\')">Go to report</button>' + srFlowTiles() + '</div>';
+  if (!srReady()) {
+    body.innerHTML = '<div class="sr-empty"><h3>Sign in to see your team&apos;s reviews</h3><p>Use the username and password your admin gave you.</p><button class="btn btn-primary" onclick="srOpenLogin()">Sign in</button></div>';
     return;
   }
-  body.innerHTML = list.map((m) => {
-    const st = m.status || 'pending', live = st === 'pending' || st === 'in_progress';
-    const fresh = st === 'submitted' && (m.version || 0) > (m.seenVersion || 0);
-    const sub = ['Shared ' + srDate(m.createdAt), m.issues + ' item' + (m.issues === 1 ? '' : 's'),
+  if (!SRL.length) {
+    body.innerHTML = '<div class="sr-empty"><h3>No reviews yet</h3><p>Open a proofreading report and press <strong>Share for review</strong>. Reviews shared by anyone on the team show up here, with the answers when they arrive.</p><button class="btn btn-primary" onclick="showTab(\'report\')">Go to report</button>' + srFlowTiles() + '</div>';
+    return;
+  }
+  const seen = srSeen();
+  body.innerHTML = SRL.map((m) => {
+    const st = m.status || 'pending', live = st === 'pending' || st === 'in_progress', manage = srCanManage(m);
+    const fresh = st === 'submitted' && m.version > (seen[m.id] || 0);
+    const done = Object.keys(m.applied || {}).length;
+    const sub = ['Shared ' + srDate(m.createdAt) + (m.by ? ' by ' + (m.mine ? 'you' : m.by) : ''), m.issues + ' item' + (m.issues === 1 ? '' : 's'),
       st === 'submitted' && m.submittedAt ? 'submitted ' + srDate(m.submittedAt, true) : (st === 'expired' || st === 'revoked') ? '' : 'valid until ' + srDate(m.expiresAt),
-      m.openedAt && st === 'pending' ? 'opened ' + srDate(m.openedAt, true) : ''].filter(Boolean).join(' · ');
+      m.openedAt && st === 'pending' ? 'opened ' + srDate(m.openedAt, true) : '', done ? done + ' applied in layout' : ''].filter(Boolean).join(' · ');
     return '<div class="sr-card"><div class="info"><div class="ttl">' + esc(m.title) + (fresh ? ' <span class="sr-pill ready" style="margin-left:6px">New feedback</span>' : '') + '</div><div class="sub">' + esc(sub) + '</div></div>' +
       '<span class="sr-st ' + st + '">' + SR_STATUS[st] + '</span><div class="acts">' +
       ((st === 'in_progress' || st === 'submitted') ? '<button class="btn btn-primary btn-sm" onclick="srOpenFeedback(\'' + m.id + '\')">View feedback</button>' : '') +
       (live || st === 'submitted' ? '<button class="btn btn-secondary btn-sm" onclick="srShowInvite(\'' + m.id + '\')">Link &amp; password</button>' : '') +
-      (st === 'submitted' ? '<button class="btn btn-secondary btn-sm" onclick="srManage(\'' + m.id + '\',\'reopen\')" title="Let the reviewer change their answers">Reopen</button>' : '') +
-      ((live || st === 'expired') ? '<button class="btn btn-secondary btn-sm" onclick="srManage(\'' + m.id + '\',\'extend\')">Extend 30 days</button>' : '') +
-      (live ? '<button class="btn btn-secondary btn-sm" onclick="srManage(\'' + m.id + '\',\'revoke\')">Withdraw</button>' : '') +
-      '<button class="btn btn-secondary btn-sm" onclick="srManage(\'' + m.id + '\',\'delete\')">Delete</button></div></div>';
-  }).join('') + '<p class="sr-hint" style="margin-top:12px">Passwords are stored only in this browser. If you clear your browser data you will need to resend a new link.</p>';
+      (manage && st === 'submitted' ? '<button class="btn btn-secondary btn-sm" onclick="srManage(\'' + m.id + '\',\'reopen\')" title="Let the reviewer change their answers">Reopen</button>' : '') +
+      (manage && (live || st === 'expired') ? '<button class="btn btn-secondary btn-sm" onclick="srManage(\'' + m.id + '\',\'extend\')">Extend 30 days</button>' : '') +
+      (manage && live ? '<button class="btn btn-secondary btn-sm" onclick="srManage(\'' + m.id + '\',\'revoke\')">Withdraw</button>' : '') +
+      (manage ? '<button class="btn btn-secondary btn-sm" onclick="srManage(\'' + m.id + '\',\'delete\')">Delete</button>' : '') + '</div></div>';
+  }).join('') + '<p class="sr-hint" style="margin-top:12px">This list is shared by everyone on the team. Only the person who shared a review, or an admin, can withdraw or delete it.</p>';
 }
-function srShowInvite(id) { const m = srList().find((x) => x.id === id); if (m) openShareModal(m); }
+function srShowInvite(id) { const m = SRL.find((x) => x.id === id); if (m) openShareModal(m); }
 async function srManage(id, action) {
-  const m = srList().find((x) => x.id === id); if (!m) return;
+  const m = SRL.find((x) => x.id === id); if (!m) return;
   const msg = { delete: 'Delete this review and its data permanently? The reviewer can no longer open the link.', revoke: 'Withdraw this link? The reviewer will no longer be able to open it.' }[action];
   if (msg && !confirm(msg)) return;
   try {
-    await SR.manageShare(srCfg(), srSecret(), id, action, 30);
-    if (action === 'delete') srSaveList(srList().filter((x) => x.id !== id));
-    else await srRefresh(false);
+    await SR.manageShare(srCfg(), id, action, 30);
+    await srRefresh(false);
     toast({ delete: 'Review deleted', revoke: 'Link withdrawn', reopen: 'Reopened. The reviewer can change their answers again.', extend: 'Extended by 30 days' }[action]);
-  } catch (e) { toast(SR.friendly(e), 'err'); }
+  } catch (e) { if (!srAuthLost(e)) toast(SR.friendly(e), 'err'); }
   srPaintBadge(); renderReviews();
 }
 function srPaintBadge() {
-  const n = srReady() ? srList().filter((m) => m.status === 'submitted' && (m.version || 0) > (m.seenVersion || 0)).length : 0;
+  const seen = srSeen();
+  const n = srReady() ? SRL.filter((m) => m.status === 'submitted' && m.version > (seen[m.id] || 0)).length : 0;
   const b = $sr('reviews-badge'); if (b) { b.hidden = !n; b.textContent = n; }
 }
 async function srRefresh(manual) {
-  if (!srReady()) { srPaintBadge(); if (manual) toast('Set up review sharing first.', 'warn'); return; }
+  if (!srCfg()) { srPaintBadge(); if (manual) toast('Connect the team workspace first (Setup).', 'warn'); return; }
+  if (!srReady()) { srPaintBadge(); if (manual) srOpenLogin(); return; }
   const btn = $sr('sr-refresh-btn'); if (manual && btn) { btn.disabled = true; btn.textContent = '↻ Refreshing…'; }
   try {
-    const server = await SR.listShares(srCfg(), srSecret());
-    const byId = new Map(server.map((s) => [s.id, s]));
-    srSaveList(srList().map((m) => {
-      const s = byId.get(m.id);
-      if (!s) return m.status === 'revoked' || m.status === 'submitted' ? m : { ...m, status: 'expired' };
-      return { ...m, status: s.status, version: s.version, expiresAt: s.expires_at, openedAt: s.opened_at, submittedAt: s.submitted_at };
-    }));
+    SRL = (await SR.listShares(srCfg())).map(srView);
     if (manual) toast('Reviews updated');
-  } catch (e) { if (manual) toast(SR.friendly(e), 'err'); }
+  } catch (e) { if (!srAuthLost(e) && manual) toast(SR.friendly(e), 'err'); }
   finally { if (btn) { btn.disabled = false; btn.textContent = '↻ Refresh'; } srPaintBadge(); if ($sr('reviews-page').classList.contains('active')) renderReviews(); }
 }
 
 // ── Feedback viewer + exports for layout ───────────────────────────────
 let SRFB = null;
 const srFinal = (issue, it) => { const d = (it && it.d) || 'none'; return d === 'agree' ? issue.corrected : d === 'edit' ? (it.t != null ? it.t : issue.corrected) : null; };
-const srAppliedSet = (id) => { try { return new Set(JSON.parse(srGet(SRK.applied + id) || '[]')); } catch(_) { return new Set(); } };
+const srAppliedMap = (id) => ((SRL.find((x) => x.id === id) || {}).applied) || {};     // issue id -> { by, at } (shared by the team)
+const srAppliedSet = (id) => new Set(Object.keys(srAppliedMap(id)));
 function srCloseFeedback() { $sr('fb-modal').classList.remove('open'); SRFB = null; }
 async function srOpenFeedback(id) {
-  const m = srList().find((x) => x.id === id); if (!m) return;
+  const m = SRL.find((x) => x.id === id); if (!m) return;
+  if (!m.password) { toast('This review has no stored password, so its answers cannot be opened here.', 'warn'); return; }
   $sr('fb-box').innerHTML = '<div class="sr-empty"><h3>Opening feedback…</h3><p>Decrypting in your browser. This takes a few seconds.</p></div>';
   $sr('fb-modal').classList.add('open');
   try {
     const r = await SR.openShare(srCfg(), id, m.password);
     SRFB = { m, payload: r.payload, decisions: r.decisions, status: r.status, version: r.version, submittedAt: r.submitted_at, filter: 'apply' };
-    srPatch(id, { seenVersion: r.version, version: r.version, status: r.status }); srPaintBadge(); renderReviews();
+    srMarkSeen(id, r.version); srPaintBadge(); renderReviews();
     srRenderFeedback();
-  } catch (e) { $sr('fb-box').innerHTML = '<div class="sr-empty"><h3>Could not open this review</h3><p>' + esc(SR.friendly(e)) + '</p><button class="btn btn-secondary" onclick="srCloseFeedback()">Close</button></div>'; }
+  } catch (e) { if (srAuthLost(e)) { srCloseFeedback(); return; } $sr('fb-box').innerHTML = '<div class="sr-empty"><h3>Could not open this review</h3><p>' + esc(SR.friendly(e)) + '</p><button class="btn btn-secondary" onclick="srCloseFeedback()">Close</button></div>'; }
 }
 function srRows() {
   const { payload, decisions } = SRFB, items = (decisions && decisions.items) || {};
@@ -4326,7 +4447,7 @@ function srRows() {
 function srRenderFeedback() {
   const { m, payload, decisions, filter } = SRFB; const rows = srRows(); const applied = srAppliedSet(m.id);
   const c = { agree: 0, disagree: 0, edit: 0, none: 0, comment: 0 }; rows.forEach((r) => { c[r.d]++; if (r.it.c) c.comment++; });
-  const apply = rows.filter((r) => r.fin != null), doneN = apply.filter((r) => applied.has(r.i.id)).length;
+  const apply = rows.filter((r) => r.fin != null), doneN = apply.filter((r) => applied.has(String(r.i.id))).length;
   const shown = rows.filter((r) => filter === 'all' ? true : filter === 'apply' ? r.fin != null : filter === 'comment' ? !!r.it.c : r.d === filter);
   const names = (decisions && (decisions.reviewers || (decisions.reviewer ? [decisions.reviewer] : []))) || [];
   const chip = (k, label, n) => '<button class="chip' + (filter === k ? ' on' : '') + '" style="font-size:12px;padding:5px 12px" onclick="SRFB.filter=\'' + k + '\';srRenderFeedback()">' + label + ' <span style="opacity:.7">' + n + '</span></button>';
@@ -4340,19 +4461,26 @@ function srRenderFeedback() {
     (SRFB.status !== 'submitted' ? '<div class="sr-check" style="margin-bottom:10px"><span>ⓘ</span><span>The reviewer has not submitted yet. You are seeing their answers so far.</span></div>' : '') +
     '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">' + chip('apply', 'To apply in layout', apply.length) + chip('disagree', 'Disagreed', c.disagree) + chip('comment', 'With comments', c.comment) + chip('none', 'No answer', c.none) + chip('all', 'All', rows.length) +
     '<span style="flex:1"></span><button class="btn btn-primary btn-sm" onclick="srExportWord(\'apply\')">Apply-list (Word)</button><button class="btn btn-secondary btn-sm" onclick="srExportCsv(\'apply\')">Apply-list (CSV)</button><button class="btn btn-secondary btn-sm" onclick="srExportCsv(\'full\')">Full feedback (CSV)</button></div>' +
-    (apply.length ? '<div class="sr-hint" style="margin:0 0 8px">Applied in layout: <b>' + doneN + ' of ' + apply.length + '</b>. Tick items off as the designer applies them (saved in this browser).</div>' : '') +
+    (apply.length ? '<div class="sr-hint" style="margin:0 0 8px">Applied in layout: <b>' + doneN + ' of ' + apply.length + '</b>. Tick items off as the designer applies them. The ticks are shared with the whole team.</div>' : '') +
     '<div style="overflow:auto;max-height:56vh;border:1px solid var(--border);border-radius:10px"><table class="sr-fbtable"><thead><tr><th style="width:34px"></th><th>Where</th><th>Current text → what to use</th><th>Answer</th><th>Comment</th></tr></thead><tbody>' +
     (shown.length ? shown.map((r) => {
-      const i = r.i, ap = applied.has(i.id), where = i.loc || (i.page ? 'p.' + i.page : '');
-      return '<tr class="' + (ap ? 'applied' : '') + '"><td>' + (r.fin != null ? '<input type="checkbox" ' + (ap ? 'checked' : '') + ' onchange="srToggleApplied(\'' + m.id + '\',' + JSON.stringify(i.id) + ',this.checked)" title="Applied in layout">' : '') + '</td>' +
+      const i = r.i, ap = applied.has(String(i.id)), where = i.loc || (i.page ? 'p.' + i.page : '');
+      return '<tr class="' + (ap ? 'applied' : '') + '"><td>' + (r.fin != null ? '<input type="checkbox" ' + (ap ? 'checked' : '') + ' onchange="srToggleApplied(\'' + m.id + '\',' + JSON.stringify(i.id) + ',this.checked)" title="' + esc(ap && srAppliedMap(m.id)[i.id] ? 'Applied by ' + srAppliedMap(m.id)[i.id].by : 'Applied in layout') + '">' : '') + '</td>' +
         '<td style="white-space:nowrap"><b>#' + esc(i.id) + '</b><br><span style="color:var(--muted)">' + esc(where) + '</span><br><span style="color:var(--muted);font-size:11px">' + esc(i.type || '') + '</span></td>' +
         '<td dir="auto">' + ctxCell(r) + '<br>' + (r.fin != null ? '→ <mark class="c">' + esc(r.fin) + '</mark>' : '<span style="color:var(--muted)">→ keep as it is</span>') + '</td>' +
         '<td>' + decPill(r.d) + '</td><td dir="auto">' + esc(r.it.c || '') + '</td></tr>';
     }).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:26px">Nothing in this view.</td></tr>') + '</tbody></table></div>' +
-    '<div class="modal-actions" style="margin-top:14px">' + (SRFB.status === 'submitted' ? '<button class="btn btn-secondary" onclick="srCloseFeedback();srManage(\'' + m.id + '\',\'reopen\')">Reopen for the reviewer</button>' : '') + '<button class="btn btn-primary" onclick="srCloseFeedback()">Done</button></div>';
+    '<div class="modal-actions" style="margin-top:14px">' + (SRFB.status === 'submitted' && srCanManage(m) ? '<button class="btn btn-secondary" onclick="srCloseFeedback();srManage(\'' + m.id + '\',\'reopen\')">Reopen for the reviewer</button>' : '') + '<button class="btn btn-primary" onclick="srCloseFeedback()">Done</button></div>';
 }
-function srToggleApplied(id, issueId, on) {
-  const s = srAppliedSet(id); on ? s.add(issueId) : s.delete(issueId); srSet(SRK.applied + id, JSON.stringify([...s])); srRenderFeedback();
+async function srToggleApplied(id, issueId, on) {
+  const m = SRL.find((x) => x.id === id); if (!m) return;
+  const prev = m.applied || {}, key = String(issueId);
+  const { [key]: _gone, ...rest } = prev;
+  m.applied = on ? { ...prev, [key]: { by: SRU ? SRU.name : '', at: new Date().toISOString() } } : rest;      // show it at once
+  srRenderFeedback();
+  try { m.applied = await SR.setApplied(srCfg(), id, issueId, on); }
+  catch (e) { m.applied = prev; if (!srAuthLost(e)) toast(SR.friendly(e), 'err'); }
+  srRenderFeedback(); if ($sr('reviews-page').classList.contains('active')) renderReviews();
 }
 function srExportRows(kind) {
   const { payload } = SRFB, applied = srAppliedSet(SRFB.m.id);
@@ -4362,8 +4490,8 @@ function srExportRows(kind) {
     : ['#', 'Page', 'Location', 'Type', 'Severity', 'Current text', 'Suggested', 'Reviewer answer', 'Reviewer final text', 'Reviewer comment', 'Full sentence', 'Applied'];
   const dec = { agree: 'Agreed', disagree: 'Disagreed', edit: 'Edited', none: 'No answer' };
   const body = rows.map((r) => { const i = r.i; return kind === 'apply'
-    ? [i.id, i.page || '', i.loc || '', i.type || '', i.original || '', r.fin, r.it.c || '', i.context || '', applied.has(i.id) ? 'Yes' : '']
-    : [i.id, i.page || '', i.loc || '', i.type || '', i.severity || '', i.original || '', i.corrected || '', dec[r.d], r.fin == null ? '' : r.fin, r.it.c || '', i.context || '', applied.has(i.id) ? 'Yes' : '']; });
+    ? [i.id, i.page || '', i.loc || '', i.type || '', i.original || '', r.fin, r.it.c || '', i.context || '', applied.has(String(i.id)) ? 'Yes' : '']
+    : [i.id, i.page || '', i.loc || '', i.type || '', i.severity || '', i.original || '', i.corrected || '', dec[r.d], r.fin == null ? '' : r.fin, r.it.c || '', i.context || '', applied.has(String(i.id)) ? 'Yes' : '']; });
   return { head, body, payload };
 }
 function srSafe(s) { return String(s || 'review').replace(/\.[^.]+$/, '').replace(/[^\p{L}\p{N}]+/gu, '_').replace(/^_+|_+$/g, '').slice(0, 60) || 'review'; }
@@ -4402,149 +4530,174 @@ async function srExportWord(kind) {
   toast('Apply-list downloaded');
 }
 
-// ── Team link (one-click setup for colleagues) ─────────────────────────
-// The link carries the shared keys in the URL fragment (#team=...). Browsers never send
-// the fragment to a server, and it is removed from the address bar as soon as it is read.
-let TEAM_PENDING = null;
+// ── Team API key + workspace link ──────────────────────────────────────
+// The admin stores one key; the database hands it only to signed-in colleagues. Keys that came from the
+// team are marked, so a colleague's own typed key is never overwritten or removed.
+let TEAM_ST = { loaded: false, stored: false, at: null, a: false, o: false, by: '', err: '' };
+let TEAM_PENDING = null, TEAM_JOINING = false;
+const TEAM_MARK = { a: 'sr_team_a', o: 'sr_team_o' };     // '1' = this browser's key came from the team
 const teamEnc = (o) => { const b = new TextEncoder().encode(JSON.stringify(o)); let s = ''; b.forEach((c) => { s += String.fromCharCode(c); }); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
 const teamDec = (t) => { const s = atob(t.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((t.length + 3) % 4)); const b = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) b[i] = s.charCodeAt(i); return JSON.parse(new TextDecoder().decode(b)); };
-// Admin: store / replace / remove the shared key (encrypted in the browser, kept in Supabase)
-let TEAM_ST = { loaded: false, stored: false, at: null, a: false, o: false, err: '' };
-const TEAM_MARK = { a: 'sr_team_a', o: 'sr_team_o' };     // '1' = this browser's key came from the team
+// Sign-out / lost session: remove only the keys the team supplied (important on shared computers)
+function teamDrop() {
+  ['a', 'o'].forEach((f) => { if (srGet(TEAM_MARK[f]) === '1') { srDel(f === 'a' ? 'proof_api_key' : 'proof_openai_key'); srDel(TEAM_MARK[f]); } });
+  const a = $sr('api-key-input'), o = $sr('openai-key-input'); if (a) a.value = srGet('proof_api_key') || ''; if (o) o.value = srGet('proof_openai_key') || '';
+  TEAM_ST = { loaded: false, stored: false, at: null, a: false, o: false, by: '', err: '' };
+  TEAM_MEM = []; TEAM_MEM_LOADED = false;
+}
 function teamPaint() {
-  const el = $sr('team-status'); if (!el) return;
-  const ok = (t) => '<span style="color:#10b981">&#10003;</span> ' + t, off = (t) => '<span style="opacity:.75">&#9675; ' + t + '</span>', bad = (t) => '<span style="color:#f97316">&#10007; ' + t + '</span>';
-  if (!srReady()) { el.innerHTML = off('Review sharing is not set up yet. Finish the 4 steps above first: the team key is stored in the same Supabase project.'); return; }
-  if (TEAM_ST.err) { el.innerHTML = bad(esc(TEAM_ST.err)); return; }
-  if (!TEAM_ST.loaded) { el.innerHTML = off('Checking the team key...'); return; }
-  el.innerHTML = TEAM_ST.stored
-    ? ok('Team key stored (' + [TEAM_ST.a ? 'Anthropic' : '', TEAM_ST.o ? 'OpenAI' : ''].filter(Boolean).join(' + ') + '), updated ' + esc(srDate(TEAM_ST.at, true)) + '.')
-    : off('No team key stored yet. Type your API key in the card above, then press &ldquo;Save API key for the team&rdquo;.');
+  const acc = $sr('team-account'), el = $sr('team-status'), adm = $sr('team-admin'); if (!acc) return;
+  const ok = (t) => '<span style="color:#10b981">&#10003;</span> ' + t, off = (t) => '<span style="opacity:.8">&#9675; ' + t + '</span>', bad = (t) => '<span style="color:#f97316">&#10007; ' + t + '</span>';
+  if (!srCfg()) { acc.innerHTML = off('Not connected yet. Open the workspace link your admin sent you, or (admin) finish the workspace setup below.'); el.innerHTML = ''; adm.hidden = true; return; }
+  if (!SRU) { acc.innerHTML = off('You are not signed in.') + ' <button class="btn btn-primary btn-sm" style="margin-left:8px" onclick="srOpenLogin()">Sign in</button>'; el.innerHTML = ''; adm.hidden = true; return; }
+  acc.innerHTML = ok('Signed in as <strong>' + esc(SRU.name) + '</strong>') + (SRU.admin ? ' <span class="sr-pill ready">admin</span>' : '') + ' <button class="btn btn-secondary btn-sm" style="margin-left:8px" onclick="srSignOut()">Sign out</button>';
+  adm.hidden = !SRU.admin;
+  const active = srGet(TEAM_MARK.a) === '1' || srGet(TEAM_MARK.o) === '1';
+  if (TEAM_ST.err) el.innerHTML = bad(esc(TEAM_ST.err));
+  else if (!TEAM_ST.loaded) el.innerHTML = off('Checking the team API key...');
+  else if (TEAM_ST.stored) el.innerHTML = ok('Team API key stored (' + [TEAM_ST.a ? 'Anthropic' : '', TEAM_ST.o ? 'OpenAI' : ''].filter(Boolean).join(' + ') + '), updated ' + esc(srDate(TEAM_ST.at, true)) + (TEAM_ST.by ? ' by ' + esc(TEAM_ST.by) : '') + '.' + (active ? ' It is active in this browser.' : ''));
+  else el.innerHTML = off(SRU.admin ? 'No team API key stored yet. Type your key in the API key card above, then press &ldquo;Save API key for the team&rdquo;.' : 'Your admin has not stored a team API key yet. Until then you can type your own key in the card above.');
 }
 async function teamRenderCard() {
   teamPaint();
   if (!srReady()) return;
   try {
-    const got = await SR.getTeamKeys(srCfg(), srSecret());
-    TEAM_ST = { loaded: true, stored: !!got, at: got && got.updated_at, a: !!(got && got.keys.a), o: !!(got && got.keys.o), err: '' };
+    const got = await SR.getTeamKeys(srCfg());
+    TEAM_ST = { loaded: true, stored: !!got, at: got && got.updated_at, a: !!(got && got.keys.a), o: !!(got && got.keys.o), by: (got && got.updated_by) || '', err: '' };
   } catch (e) {
-    TEAM_ST = { loaded: true, stored: false, at: null, a: false, o: false, err: e.code === 'setup_missing' ? 'Team keys need the updated setup SQL. Open step 3 above, press Copy setup SQL and Run it again in Supabase (it is safe to re-run).' : SR.friendly(e) };
+    if (srAuthLost(e)) return;
+    TEAM_ST = { loaded: true, stored: false, at: null, a: false, o: false, by: '', err: e.code === 'setup_missing' ? 'The database needs the latest setup SQL. Open step 3 above, press Copy setup SQL and Run it again in Supabase (safe to re-run).' : SR.friendly(e) };
   }
   teamPaint();
+  if (SRU && SRU.admin) { teamLoadMembers(); if (SRCHK.signup == null) { SRCHK.signup = await SR.signupOpen(srCfg()); srPaintChecks(); } }
+}
+let TEAM_MEM = [], TEAM_MEM_LOADED = false;
+function teamPaintMembers() {
+  const el = $sr('team-members'); if (!el) return;
+  if (!TEAM_MEM_LOADED) { el.textContent = 'Loading...'; return; }
+  if (!TEAM_MEM.length) { el.textContent = 'No members yet.'; return; }
+  el.innerHTML = TEAM_MEM.map((m) => '<div class="tm-row"><div class="tm-who"><b>' + esc(m.name) + '</b><span>' + esc(m.email) + '</span>' + (m.admin ? ' <span class="sr-pill ready">admin</span>' : '') + (m.disabled ? ' <span class="sr-pill todo">disabled in Supabase</span>' : '') + (m.me ? ' <em>(you)</em>' : '') + '</div>' +
+    '<div class="tm-acts">' + (m.me ? '' : '<button class="btn btn-secondary btn-sm" onclick="teamToggleAdmin(\'' + m.id + '\',' + (!m.admin) + ')">' + (m.admin ? 'Remove admin' : 'Make admin') + '</button><button class="btn btn-secondary btn-sm" onclick="teamRemoveMember(\'' + m.id + '\')">Remove</button>') + '</div></div>').join('');
+}
+async function teamLoadMembers() {
+  if (!srReady() || !SRU.admin) return;
+  try { TEAM_MEM = await SR.listMembers(srCfg()); TEAM_MEM_LOADED = true; }
+  catch (e) { if (srAuthLost(e)) return; TEAM_MEM = []; TEAM_MEM_LOADED = true; toast(SR.friendly(e), 'err'); }
+  teamPaintMembers();
+}
+async function teamAddMember() {
+  if (!srReady() || !SRU.admin) { toast('Only an admin can add colleagues.', 'warn'); return; }
+  const f = $sr('tm-user'), u = (f.value || '').trim();
+  if (u.length < 2) { toast('Type the username you created in Supabase, for example ben.', 'warn'); return; }
+  try { await SR.addMember(srCfg(), u, false); f.value = ''; toast('Added ' + u + '. They can sign in now.'); }
+  catch (e) { if (!srAuthLost(e)) toast(SR.friendly(e), 'err'); return; }
+  teamLoadMembers();
+}
+async function teamRemoveMember(id) {
+  const m = TEAM_MEM.find((x) => x.id === id); if (!m) return;
+  if (!confirm('Remove ' + m.name + ' (' + m.email + ')? They lose access immediately.')) return;
+  try { await SR.removeMember(srCfg(), id); toast(m.name + ' removed.'); } catch (e) { if (!srAuthLost(e)) toast(SR.friendly(e), 'err'); }
+  teamLoadMembers();
+}
+async function teamToggleAdmin(id, on) {
+  const m = TEAM_MEM.find((x) => x.id === id); if (!m) return;
+  if (on && !confirm('Make ' + m.name + ' an admin? Admins can change the team API key and manage every review and member.')) return;
+  try { await SR.setMemberAdmin(srCfg(), id, on); toast(on ? m.name + ' is now an admin.' : m.name + ' is no longer an admin.'); } catch (e) { if (!srAuthLost(e)) toast(SR.friendly(e), 'err'); }
+  teamLoadMembers();
 }
 async function teamSaveKeys() {
-  if (!srReady()) { toast('Finish Review sharing setup first (steps 1 to 4 above).', 'warn'); return; }
-  const a = ($sr('api-key-input').value || srGet('proof_api_key') || '').trim(), o = ($sr('openai-key-input').value || srGet('proof_openai_key') || '').trim();
+  if (!srReady() || !SRU.admin) { toast('Only an admin can change the team key.', 'warn'); return; }
+  const a = ($sr('api-key-input').value || '').trim(), o = ($sr('openai-key-input').value || '').trim();
   if (!a && !o) { toast('Type your API key in the card above first.', 'warn'); return; }
   if (TEAM_ST.stored && !confirm('Replace the team key? Colleagues switch to the new key automatically within a few minutes.')) return;
   try {
-    const keys = { v: 1, by: srGet('proof_user_name') || '', at: new Date().toISOString() }; if (a) keys.a = a; if (o) keys.o = o;
-    await SR.putTeamKeys(srCfg(), srSecret(), keys);
+    await SR.putTeamKeys(srCfg(), { a, o });
     if (a) srSet('proof_api_key', a); if (o) srSet('proof_openai_key', o);
-    toast('Team key saved. It is encrypted before it leaves this browser.');
-  } catch (e) { toast(SR.friendly(e), 'err'); }
+    toast('Team key saved. Signed-in colleagues receive it automatically.');
+  } catch (e) { if (!srAuthLost(e)) toast(SR.friendly(e), 'err'); }
   teamRenderCard();
 }
 async function teamRemoveKeys() {
-  if (!srReady()) { toast('Review sharing is not set up yet.', 'warn'); return; }
-  if (!confirm('Remove the team key? Colleagues lose access on their next refresh. For full safety also delete the key in the Anthropic Console.')) return;
-  try { await SR.clearTeamKeys(srCfg(), srSecret()); toast('Team key removed.'); } catch (e) { toast(SR.friendly(e), 'err'); }
+  if (!srReady() || !SRU.admin) { toast('Only an admin can remove the team key.', 'warn'); return; }
+  if (!confirm('Remove the team key? Colleagues lose it on their next refresh. For full safety also delete the key in the Anthropic Console.')) return;
+  try { await SR.clearTeamKeys(srCfg()); toast('Team key removed.'); } catch (e) { if (!srAuthLost(e)) toast(SR.friendly(e), 'err'); }
   teamRenderCard();
 }
-
-// Everyone: keep this browser's key in step with the team key (only keys that came from the team are touched)
+// Keep this browser's key in step with the team key (only keys that came from the team are touched)
 async function teamPull(announce) {
   if (!srReady()) return;
   let got;
-  try { got = await SR.getTeamKeys(srCfg(), srSecret()); } catch (e) { if (announce) toast(SR.friendly(e), 'warn'); return; }
-  const want = (got && got.keys) || {};
-  const lsKey = { a: 'proof_api_key', o: 'proof_openai_key' };
+  try { got = await SR.getTeamKeys(srCfg()); } catch (e) { if (!srAuthLost(e) && announce) toast(SR.friendly(e), 'warn'); return; }
+  const want = (got && got.keys) || {}, lsKey = { a: 'proof_api_key', o: 'proof_openai_key' };
   let changed = false, removed = false;
   ['a', 'o'].forEach((f) => {
     const cur = srGet(lsKey[f]), fromTeam = srGet(TEAM_MARK[f]) === '1', v = want[f];
-    if (v) {
-      if (!cur || (fromTeam && cur !== v)) { srSet(lsKey[f], v); srSet(TEAM_MARK[f], '1'); changed = true; }
-    } else if (fromTeam) { srDel(lsKey[f]); srDel(TEAM_MARK[f]); removed = true; }
+    if (v) { if (!cur || (fromTeam && cur !== v)) { srSet(lsKey[f], v); srSet(TEAM_MARK[f], '1'); changed = true; } }
+    else if (fromTeam) { srDel(lsKey[f]); srDel(TEAM_MARK[f]); removed = true; }
   });
   if (changed || removed) { $sr('api-key-input').value = srGet('proof_api_key') || ''; $sr('openai-key-input').value = srGet('proof_openai_key') || ''; }
   if (removed) toast('The team API key was removed by the admin. Ask them for access.', 'warn', 8000);
   else if (changed) toast('Team API key ready.');
+  else if (announce && !got && !srGet('proof_api_key') && !srGet('proof_openai_key')) toast(SRU && SRU.admin ? 'No team API key is stored yet. Type your key in Setup, then press "Save API key for the team".' : 'Your admin has not stored a team API key yet. Ask them, or type your own key in Setup.', 'warn', 8000);
 }
+// Workspace link: only the address of the workspace (public). It carries no password and no API key.
 function teamCreateLink() {
-  const ready = srReady(), cfg = srCfg(), a = (srGet('proof_api_key') || '').trim(), o = (srGet('proof_openai_key') || '').trim();
-  if (ready && !TEAM_ST.stored) { toast('Press "Save API key for the team" first, so colleagues get a key.', 'warn'); return; }
-  const p = { v: 1 };
-  if (ready) { p.u = cfg.url; p.k = cfg.key; p.c = srSecret(); }          // the key itself is fetched (encrypted) from Supabase
-  else if (a || o) { if (a) p.a = a; if (o) p.o = o; }                    // no Supabase: the key travels inside the link
-  else { toast('Save an API key first (card above), then create the link.', 'warn'); return; }
-  const link = location.href.split('#')[0].split('?')[0] + '#team=' + teamEnc(p);
+  const cfg = srCfg(); if (!cfg) return;
+  const link = location.href.split('#')[0].split('?')[0] + '#team=' + teamEnc({ v: 2, u: cfg.url, k: cfg.key });
   const local = location.protocol === 'file:';
   $sr('team-out').innerHTML =
     (local ? '<div class="sr-check bad" style="margin-top:12px"><span>!</span><span><b>You are running the portal from a local file.</b><small>This link only works on this computer. Open the portal from its web address to create a link for your team.</small></span></div>' : '') +
-    '<div class="sr-field" style="margin-top:12px"><label>Team link</label><div class="sr-copyrow"><div class="sr-box" id="team-link-box"></div><button class="btn btn-primary btn-sm" id="team-copy">Copy link</button></div></div>' +
-    '<div class="sr-hint"><strong>Treat this link like a password.</strong> It lets the holder use your team API key and manage your reviews. Send it in a private message, never in a public channel.' + (ready ? '' : ' (No Supabase is connected, so this link carries the key itself. Set up Review sharing to keep the key out of links.)') + '</div>' +
-    '<div class="sr-hint"><strong>Before you share:</strong> in the Anthropic Console create a separate key just for the team and give it a monthly spend limit, so a leak can never cost more than that.</div>' +
-    '<div class="sr-hint"><strong>To remove access:</strong> press &ldquo;Remove team key&rdquo;, delete the key in the Anthropic Console and store a new one. The key sits in each colleague&apos;s browser, so only share the link with people you trust.</div>';
+    '<div class="sr-field" style="margin-top:12px"><label>Workspace link</label><div class="sr-copyrow"><div class="sr-box" id="team-link-box"></div><button class="btn btn-primary btn-sm" id="team-copy">Copy link</button></div></div>' +
+    '<div class="sr-hint">Send this to colleagues. It only points their browser at your workspace: it contains <strong>no password and no API key</strong>, so they still need their own username and password to get in. (Opening the portal\'s normal address works too once a browser has been connected.)</div>';
   $sr('team-link-box').textContent = link;
-  $sr('team-copy').onclick = async () => { const ok2 = await srCopy(link); toast(ok2 ? 'Team link copied' : 'Copy was blocked. Select the link and copy it manually.', ok2 ? undefined : 'warn'); };
+  $sr('team-copy').onclick = async () => { const ok2 = await srCopy(link); toast(ok2 ? 'Workspace link copied' : 'Copy was blocked. Select the link and copy it manually.', ok2 ? undefined : 'warn'); };
 }
 function teamBoot() {
   const m = /^#team=([A-Za-z0-9_-]{20,})$/.exec(location.hash || '');
   if (!m) return false;
   try { history.replaceState(null, '', location.pathname + location.search); } catch (_) {}
   let p = null; try { p = teamDec(m[1]); } catch (_) {}
-  const str = (v, min, max) => typeof v === 'string' && v.length >= min && v.length <= max && !/\s/.test(v);
-  const valid = !!p && p.v === 1 &&
-    (p.a === undefined || str(p.a, 20, 400)) && (p.o === undefined || str(p.o, 20, 400)) &&
-    (p.u === undefined || (/^(https:\/\/[^\s/]+\.[^\s/]+|http:\/\/(localhost|127\.0\.0\.1)(:\d+)?)$/i.test(p.u || '') && str(p.u, 8, 200) && str(p.k, 20, 2000) && typeof p.c === 'string' && p.c.length >= 8 && p.c.length <= 200)) &&
-    !!(p.a || p.o || p.u);
-  if (!valid) { toast('This team link is not valid or is incomplete. Ask the person who sent it for a new one.', 'warn', 8000); return false; }
+  const okUrl = !!p && typeof p.u === 'string' && /^(https:\/\/[^\s/]+\.[^\s/]+|http:\/\/(localhost|127\.0\.0\.1)(:\d+)?)$/i.test(p.u);
+  const okKey = !!p && typeof p.k === 'string' && p.k.length >= 20 && p.k.length <= 2000 && !/\s/.test(p.k);
+  if (!p || p.v !== 2 || !okUrl || !okKey) { toast('This workspace link is not valid or is from an older version. Ask your admin for a new one.', 'warn', 8000); return false; }
   TEAM_PENDING = p; teamShowJoin(); return true;
 }
 function teamShowJoin() {
-  const p = TEAM_PENDING, mask = (s) => s.slice(0, 7) + '...' + s.slice(-4);
-  const curA = srGet('proof_api_key'), curO = srGet('proof_openai_key');
-  const replaces = (p.a && curA && curA !== p.a) || (p.o && curO && curO !== p.o);
-  let host = ''; try { host = new URL(p.u).host; } catch (_) {}
-  const row = (t, s) => '<div class="sr-check ok" style="margin-bottom:8px"><span>&#10003;</span><span><b>' + esc(t) + '</b>' + (s ? '<small>' + esc(s) + '</small>' : '') + '</span></div>';
-  $sr('team-box').innerHTML = '<div class="modal-title">Set up this browser for the team</div>' +
-    '<p class="sr-hint" style="margin:0 0 12px;font-size:13px">You opened a team link. Press the button and this browser is ready to use. You do not need to type anything. This will be saved here:</p>' +
-    (p.a ? row('Anthropic API key', mask(p.a)) : '') + (p.o ? row('OpenAI API key', mask(p.o)) : '') + (p.u && !p.a && !p.o ? row('Team API key', 'Fetched automatically and decrypted in this browser') : '') + (p.u ? row('Review sharing', 'Database ' + host + ' and the shared creator passphrase') : '') +
-    (replaces ? '<div class="sr-check bad" style="margin:4px 0 8px"><span>!</span><span><b>This replaces the API key already saved in this browser.</b></span></div>' : '') +
+  const p = TEAM_PENDING, cur = srCfg(); let host = ''; try { host = new URL(p.u).host; } catch (_) {}
+  const replaces = !!(cur && cur.url !== p.u);
+  $sr('team-box').innerHTML = '<div class="modal-title">Connect to the team workspace</div>' +
+    '<p class="sr-hint" style="margin:0 0 12px;font-size:13px">You opened your team&apos;s workspace link. This connects this browser to the workspace below; then you sign in with your own username and password.</p>' +
+    '<div class="sr-check ok" style="margin-bottom:8px"><span>&#10003;</span><span><b>Workspace</b><small>' + esc(host) + '</small></span></div>' +
+    (replaces ? '<div class="sr-check bad" style="margin:4px 0 8px"><span>!</span><span><b>This replaces the workspace this browser was connected to.</b></span></div>' : '') +
     '<p class="sr-hint">Only continue if the link came from someone you trust at Explorer.</p>' +
-    '<div class="modal-actions"><button class="btn btn-secondary" onclick="teamCancel()">Cancel</button><button class="btn btn-primary" id="team-go" onclick="teamJoin()">Set up this browser</button></div>';
+    '<div class="modal-actions"><button class="btn btn-secondary" onclick="teamCancel()">Cancel</button><button class="btn btn-primary" id="team-go" onclick="teamJoin()">Connect and sign in</button></div>';
   $sr('team-modal').classList.add('open');
 }
-function teamCancel() {
-  TEAM_PENDING = null; $sr('team-modal').classList.remove('open');
-  if (!srGet('proof_api_key') && !srGet('proof_openai_key')) showTab('setup');
-}
+function teamCancel() { TEAM_PENDING = null; $sr('team-modal').classList.remove('open'); }
 async function teamJoin() {
   const p = TEAM_PENDING; if (!p) return;
-  const btn = $sr('team-go'); btn.disabled = true; btn.textContent = 'Setting up...';
-  if (p.a) srSet('proof_api_key', p.a);
-  if (p.o) srSet('proof_openai_key', p.o);
-  let msg = 'This browser is ready. You can start proofing.', bad = false;
-  if (p.u) {
-    srSet(SRK.url, p.u); srSet(SRK.key, p.k); srSet(SRK.creator, p.c); srSet(SRK.s1, '1'); srDel(SRK.verified);
-    try { const cfg = { url: p.u, key: p.k }; await SR.testDatabase(cfg); await SR.testCreator(cfg, p.c); srSet(SRK.verified, '1'); }
-    catch (e) { bad = true; msg = 'Could not connect to the team database (' + SR.friendly(e) + '). Ask for a new team link.'; }
-    if (!bad) {
-      await teamPull(false);
-      if (!srGet('proof_api_key') && !srGet('proof_openai_key')) { bad = true; msg = 'Connected, but the admin has not stored a team API key yet. Ask them to press "Save API key for the team".'; }
-    }
-  }
+  const btn = $sr('team-go'); btn.disabled = true; btn.textContent = 'Connecting...';
+  try { if (!(await SR.testDatabase({ url: p.u, key: p.k }))) throw new SR.SRError('setup_missing'); }
+  catch (e) { btn.disabled = false; btn.textContent = 'Connect and sign in'; toast(SR.friendly(e), 'warn', 8000); return; }
+  const prev = srCfg();
+  if (!prev || prev.url !== p.u) { SR.clearSession(); SRU = null; SRL = []; teamDrop(); }
+  srSet(SRK.url, p.u); srSet(SRK.key, p.k);
   TEAM_PENDING = null; $sr('team-modal').classList.remove('open');
-  $sr('api-key-input').value = srGet('proof_api_key') || ''; $sr('openai-key-input').value = srGet('proof_openai_key') || '';
-  renderShareSetup(); srPaintBadge(); teamRenderCard();
-  if (srReady()) srRefresh(false);
-  if (!bad && !srGet('proof_user_name')) msg += ' Add your name in Setup so reports show who ran them.';
-  showTab('proof'); toast(msg, bad ? 'warn' : undefined, bad ? 9000 : 6000);
+  renderShareSetup(); srPaintChip(); renderReviews();
+  if (!SRU) srOpenLogin();
 }
 
-function srInit() {
-  srPaintBadge();
-  if (srReady()) { setTimeout(() => { srRefresh(false); teamPull(false); }, 2500); setInterval(() => { srRefresh(false); teamPull(false); }, 180000); }
+async function srInit() {
+  srPaintChip();
+  if (!srCfg() || typeof SR === 'undefined') return;
+  if (SR.hasSession()) {
+    if (await srSyncIdentity()) { srPaintChecks(); teamPull(false); srRefresh(false); }
+    else if (!SR.hasSession() && !TEAM_JOINING) srOpenLogin('Please sign in again.');
+  } else if (!TEAM_JOINING) srOpenLogin();
+  setInterval(async () => {
+    if (!SRU && SR.hasSession()) await srSyncIdentity();
+    if (srReady()) { srRefresh(false); teamPull(false); }
+  }, 180000);
 }
 
 // ══════════════════════════════════════════════
@@ -4555,8 +4708,8 @@ function srInit() {
   if (k) document.getElementById('api-key-input').value=k;
   const ok=localStorage.getItem('proof_openai_key');
   if (ok) document.getElementById('openai-key-input').value=ok;
-  const joiningTeam = teamBoot();
-  if (!k && !ok && !joiningTeam) setTimeout(()=>showTab('setup'),200);
+  TEAM_JOINING = teamBoot();
+  if (!k && !ok && !TEAM_JOINING && !srCfg()) setTimeout(()=>showTab('setup'),200);
   const t=localStorage.getItem('proof_theme')||'dark';
   document.documentElement.dataset.theme=t;
   document.getElementById('theme-btn').textContent=t==='light'?'☀️':'🌙';

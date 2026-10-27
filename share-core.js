@@ -7,6 +7,10 @@
  *               last  32  = "proof"       (sent to the server instead of the password)
  *  The server stores only ciphertext and sha256(proof). It never sees the
  *  password, the key, or any readable text.
+ *
+ *  Colleagues sign in with Supabase Auth (username + password, accounts created by
+ *  the admin). Team calls carry their access token; the database checks the account
+ *  on every call. Outside reviewers need no account: link + review password only.
  */
 (function (global) {
   'use strict';
@@ -40,7 +44,15 @@
     network:        'Could not reach the server. Check your internet connection and try again.',
     setup_missing:  'The database is not ready. Run the setup SQL in your Supabase project (Setup, step 3).',
     bad_key:        'The Supabase URL or key is wrong. Re-copy them from Supabase, Project Settings, API.',
-    denied:         'Your creator passphrase does not match the one registered in the database.',
+    denied:         'Your account is not part of the team workspace, or has been disabled. Ask the admin.',
+    forbidden:      'Only the person who shared this, or an admin, can do that.',
+    bad_login:      'Wrong username or password.',
+    banned:         'This account has been disabled. Ask the admin.',
+    not_confirmed:  'This account is not confirmed yet. The admin must create it with "Auto Confirm User" ticked.',
+    rate:           'Too many attempts. Wait a few minutes and try again.',
+    signed_out:     'Your session has ended. Please sign in again.',
+    bad_request:    'That request was not valid.',
+    no_account:     'No account with that username exists yet. Create it in Supabase first (Authentication, Users, Add user), then add it here.',
     not_found:      'This review link is no longer available. It may have expired or been withdrawn.',
     bad_password:   'That password is not correct.',
     locked:         'Too many wrong attempts. This link is locked for a few minutes.',
@@ -48,7 +60,6 @@
     conflict:       'Someone else saved changes at the same time.',
     exists:         'A review with this id already exists. Please try again.',
     too_large:      'This is too large to store. Share only the issues that still need review.',
-    team_unreadable:'The saved team key could not be read. Save it again from the admin browser.',
     server:         'The server returned an unexpected error.',
     unsupported:    'This browser cannot do secure encryption. Use an up-to-date Chrome, Edge, Safari or Firefox over https.',
   };
@@ -64,26 +75,6 @@
     const key = await crypto.subtle.importKey('raw', bits.slice(0, 32), 'AES-GCM', false, ['encrypt', 'decrypt']);
     return { key, auth: hex(bits.slice(32)) };
   }
-
-  // Creator passphrase: the server never sees it. Two independent slow hashes of it are used.
-  //   "auth" -> hex token sent as p_creator (the database stores only sha256 of the token)
-  //   "team" -> AES-GCM key that encrypts team secrets such as the shared API key
-  // Different salts, so the token reveals nothing about the key.
-  const creatorMemo = new Map();
-  function creatorDerive(secret, purpose) {
-    const s = normPassword(secret), id = purpose + '|' + s;
-    if (!creatorMemo.has(id)) {
-      creatorMemo.set(id, (async () => {
-        const base = await crypto.subtle.importKey('raw', enc.encode(s), 'PBKDF2', false, ['deriveBits']);
-        const bits = await crypto.subtle.deriveBits(
-          { name: 'PBKDF2', hash: 'SHA-256', salt: enc.encode('explorer-proofreader/creator/' + purpose + '/v1'), iterations: KDF_ITER }, base, 256);
-        return purpose === 'auth' ? hex(bits) : crypto.subtle.importKey('raw', bits, 'AES-GCM', false, ['encrypt', 'decrypt']);
-      })().catch((e) => { creatorMemo.delete(id); throw e; }));
-    }
-    return creatorMemo.get(id);
-  }
-  const creatorToken = (secret) => creatorDerive(secret, 'auth');
-  const creatorKey = (secret) => creatorDerive(secret, 'team');
 
   const hasGzip = typeof CompressionStream !== 'undefined' && typeof DecompressionStream !== 'undefined';
   async function pipe(u8, Stream, kind) {
@@ -107,10 +98,11 @@
   }
 
   // ── talking to Supabase (RPC only — the tables are not reachable) ──────
-  async function rpc(cfg, fn, args) {
+  async function rpc(cfg, fn, args, bearer) {
     if (!cfg || !cfg.url || !cfg.key) throw new SRError('not_configured');
     const headers = { 'Content-Type': 'application/json', apikey: cfg.key };
-    if (/^eyJ/.test(cfg.key)) headers.Authorization = 'Bearer ' + cfg.key;     // legacy JWT anon keys
+    if (bearer) headers.Authorization = 'Bearer ' + bearer;                    // signed-in colleague
+    else if (/^eyJ/.test(cfg.key)) headers.Authorization = 'Bearer ' + cfg.key; // legacy JWT anon keys
     let res;
     try {
       res = await fetch(cfg.url.replace(/\/+$/, '') + '/rest/v1/rpc/' + fn, { method: 'POST', headers, body: JSON.stringify(args) });
@@ -118,66 +110,128 @@
     const text = await res.text();
     let j = null; try { j = JSON.parse(text); } catch (_) { /* not JSON */ }
     if (!res.ok) {
+      if (j && /PGRST30[1-3]|JWT (expired|invalid)/i.test((j.code || '') + ' ' + (j.message || ''))) throw new SRError('jwt_expired');
       if (res.status === 404 || (j && /PGRST20[0-9]|Could not find the function/i.test((j.code || '') + (j.message || '')))) throw new SRError('setup_missing');
-      if (res.status === 401 || res.status === 403) throw new SRError('bad_key', j && j.message);
+      if (res.status === 401 || res.status === 403) throw new SRError(bearer && !/api ?key/i.test((j && j.message) || '') ? 'denied' : 'bad_key', j && j.message);
       throw new SRError('server', (j && (j.message || j.hint)) || ('HTTP ' + res.status));
     }
     return j;
   }
 
-  // ── creator operations ─────────────────────────────────────────────────
-  async function createShare(cfg, creator, payload, password, days) {
+  // ── sessions (Supabase Auth, password grant) ───────────────────────────
+  const TEAM_DOMAIN = 'explorer.team';                 // "anna" -> anna@explorer.team (or type a full email)
+  const SESSION_KEY = 'sr_session';
+  const mem = {};
+  const store = {
+    get(k) { try { return global.localStorage ? global.localStorage.getItem(k) : (k in mem ? mem[k] : null); } catch (_) { return k in mem ? mem[k] : null; } },
+    set(k, v) { try { if (global.localStorage) global.localStorage.setItem(k, v); else mem[k] = v; } catch (_) { mem[k] = v; } },
+    del(k) { try { if (global.localStorage) global.localStorage.removeItem(k); else delete mem[k]; } catch (_) { delete mem[k]; } },
+  };
+  const loadSession = () => { try { return JSON.parse(store.get(SESSION_KEY) || 'null'); } catch (_) { return null; } };
+  const hasSession = () => { const s = loadSession(); return !!(s && s.refresh_token); };
+  const clearSession = () => store.del(SESSION_KEY);
+  const emailFor = (u) => { const s = String(u || '').trim().toLowerCase(); return s.indexOf('@') >= 0 ? s : s + '@' + TEAM_DOMAIN; };
+
+  async function authCall(cfg, path, body) {
+    if (!cfg || !cfg.url || !cfg.key) throw new SRError('not_configured');
+    let res;
+    try { res = await fetch(cfg.url.replace(/\/+$/, '') + '/auth/v1/' + path, { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: cfg.key }, body: JSON.stringify(body) }); }
+    catch (e) { throw new SRError('network'); }
+    const text = await res.text(); let j = null; try { j = JSON.parse(text); } catch (_) { /* not JSON */ }
+    if (!res.ok) {
+      const code = String((j && (j.error_code || j.code)) || ''), msg = String((j && (j.msg || j.message || j.error_description)) || '');
+      if (/user_banned/i.test(code) || /banned/i.test(msg)) throw new SRError('banned');
+      if (/invalid_credentials/i.test(code) || /invalid login/i.test(msg)) throw new SRError('bad_login');
+      if (/email_not_confirmed/i.test(code) || /not confirmed/i.test(msg)) throw new SRError('not_confirmed');
+      if (res.status === 429 || /rate_limit/i.test(code)) throw new SRError('rate');
+      if (/refresh_token|session_not_found|session_expired/i.test(code) || /refresh token/i.test(msg)) throw new SRError('signed_out');
+      if ((res.status === 401 || res.status === 403) && /api ?key/i.test(msg)) throw new SRError('bad_key', msg);
+      throw new SRError('server', msg || ('HTTP ' + res.status));
+    }
+    return j;
+  }
+  function saveFrom(j) {
+    const s = { access_token: j.access_token, refresh_token: j.refresh_token, expires_at: j.expires_at ? j.expires_at * 1000 : Date.now() + (j.expires_in || 3600) * 1000, email: j.user && j.user.email };
+    store.set(SESSION_KEY, JSON.stringify(s)); return s;
+  }
+  async function signIn(cfg, user, password) {
+    if (!String(user || '').trim() || !password) throw new SRError('bad_login');
+    return saveFrom(await authCall(cfg, 'token?grant_type=password', { email: emailFor(user), password }));
+  }
+  let refreshing = null;
+  function refreshSession(cfg) {
+    if (refreshing) return refreshing;
+    const s = loadSession(); if (!s || !s.refresh_token) return Promise.reject(new SRError('signed_out'));
+    refreshing = (async () => {
+      try { return saveFrom(await authCall(cfg, 'token?grant_type=refresh_token', { refresh_token: s.refresh_token })); }
+      catch (e) {
+        if (e.code === 'network' || e.code === 'server') throw e;       // temporary: keep the session
+        clearSession(); throw new SRError(e.code === 'banned' ? 'banned' : 'signed_out');
+      } finally { refreshing = null; }
+    })();
+    return refreshing;
+  }
+  async function getToken(cfg) {
+    let s = loadSession(); if (!s) throw new SRError('signed_out');
+    if (!s.expires_at || s.expires_at - Date.now() < 60000) s = await refreshSession(cfg);
+    return s.access_token;
+  }
+  // RPC as the signed-in colleague (refreshes an expired token once)
+  async function arpc(cfg, fn, args) {
+    let tok = await getToken(cfg);
+    try { return await rpc(cfg, fn, args, tok); }
+    catch (e) { if (e.code !== 'jwt_expired') throw e; tok = (await refreshSession(cfg)).access_token; return rpc(cfg, fn, args, tok); }
+  }
+  async function signOut(cfg) {
+    const s = loadSession(); clearSession();
+    if (s && cfg && cfg.url) { try { await fetch(cfg.url.replace(/\/+$/, '') + '/auth/v1/logout', { method: 'POST', headers: { apikey: cfg.key, Authorization: 'Bearer ' + s.access_token } }); } catch (_) { /* best effort */ } }
+  }
+  const must = (r) => { if (!r || r.ok !== true) throw new SRError((r && r.error) || 'server'); return r; };
+
+  // ── team operations (signed-in colleagues) ─────────────────────────────
+  async function whoami(cfg) { return must(await arpc(cfg, 'team_whoami', {})); }
+  async function createShare(cfg, payload, password, days, meta) {
     if (!isSupported()) throw new SRError('unsupported');
     const id = crypto.randomUUID();
     const salt = b64e(crypto.getRandomValues(new Uint8Array(16)));
     const { key, auth } = await deriveKeys(password, salt, KDF_ITER);
     const blob = await encryptJSON(payload, key);
-    const r = await rpc(cfg, 'share_create', { p_creator: await creatorToken(creator), p_id: id, p_salt: salt, p_iter: KDF_ITER, p_auth: auth, p_payload: blob, p_days: days });
-    if (!r.ok) throw new SRError(r.error);
+    must(await arpc(cfg, 'share_create', { p_id: id, p_salt: salt, p_iter: KDF_ITER, p_auth: auth, p_payload: blob, p_days: days,
+      p_title: (meta && meta.title) || payload.title || '', p_password: password, p_issues: (payload.issues || []).length }));
     return { id, bytes: blob.length };
   }
-  async function listShares(cfg, creator) {
-    const r = await rpc(cfg, 'share_list', { p_creator: await creatorToken(creator) });
-    if (!r.ok) throw new SRError(r.error);
-    return r.shares;
+  async function listShares(cfg) { return must(await arpc(cfg, 'share_list', {})).shares; }
+  async function manageShare(cfg, id, action, days) { must(await arpc(cfg, 'share_manage', { p_id: id, p_action: action, p_days: days || 30 })); return true; }
+  async function setApplied(cfg, id, issueId, done) { return must(await arpc(cfg, 'share_applied', { p_id: id, p_issue: String(issueId), p_done: !!done })).applied; }
+  async function getTeamKeys(cfg) {
+    const r = must(await arpc(cfg, 'team_keys_get', {}));
+    return r.keys ? { keys: r.keys, updated_at: r.updated_at, updated_by: r.updated_by } : null;
   }
-  async function manageShare(cfg, creator, id, action, days) {
-    const r = await rpc(cfg, 'share_manage', { p_creator: await creatorToken(creator), p_id: id, p_action: action, p_days: days || 30 });
-    if (!r.ok) throw new SRError(r.error);
-    return true;
+  async function putTeamKeys(cfg, keys) { must(await arpc(cfg, 'team_keys_put', { p_a: keys.a || null, p_o: keys.o || null })); return true; }
+  async function clearTeamKeys(cfg) { must(await arpc(cfg, 'team_keys_clear', {})); return true; }
+  // Team members (admin only). A Supabase account alone is not enough: the admin adds each person here.
+  async function listMembers(cfg) { return must(await arpc(cfg, 'team_members_list', {})).members; }
+  async function addMember(cfg, user, admin) { return must(await arpc(cfg, 'team_member_add', { p_email: emailFor(user), p_admin: !!admin })); }
+  async function removeMember(cfg, id) { must(await arpc(cfg, 'team_member_remove', { p_user: id })); return true; }
+  async function setMemberAdmin(cfg, id, on) { must(await arpc(cfg, 'team_member_admin', { p_user: id, p_admin: !!on })); return true; }
+  // Is public sign-up still switched on in Supabase? (true = still open, false = closed, null = unknown)
+  async function signupOpen(cfg) {
+    try {
+      const res = await fetch(cfg.url.replace(/\/+$/, '') + '/auth/v1/settings', { headers: { apikey: cfg.key } });
+      if (!res.ok) return null;
+      const j = await res.json();
+      return j && typeof j.disable_signup === 'boolean' ? !j.disable_signup : null;
+    } catch (_) { return null; }
   }
-  // A passphrase check the Setup page can run: succeeds only if the database
-  // holds the hash of THIS creator passphrase.
-  async function testCreator(cfg, creator) { await listShares(cfg, creator); return true; }
-  // Does the database have the functions installed? (no secret needed)
+  // Does the database have the functions installed? (no account needed)
   async function testDatabase(cfg) {
     const r = await rpc(cfg, 'share_info', { p_id: '00000000-0000-4000-8000-000000000000' });
     return !!(r && r.ok === false && r.error === 'not_found');
   }
-  async function creatorSql(secret) {
-    return "insert into public.app_config(key, value) values ('creator_hash', '" + (await sha256hex(await creatorToken(secret))) +
-           "')\non conflict (key) do update set value = excluded.value;";
-  }
-
-  // ── team secrets: the shared API key(s), encrypted in the browser ──────
-  // Anyone who holds the creator passphrase (the team) can read and replace them.
-  async function putTeamKeys(cfg, creator, obj) {
-    const blob = await encryptJSON(obj, await creatorKey(creator));
-    const r = await rpc(cfg, 'team_put', { p_creator: await creatorToken(creator), p_blob: blob });
-    if (!r.ok) throw new SRError(r.error);
-    return { updated_at: r.updated_at };
-  }
-  async function getTeamKeys(cfg, creator) {
-    const r = await rpc(cfg, 'team_get', { p_creator: await creatorToken(creator) });
-    if (!r.ok) throw new SRError(r.error);
-    if (!r.blob) return null;
-    let keys; try { keys = await decryptJSON(r.blob, await creatorKey(creator)); } catch (_) { throw new SRError('team_unreadable'); }
-    return { keys, updated_at: r.updated_at };
-  }
-  async function clearTeamKeys(cfg, creator) {
-    const r = await rpc(cfg, 'team_clear', { p_creator: await creatorToken(creator) });
-    if (!r.ok) throw new SRError(r.error);
-    return true;
+  // SQL the admin runs once so their account is an admin (the account must exist first)
+  function adminSql(username) {
+    const em = emailFor(username).replace(/'/g, "''");
+    return "insert into public.team_admins(user_id)\nselect id from auth.users where lower(email) = '" + em + "'\non conflict do nothing;";
   }
 
   // ── reviewer / shared operations ───────────────────────────────────────
@@ -271,8 +325,9 @@
   global.SR = {
     KDF_ITER, SRError, friendly, isSupported, normPassword,
     deriveKeys, encryptJSON, decryptJSON, rpc,
-    createShare, listShares, manageShare, testCreator, testDatabase, creatorSql, creatorToken,
-    putTeamKeys, getTeamKeys, clearTeamKeys,
+    TEAM_DOMAIN, emailFor, signIn, signOut, hasSession, loadSession, clearSession, refreshSession, whoami,
+    createShare, listShares, manageShare, setApplied, getTeamKeys, putTeamKeys, clearTeamKeys, testDatabase, adminSql,
+    listMembers, addMember, removeMember, setMemberAdmin, signupOpen,
     openShare, saveDecisions, mergeDecisions, buildLink, parseLink,
     newPassphrase, strength, sha256hex, WORDS,
   };

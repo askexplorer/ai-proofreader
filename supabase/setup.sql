@@ -1,22 +1,61 @@
 -- ════════════════════════════════════════════════════════════════════════
---  Explorer AI Proofreader — secure review links
+--  Explorer AI Proofreader — team workspace
 --  Run this ONCE in Supabase:  SQL Editor  →  New query  →  paste  →  Run
 --  It is safe to run again (nothing is deleted or duplicated).
 --
+--  What it sets up
+--   • Personal accounts: colleagues sign in with the usernames/passwords you
+--     create in Supabase (Authentication → Users), and you approve each one in
+--     the portal. An account that is not on the member list gets nothing, even
+--     if someone manages to sign up.
+--   • One shared list of reviews for the whole team, with shared "applied in
+--     layout" progress.
+--   • One shared API key for the team, handed only to signed-in colleagues.
+--   • Review links for outside translators (no account needed).
+--
 --  How the protection works
---   • Reports are encrypted in the browser BEFORE they are uploaded. This
---     database only ever stores scrambled text — it never sees the password.
---   • The tables below are locked: the public (anon) key cannot read or write
---     them directly. The only way in is through the functions at the bottom,
---     and each one checks a password-derived proof first.
---   • Wrong passwords are counted; after 8 failures a link locks for 15 minutes.
---   • Links expire automatically and can be revoked at any time.
+--   • Reports are encrypted in the browser BEFORE they are uploaded, with the
+--     review's own password. Anyone holding only the link sees a password box.
+--   • The tables are locked: the public (anon) key cannot read or write them.
+--     The only way in is through the functions at the bottom, and each team
+--     function checks the signed-in account on EVERY call. Disable or delete a
+--     user in Supabase and they are locked out immediately.
+--   • Wrong review passwords are counted; after 8 failures a link locks for 15
+--     minutes. Links expire automatically and can be withdrawn at any time.
 -- ════════════════════════════════════════════════════════════════════════
 
+-- ── Clean up pieces of earlier versions (passphrase-based) ───────────────
+drop function if exists public.share_create(text, uuid, text, int, text, text, int);
+drop function if exists public.share_list(text);
+drop function if exists public.share_manage(text, uuid, text, int);
+drop function if exists public.team_put(text, text);
+drop function if exists public.team_get(text);
+drop function if exists public.team_clear(text);
+drop function if exists public._creator_ok(text);
+drop table    if exists public.team_secrets;
+drop table    if exists public.app_config;
+
 -- ── Tables ───────────────────────────────────────────────────────────────
-create table if not exists public.app_config (
-  key   text primary key,
-  value text not null
+-- Who may manage the team API key and every review (the people you promote).
+create table if not exists public.team_admins (
+  user_id uuid primary key references auth.users(id) on delete cascade
+);
+
+-- Who is on the team. Having a Supabase account is NOT enough: the admin must add the person here
+-- (from the portal), so a stranger who signs up with the public key still gets nothing.
+create table if not exists public.team_members (
+  user_id  uuid primary key references auth.users(id) on delete cascade,
+  added_by text,
+  added_at timestamptz not null default now()
+);
+
+-- The shared API key(s). Only signed-in team members can read it (via team_keys_get).
+create table if not exists public.team_keys (
+  id         text primary key default 'api',
+  a          text,                                     -- Anthropic key
+  o          text,                                     -- OpenAI key
+  updated_by text,
+  updated_at timestamptz not null default now()
 );
 
 create table if not exists public.review_shares (
@@ -36,54 +75,55 @@ create table if not exists public.review_shares (
   opened_at       timestamptz,
   submitted_at    timestamptz
 );
-
--- The team's shared API key. Encrypted in the browser with a key derived from
--- the creator passphrase, so this database only ever holds scrambled text.
-create table if not exists public.team_secrets (
-  name       text primary key,
-  blob       text not null,                            -- ENCRYPTED
-  updated_at timestamptz not null default now()
-);
+-- Team-visible details (added in v4; safe on databases that already have the table)
+alter table public.review_shares add column if not exists created_by      uuid;
+alter table public.review_shares add column if not exists created_by_name text;
+alter table public.review_shares add column if not exists title           text;
+alter table public.review_shares add column if not exists password        text;   -- visible to team members only
+alter table public.review_shares add column if not exists issue_count     int   not null default 0;
+alter table public.review_shares add column if not exists applied         jsonb not null default '{}'::jsonb;
 
 -- Lock the tables completely. No policies on purpose = deny everything;
 -- only the SECURITY DEFINER functions below can touch the data.
-alter table public.app_config    enable row level security;
+alter table public.team_admins   enable row level security;
+alter table public.team_members  enable row level security;
+alter table public.team_keys     enable row level security;
 alter table public.review_shares enable row level security;
-alter table public.team_secrets  enable row level security;
-revoke all on table public.app_config    from anon, authenticated;
+revoke all on table public.team_admins   from anon, authenticated;
+revoke all on table public.team_members  from anon, authenticated;
+revoke all on table public.team_keys     from anon, authenticated;
 revoke all on table public.review_shares from anon, authenticated;
-revoke all on table public.team_secrets  from anon, authenticated;
 
 -- ── Internal helpers (not callable from outside) ─────────────────────────
 create or replace function public._sha256(t text) returns text
-language sql immutable as $$
+language sql immutable set search_path = public as $$
   select encode(sha256(convert_to(t, 'UTF8')), 'hex')
 $$;
 
--- Is this the owner's creator passphrase?  (20 wrong tries → 10 minute lock)
-create or replace function public._creator_ok(p_creator text) returns boolean
-language plpgsql security definer set search_path = public as $$
-declare h text; locked timestamptz; fails int;
-begin
-  select value into h from public.app_config where key = 'creator_hash';
-  if h is null then return false; end if;
-  select value::timestamptz into locked from public.app_config where key = 'creator_locked_until';
-  if locked is not null and locked > now() then return false; end if;
-  if public._sha256(coalesce(p_creator, '')) = h then
-    delete from public.app_config where key in ('creator_fails', 'creator_locked_until');
-    return true;
-  end if;
-  insert into public.app_config(key, value) values ('creator_fails', '1')
-    on conflict (key) do update set value = ((public.app_config.value)::int + 1)::text
-    returning value::int into fails;
-  if fails >= 20 then
-    insert into public.app_config(key, value)
-      values ('creator_locked_until', (now() + interval '10 minutes')::text)
-      on conflict (key) do update set value = excluded.value;
-    delete from public.app_config where key = 'creator_fails';
-  end if;
-  return false;
-end $$;
+-- The signed-in, active team member making this request (NULL = not allowed).
+-- Must be on the member list (or an admin), and not disabled or deleted. Checked on every
+-- call, so removing or disabling someone locks them out at once, even while their sign-in
+-- token is technically still valid.
+create or replace function public._member() returns uuid
+language sql stable security definer set search_path = public as $$
+  select u.id from auth.users u
+   where u.id = auth.uid()
+     and u.deleted_at is null
+     and (u.banned_until is null or u.banned_until <= now())
+     and (exists (select 1 from public.team_members m where m.user_id = u.id)
+          or exists (select 1 from public.team_admins a where a.user_id = u.id))
+$$;
+
+create or replace function public._is_admin() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.team_admins a where a.user_id = public._member())
+$$;
+
+create or replace function public._name(uid uuid) returns text
+language sql stable security definer set search_path = public as $$
+  select coalesce(nullif(u.raw_user_meta_data->>'name', ''), nullif(split_part(u.email, '@', 1), ''), 'colleague')
+    from auth.users u where u.id = uid
+$$;
 
 -- Reviewer password check. Returns NULL when the proof is correct, otherwise
 -- an error object. (It RETURNS errors instead of raising them so that failed
@@ -115,9 +155,9 @@ begin
   return null;
 end $$;
 
--- ── Functions the web pages call ─────────────────────────────────────────
+-- ── Reviewer functions (anyone with the link + password; no account) ─────
 
--- Reviewer step 1: fetch the (public) salt so the browser can derive the key.
+-- Step 1: fetch the (public) salt so the browser can derive the key.
 create or replace function public.share_info(p_id uuid) returns jsonb
 language sql security definer set search_path = public stable as $$
   select coalesce(
@@ -127,7 +167,7 @@ language sql security definer set search_path = public stable as $$
     jsonb_build_object('ok', false, 'error', 'not_found'))
 $$;
 
--- Reviewer step 2: open the review (needs the password-derived proof).
+-- Step 2: open the review (needs the password-derived proof).
 create or replace function public.share_open(p_id uuid, p_auth text) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare err jsonb; r public.review_shares;
@@ -143,7 +183,7 @@ begin
                             'expires_at', r.expires_at, 'submitted_at', r.submitted_at);
 end $$;
 
--- Reviewer: save progress, or submit (p_submit = true).
+-- Save progress, or submit (p_submit = true).
 -- p_expected is the version the browser last saw; a mismatch means someone
 -- else saved in between, and the newest decisions are returned for merging.
 create or replace function public.share_save(
@@ -176,52 +216,175 @@ begin
                             'status', case when p_submit then 'submitted' else 'in_progress' end);
 end $$;
 
--- Owner: publish a new encrypted review.
-create or replace function public.share_create(
-  p_creator text, p_id uuid, p_salt text, p_iter int, p_auth text, p_payload text, p_days int
-) returns jsonb
+-- ── Team functions (signed-in colleagues only) ───────────────────────────
+
+-- Who am I? Used at sign-in to confirm the account is part of the team.
+create or replace function public.team_whoami() returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare uid uuid := public._member(); em text;
+begin
+  if uid is null then return jsonb_build_object('ok', false, 'error', 'denied'); end if;
+  select email into em from auth.users where id = uid;
+  return jsonb_build_object('ok', true, 'id', uid, 'name', public._name(uid), 'email', em,
+                            'admin', public._is_admin());
+end $$;
+
+-- Team members (admin only): list, add, remove, promote/demote.
+create or replace function public.team_members_list() returns jsonb
 language plpgsql security definer set search_path = public as $$
 begin
-  if not public._creator_ok(p_creator) then
-    return jsonb_build_object('ok', false, 'error', 'denied');
+  if public._member() is null then return jsonb_build_object('ok', false, 'error', 'denied'); end if;
+  if not public._is_admin() then return jsonb_build_object('ok', false, 'error', 'forbidden'); end if;
+  return jsonb_build_object('ok', true, 'members', coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'id', u.id, 'email', u.email, 'name', public._name(u.id),
+             'admin', exists (select 1 from public.team_admins a where a.user_id = u.id),
+             'disabled', (u.banned_until is not null and u.banned_until > now()),
+             'added_at', m.added_at, 'me', (u.id = auth.uid()))
+           order by lower(u.email))
+      from auth.users u
+      left join public.team_members m on m.user_id = u.id
+     where u.deleted_at is null
+       and (m.user_id is not null or exists (select 1 from public.team_admins a where a.user_id = u.id))), '[]'::jsonb));
+end $$;
+
+create or replace function public.team_member_add(p_email text, p_admin boolean default false) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare uid uuid := public._member(); target uuid;
+begin
+  if uid is null then return jsonb_build_object('ok', false, 'error', 'denied'); end if;
+  if not public._is_admin() then return jsonb_build_object('ok', false, 'error', 'forbidden'); end if;
+  select id into target from auth.users where lower(email) = lower(btrim(coalesce(p_email, ''))) and deleted_at is null;
+  if target is null then return jsonb_build_object('ok', false, 'error', 'no_account'); end if;
+  insert into public.team_members(user_id, added_by) values (target, public._name(uid)) on conflict (user_id) do nothing;
+  if coalesce(p_admin, false) then insert into public.team_admins(user_id) values (target) on conflict do nothing; end if;
+  return jsonb_build_object('ok', true, 'id', target);
+end $$;
+
+create or replace function public.team_member_remove(p_user uuid) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare uid uuid := public._member();
+begin
+  if uid is null then return jsonb_build_object('ok', false, 'error', 'denied'); end if;
+  if not public._is_admin() then return jsonb_build_object('ok', false, 'error', 'forbidden'); end if;
+  if p_user = uid then return jsonb_build_object('ok', false, 'error', 'bad_request'); end if;   -- never lock yourself out
+  delete from public.team_members where user_id = p_user;
+  delete from public.team_admins  where user_id = p_user;
+  return jsonb_build_object('ok', true);
+end $$;
+
+create or replace function public.team_member_admin(p_user uuid, p_admin boolean) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare uid uuid := public._member();
+begin
+  if uid is null then return jsonb_build_object('ok', false, 'error', 'denied'); end if;
+  if not public._is_admin() then return jsonb_build_object('ok', false, 'error', 'forbidden'); end if;
+  if not exists (select 1 from auth.users where id = p_user and deleted_at is null) then return jsonb_build_object('ok', false, 'error', 'not_found'); end if;
+  if coalesce(p_admin, false) then
+    insert into public.team_admins(user_id) values (p_user) on conflict do nothing;
+  else
+    if p_user = uid then return jsonb_build_object('ok', false, 'error', 'bad_request'); end if;   -- keep at least yourself as admin
+    insert into public.team_members(user_id, added_by) values (p_user, public._name(uid)) on conflict (user_id) do nothing;   -- stays a member
+    delete from public.team_admins where user_id = p_user;
   end if;
+  return jsonb_build_object('ok', true);
+end $$;
+
+-- The shared API key: any team member can read it, only admins can change it.
+create or replace function public.team_keys_get() returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare k public.team_keys;
+begin
+  if public._member() is null then return jsonb_build_object('ok', false, 'error', 'denied'); end if;
+  select * into k from public.team_keys where id = 'api';
+  if not found or (k.a is null and k.o is null) then
+    return jsonb_build_object('ok', true, 'keys', null);
+  end if;
+  return jsonb_build_object('ok', true, 'keys', jsonb_strip_nulls(jsonb_build_object('a', k.a, 'o', k.o)),
+                            'updated_at', k.updated_at, 'updated_by', k.updated_by);
+end $$;
+
+create or replace function public.team_keys_put(p_a text, p_o text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare uid uuid := public._member(); v_a text := nullif(btrim(coalesce(p_a, '')), ''); v_o text := nullif(btrim(coalesce(p_o, '')), '');
+begin
+  if uid is null then return jsonb_build_object('ok', false, 'error', 'denied'); end if;
+  if not public._is_admin() then return jsonb_build_object('ok', false, 'error', 'forbidden'); end if;
+  if v_a is null and v_o is null then return jsonb_build_object('ok', false, 'error', 'bad_request'); end if;
+  if length(coalesce(v_a, '')) > 500 or length(coalesce(v_o, '')) > 500 then
+    return jsonb_build_object('ok', false, 'error', 'too_large');
+  end if;
+  insert into public.team_keys(id, a, o, updated_by, updated_at) values ('api', v_a, v_o, public._name(uid), now())
+    on conflict (id) do update set a = excluded.a, o = excluded.o, updated_by = excluded.updated_by, updated_at = excluded.updated_at;
+  return jsonb_build_object('ok', true);
+end $$;
+
+create or replace function public.team_keys_clear() returns jsonb
+language plpgsql security definer set search_path = public as $$
+begin
+  if public._member() is null then return jsonb_build_object('ok', false, 'error', 'denied'); end if;
+  if not public._is_admin() then return jsonb_build_object('ok', false, 'error', 'forbidden'); end if;
+  delete from public.team_keys where id = 'api';
+  return jsonb_build_object('ok', true);
+end $$;
+
+-- Publish a new encrypted review (any team member).
+create or replace function public.share_create(
+  p_id uuid, p_salt text, p_iter int, p_auth text, p_payload text, p_days int,
+  p_title text, p_password text, p_issues int
+) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare uid uuid := public._member();
+begin
+  if uid is null then return jsonb_build_object('ok', false, 'error', 'denied'); end if;
   if length(coalesce(p_payload, '')) > 20000000 then
     return jsonb_build_object('ok', false, 'error', 'too_large');
   end if;
-  insert into public.review_shares(id, salt, kdf_iter, verifier, payload, expires_at)
+  if length(coalesce(p_password, '')) < 8 or length(p_password) > 300 then
+    return jsonb_build_object('ok', false, 'error', 'bad_request');
+  end if;
+  insert into public.review_shares(id, salt, kdf_iter, verifier, payload, expires_at,
+                                   created_by, created_by_name, title, password, issue_count)
   values (p_id, p_salt, greatest(coalesce(p_iter, 600000), 100000), public._sha256(p_auth), p_payload,
-          now() + make_interval(days => least(greatest(coalesce(p_days, 30), 1), 90)));
+          now() + make_interval(days => least(greatest(coalesce(p_days, 30), 1), 90)),
+          uid, public._name(uid), left(coalesce(p_title, ''), 200), p_password, greatest(coalesce(p_issues, 0), 0));
   return jsonb_build_object('ok', true, 'id', p_id);
 exception when unique_violation then
   return jsonb_build_object('ok', false, 'error', 'exists');
 end $$;
 
--- Owner: list all reviews and their status (no content is returned).
-create or replace function public.share_list(p_creator text) returns jsonb
+-- The team's shared list of reviews. Returns status, who shared it, layout progress and
+-- the review password (so any colleague can open the answers). Never returns the report.
+create or replace function public.share_list() returns jsonb
 language plpgsql security definer set search_path = public as $$
+declare uid uuid := public._member();
 begin
-  if not public._creator_ok(p_creator) then
-    return jsonb_build_object('ok', false, 'error', 'denied');
-  end if;
+  if uid is null then return jsonb_build_object('ok', false, 'error', 'denied'); end if;
   delete from public.review_shares where expires_at < now() - interval '14 days';
   return jsonb_build_object('ok', true, 'shares', coalesce((
     select jsonb_agg(jsonb_build_object(
              'id', id,
              'status', case when status <> 'revoked' and expires_at < now() then 'expired' else status end,
              'version', version, 'created_at', created_at, 'expires_at', expires_at,
-             'opened_at', opened_at, 'submitted_at', submitted_at)
+             'opened_at', opened_at, 'submitted_at', submitted_at,
+             'title', title, 'password', password, 'issues', issue_count,
+             'by', created_by_name, 'mine', (created_by is not distinct from uid), 'applied', applied)
            order by created_at desc)
       from public.review_shares), '[]'::jsonb));
 end $$;
 
--- Owner: revoke | reopen | extend | delete a review.
+-- revoke | reopen | extend | delete. Allowed for the person who shared it, or an admin.
 create or replace function public.share_manage(
-  p_creator text, p_id uuid, p_action text, p_days int default 30
+  p_id uuid, p_action text, p_days int default 30
 ) returns jsonb
 language plpgsql security definer set search_path = public as $$
+declare uid uuid := public._member(); r public.review_shares;
 begin
-  if not public._creator_ok(p_creator) then
-    return jsonb_build_object('ok', false, 'error', 'denied');
+  if uid is null then return jsonb_build_object('ok', false, 'error', 'denied'); end if;
+  select * into r from public.review_shares where id = p_id;
+  if not found then return jsonb_build_object('ok', false, 'error', 'not_found'); end if;
+  if not (r.created_by is not distinct from uid or public._is_admin()) then
+    return jsonb_build_object('ok', false, 'error', 'forbidden');
   end if;
   if    p_action = 'revoke' then
     update public.review_shares set status = 'revoked' where id = p_id;
@@ -242,68 +405,63 @@ begin
   return jsonb_build_object('ok', true);
 end $$;
 
--- Team: store / read / remove the shared (encrypted) API key.
--- p_creator is a token derived in the browser from the creator passphrase;
--- the passphrase itself never reaches this database.
-create or replace function public.team_put(p_creator text, p_blob text) returns jsonb
+-- Tick / untick "applied in layout" for one issue. Shared with the whole team.
+create or replace function public.share_applied(p_id uuid, p_issue text, p_done boolean) returns jsonb
 language plpgsql security definer set search_path = public as $$
-declare t timestamptz;
+declare uid uuid := public._member(); res jsonb;
 begin
-  if not public._creator_ok(p_creator) then
-    return jsonb_build_object('ok', false, 'error', 'denied');
+  if uid is null then return jsonb_build_object('ok', false, 'error', 'denied'); end if;
+  if length(coalesce(p_issue, '')) < 1 or length(p_issue) > 100 then
+    return jsonb_build_object('ok', false, 'error', 'bad_request');
   end if;
-  if length(coalesce(p_blob, '')) > 20000 then
-    return jsonb_build_object('ok', false, 'error', 'too_large');
-  end if;
-  insert into public.team_secrets(name, blob, updated_at) values ('api_keys', p_blob, now())
-    on conflict (name) do update set blob = excluded.blob, updated_at = excluded.updated_at
-    returning updated_at into t;
-  return jsonb_build_object('ok', true, 'updated_at', t);
-end $$;
-
-create or replace function public.team_get(p_creator text) returns jsonb
-language plpgsql security definer set search_path = public as $$
-declare r public.team_secrets;
-begin
-  if not public._creator_ok(p_creator) then
-    return jsonb_build_object('ok', false, 'error', 'denied');
-  end if;
-  select * into r from public.team_secrets where name = 'api_keys';
-  if not found then return jsonb_build_object('ok', true, 'blob', null); end if;
-  return jsonb_build_object('ok', true, 'blob', r.blob, 'updated_at', r.updated_at);
-end $$;
-
-create or replace function public.team_clear(p_creator text) returns jsonb
-language plpgsql security definer set search_path = public as $$
-begin
-  if not public._creator_ok(p_creator) then
-    return jsonb_build_object('ok', false, 'error', 'denied');
-  end if;
-  delete from public.team_secrets where name = 'api_keys';
-  return jsonb_build_object('ok', true);
+  update public.review_shares
+     set applied = case when p_done
+                        then applied || jsonb_build_object(p_issue, jsonb_build_object('by', public._name(uid), 'at', now()))
+                        else applied - p_issue end
+   where id = p_id and status <> 'revoked'
+   returning applied into res;
+  if not found then return jsonb_build_object('ok', false, 'error', 'not_found'); end if;
+  return jsonb_build_object('ok', true, 'applied', res);
 end $$;
 
 -- ── Permissions: only the public functions are callable, nothing else ────
-revoke all on function public._sha256(text)                        from public, anon, authenticated;
-revoke all on function public._creator_ok(text)                    from public, anon, authenticated;
-revoke all on function public._share_check(uuid, text)             from public, anon, authenticated;
-revoke all on function public.share_info(uuid)                     from public;
-revoke all on function public.share_open(uuid, text)               from public;
+-- (Supabase pre-grants new functions to anon + authenticated, so those are revoked explicitly.)
+revoke all on function public._sha256(text)                          from public, anon, authenticated;
+revoke all on function public._member()                              from public, anon, authenticated;
+revoke all on function public._is_admin()                            from public, anon, authenticated;
+revoke all on function public._name(uuid)                            from public, anon, authenticated;
+revoke all on function public._share_check(uuid, text)               from public, anon, authenticated;
+
+revoke all on function public.share_info(uuid)                       from public;
+revoke all on function public.share_open(uuid, text)                 from public;
 revoke all on function public.share_save(uuid, text, text, boolean, int) from public;
-revoke all on function public.share_create(text, uuid, text, int, text, text, int) from public;
-revoke all on function public.share_list(text)                     from public;
-revoke all on function public.share_manage(text, uuid, text, int)  from public;
+revoke all on function public.team_members_list()                    from public, anon, authenticated;
+revoke all on function public.team_member_add(text, boolean)         from public, anon, authenticated;
+revoke all on function public.team_member_remove(uuid)               from public, anon, authenticated;
+revoke all on function public.team_member_admin(uuid, boolean)       from public, anon, authenticated;
+revoke all on function public.team_whoami()                          from public, anon, authenticated;
+revoke all on function public.team_keys_get()                        from public, anon, authenticated;
+revoke all on function public.team_keys_put(text, text)              from public, anon, authenticated;
+revoke all on function public.team_keys_clear()                      from public, anon, authenticated;
+revoke all on function public.share_create(uuid, text, int, text, text, int, text, text, int) from public, anon, authenticated;
+revoke all on function public.share_list()                           from public, anon, authenticated;
+revoke all on function public.share_manage(uuid, text, int)          from public, anon, authenticated;
+revoke all on function public.share_applied(uuid, text, boolean)    from public, anon, authenticated;
 
-revoke all on function public.team_put(text, text)                 from public;
-revoke all on function public.team_get(text)                       from public;
-revoke all on function public.team_clear(text)                     from public;
-
-grant execute on function public.team_put(text, text)              to anon, authenticated;
-grant execute on function public.team_get(text)                    to anon, authenticated;
-grant execute on function public.team_clear(text)                  to anon, authenticated;
-grant execute on function public.share_info(uuid)                  to anon, authenticated;
-grant execute on function public.share_open(uuid, text)            to anon, authenticated;
+-- Reviewers (no account) may only use these three:
+grant execute on function public.share_info(uuid)                    to anon, authenticated;
+grant execute on function public.share_open(uuid, text)              to anon, authenticated;
 grant execute on function public.share_save(uuid, text, text, boolean, int) to anon, authenticated;
-grant execute on function public.share_create(text, uuid, text, int, text, text, int) to anon, authenticated;
-grant execute on function public.share_list(text)                  to anon, authenticated;
-grant execute on function public.share_manage(text, uuid, text, int) to anon, authenticated;
+-- Everything else needs a signed-in account:
+grant execute on function public.team_members_list()                 to authenticated;
+grant execute on function public.team_member_add(text, boolean)      to authenticated;
+grant execute on function public.team_member_remove(uuid)            to authenticated;
+grant execute on function public.team_member_admin(uuid, boolean)    to authenticated;
+grant execute on function public.team_whoami()                       to authenticated;
+grant execute on function public.team_keys_get()                     to authenticated;
+grant execute on function public.team_keys_put(text, text)           to authenticated;
+grant execute on function public.team_keys_clear()                   to authenticated;
+grant execute on function public.share_create(uuid, text, int, text, text, int, text, text, int) to authenticated;
+grant execute on function public.share_list()                        to authenticated;
+grant execute on function public.share_manage(uuid, text, int)       to authenticated;
+grant execute on function public.share_applied(uuid, text, boolean)  to authenticated;

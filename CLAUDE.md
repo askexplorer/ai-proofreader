@@ -1,12 +1,14 @@
 # Explorer AI Proofreader — Project Memory
 
 ## What this project is
-Single-file browser app for professional AI-powered proofreading. Powered by Anthropic Claude API (direct browser → API calls). No backend, no server — pure client-side HTML/JS/CSS.
+Single-file browser app for professional AI-powered proofreading. Powered by Anthropic Claude API (direct browser → API calls). The proofreading itself is pure client-side HTML/JS/CSS. Since v4.0.0 an optional **team workspace** (personal accounts, shared reviews, one shared API key) runs on the user's own Supabase project; without it the portal works exactly as a single-user tool.
+
+**Supabase project (Explorer-owned, org `askexplorer`):** ref `esslcpdxlhsxxeccfixy`, region ap-northeast-1. The schema is already applied there. The user must still create their own admin account (see below); I must NOT create accounts or admin grants in their live auth system (the permission checker blocks it, and it is the user's to do).
 
 **Live repo:** github.com/askexplorer/ai-proofreader (remote `askexplorer`; the old `origin` = shakkeer-cloud is retired)  
 **Live site:** https://askexplorer.github.io/ai-proofreader/ (GitHub Pages, serves `master`)  
 **Branch:** master  
-**Current version:** v3.6.0
+**Current version:** v4.0.0
 
 ---
 
@@ -14,10 +16,10 @@ Single-file browser app for professional AI-powered proofreading. Powered by Ant
 
 | File | Purpose | Lines |
 |---|---|---|
-| `index.html` | Main app — all logic, UI, CSS in one file (incl. creator-side sharing UI: Setup wizard, Share modal, Reviews tab) | ~4400 |
+| `index.html` | Main app — all logic, UI, CSS in one file (incl. team workspace UI: sign-in, Setup wizard, team members, Share modal, Reviews tab) | ~4700 |
 | `share.html` | Reviewer page — opened from a share link, password-gated, Agree / Disagree / Edit per issue, autosave, Submit | ~620 |
-| `share-core.js` | `window.SR` — E2E crypto + Supabase RPC client shared by index.html and share.html | ~240 |
-| `supabase/setup.sql` | One-time DB setup for the user's own Supabase project (locked tables + SECURITY DEFINER RPCs) | ~250 |
+| `share-core.js` | `window.SR` — E2E crypto, Supabase Auth sign-in/refresh, RPC client; shared by index.html and share.html | ~330 |
+| `supabase/setup.sql` | DB setup for the Supabase project (locked tables + SECURITY DEFINER RPCs; idempotent, re-run to upgrade) | ~430 |
 | `review.html` | Older review page (not actively maintained, do not touch) | ~1160 |
 
 **RULE: `index.html`, `share.html`, `share-core.js` and `supabase/setup.sql` are all in scope (the user explicitly allowed it). Leave `review.html` alone unless asked.**
@@ -185,38 +187,44 @@ docInfo = {
 
 ---
 
-## Review sharing (v3.5.0) — architecture and security model
+## Team workspace (v4.0.0) — accounts, shared reviews, shared API key
 
-Flow: creator presses **Share for review** on a report -> issues are encrypted in the browser -> link + password sent to translator/proofreader (in two separate messages) -> reviewer opens `share.html?s=<id>#c=<base64url {u,k}>`, enters name + password, decides on each issue (Agree / Disagree / Edit + comment), autosaves, presses **Submit** -> creator sees a badge on the **Reviews** tab, opens feedback, exports an apply-list (Word landscape / CSV) for layout and ticks items off.
+**Workflow it serves:** editors proofread with the *shared team API key* and share a report with an external translator (link + separate password, no account). The translator decides on each issue and submits. Any colleague (editor or designer) sees the answers in the shared **Reviews** list, exports an apply-list (Word/CSV) and ticks items off as applied in layout; the ticks are shared so everyone sees progress. The admin adds/removes colleagues from the portal.
 
-- **Zero-knowledge:** password -> PBKDF2-SHA256 (600k iterations, `KDF_ITER`) -> 64 bytes = AES-GCM key (32 B) + `proof` (32 B hex). The server only ever stores `sha256(proof)` and ciphertext (payload is gzipped via CompressionStream first). The password never leaves the browser.
-- **Database:** user's own Supabase project. Tables have RLS on with no policies and all rights revoked from `anon`/`authenticated`; everything goes through SECURITY DEFINER RPCs (`share_create, share_info, share_open, share_save, share_list, share_manage`) that RETURN an error jsonb instead of raising, so failed-attempt counters persist.
-- **Brute-force limits:** reviewer link locks 15 min after 8 wrong passwords (also for the correct password while locked); creator secret (hash in `app_config.creator_hash`) locks 10 min after 20 wrong tries. Expiry <= 90 days, expired rows purged after 14 days.
-- **Creator passphrase:** typed in Setup step 2, kept only in this browser's localStorage (`sr_creator`). It is shared by the whole team. It is **never sent to the server**: `SR.creatorToken()` derives a 256-bit token (PBKDF2, salt `.../creator/auth/v1`) that goes out as `p_creator`, and `SR.creatorSql()` registers sha256(token). A second, independent derivation (salt `.../creator/team/v1`) gives the AES key that encrypts team secrets, so Supabase can never derive it.
-- **Connection config** (Project URL + public anon/publishable key) travels inside the link fragment `#c=` (fragments are not sent to servers). Legacy JWT keys also get an `Authorization` header; `sb_publishable_` keys must not.
-- **Concurrency:** version-based optimistic locking in `share_save`; client merges (newest `at` per issue wins).
-- **localStorage keys (index.html):** `sr_sb_url, sr_sb_key, sr_creator, sr_shares, sr_verified, sr_s1_done, sr_applied_<shareId>, sr_team_a, sr_team_o` (the last two = `'1'` when that browser's Anthropic/OpenAI key came from the team). `srReady()` needs URL+key+creator and `sr_verified==='1'` (set by Save & test connection).
-- **Payload schema:** `{v:1, kind:'proofread', title, language, pages, wordCount, createdBy, createdAt, note, issues:[{id,type,severity,page,loc,context,original,corrected,explanation,source:{label,text}}]}`. `loc` and `source` are reserved for translation-check issues ("Ch 33 - para 7", source-language text).
-- **Decisions schema:** `{v:1, reviewer, reviewers[], items:{id:{d:'agree'|'disagree'|'edit', t, c, at}}, updatedAt}`.
-- **Tested** against a PGlite (real Postgres) stand-in for Supabase: 40/40 SQL tests (anon blocked on direct table access, lockouts, expiry, conflicts, reopen/revoke) plus full browser E2E (wizard, share, reviewer, submit, feedback, exports, withdraw).
+### People and access
+- **Colleagues** sign in with Supabase Auth (username + password, username -> `username@explorer.team`, or a full email). The admin creates the login in the Supabase dashboard (Authentication -> Users -> Add user, tick *Auto Confirm User*) and then **adds them as a team member in the portal** (Setup -> Team workspace -> Team members). Having a Supabase account is NOT enough: `_member()` requires a row in `team_members` or `team_admins`, so a stranger who signs up with the public key gets nothing even if "Allow new users to sign up" is left on (turning it off is still recommended; the wizard warns via `GET /auth/v1/settings` `disable_signup`).
+- **Admin**: row in `team_admins`. Can store/remove the team API key, add/remove/promote members, and manage every review. First admin is bootstrapped with SQL (`SR.adminSql(username)`, appended by the wizard's "Copy setup SQL").
+- **External translators**: no account. They use `share.html?s=<id>#c=<{u,k}>` + the review password. Reviewer RPCs are the only ones granted to `anon`.
+- **Disabling someone**: Remove in the portal, or Ban/delete in Supabase. `_member()` is evaluated on every RPC, so it takes effect immediately even while their token is valid; their next refresh/call shows the sign-in dialog and removes team-supplied keys from the browser.
 
-### Team access (v3.6.0): one shared API key, colleagues type nothing
-- **Admin** (Setup tab, "Team access" card): types the API key in the API card, presses *Save API key for the team* -> `SR.putTeamKeys()` encrypts `{v,a,o,by,at}` with the creator-derived AES key and stores it in `team_secrets` (RPCs `team_put / team_get / team_clear`, all gated by `_creator_ok`). Then *Create team link*.
-- **Team link** = `index.html#team=<base64url {v:1,u,k,c}>` (Supabase URL, public anon key, shared creator passphrase). The API key is NOT in the link when Supabase is ready. Fallback when Supabase is not set up: link carries `{a,o}` itself.
-- **Colleague:** opens the link -> `teamBoot()` strips the hash immediately, validates, shows a confirm modal (host + masked key; warns when it replaces an existing key) -> `teamJoin()` saves the connection, verifies it, then `teamPull()` fetches + decrypts the team key into `proof_api_key` / `proof_openai_key`.
-- **Sync:** `teamPull()` runs 2.5 s after load and every 3 min. It only overwrites/removes keys marked `sr_team_a/o`; a colleague's own typed key is never touched. Rotation propagates automatically; *Remove team key* deletes team-sourced keys on the next pull.
-- **Honest limits:** the key still lives in each colleague's browser (devtools can read it), so use a dedicated Console key with a monthly spend limit and rotate it when someone leaves. A claude.ai subscription cannot be used as an API key. The creator lock (20 wrong tokens -> 10 min) is team-wide, and the anon key is public, so an outsider could lock the team out of creator actions for 10 min (key stays cached in each browser). Upgrade path if keys must never reach browsers: a Supabase Edge Function / Cloudflare Worker proxy holding the key.
-- **Upgrading an existing database:** re-run `supabase/setup.sql` (idempotent) to add `team_secrets` + RPCs.
-- Tests (scratchpad, not in repo): SQL 40/40, core 38/38, team 25/25 against PGlite; browser E2E of admin save, link, join, rotate, remove, own-key, bad link, cancel, fallback.
+### Security model
+- Reports are encrypted in the browser (password -> PBKDF2-SHA256 600k -> 32 B AES-GCM key + 32 B proof; gzip first). The server stores only ciphertext and `sha256(proof)`; reviewer password lockout: 8 wrong -> 15 min.
+- Team data (review titles, **review passwords**, the **team API key**) is stored server-side in plaintext and returned only to signed-in members through SECURITY DEFINER RPCs. So the Supabase project owner/admin could read them; outsiders cannot. (Earlier v3.x designs encrypted these under a shared passphrase; v4 replaced that with real accounts.)
+- Tables `team_admins, team_members, team_keys, review_shares` have RLS on, no policies, and all rights revoked from `anon`/`authenticated`. Functions are revoked from `public, anon, authenticated` and then granted explicitly (Supabase pre-grants new functions to anon/authenticated, so `revoke ... from public` alone is NOT enough; the test stand-in mimics those default grants).
+- Supabase security advisors: the `anon_/authenticated_security_definer_function_executable` WARNs and `rls_enabled_no_policy` INFOs are intentional.
+- Session: access token + refresh token in `localStorage['sr_session']`, refreshed automatically (`SR.arpc`). Auth errors map to friendly codes (`bad_login, banned, signed_out, denied, forbidden, rate, not_confirmed, no_account`).
+
+### RPCs (all `security definer`, `search_path = public`)
+Reviewer (anon + authenticated): `share_info, share_open, share_save`. Team members: `team_whoami, team_keys_get, share_create, share_list, share_manage (creator or admin), share_applied`. Admin only: `team_keys_put, team_keys_clear, team_members_list, team_member_add, team_member_remove, team_member_admin`. Helpers (not callable): `_sha256, _member, _is_admin, _name, _share_check`.
+
+### Client structure (index.html, section "Team workspace")
+`SRK` keys (`sr_sb_url, sr_sb_key, sr_s1_done, sr_admin_user, sr_last_user, sr_seen`), `SRU` (signed-in user), `SRL` (shared review list), `srReady()`, `srSyncIdentity()`, `srAuthLost(e)`, `srOpenLogin/srDoLogin/srSignOut`, setup wizard (`srSaveAndTest, srPaintChecks, srCopySql`), share modal (`openShareModal, srCreateShare`), Reviews (`renderReviews, srRefresh, srManage`), feedback viewer + exports (`srOpenFeedback, srToggleApplied` = shared via `share_applied`), team (`teamPull` keeps a colleague's key in step with the team key; keys that came from the team are marked `sr_team_a` / `sr_team_o`, so a colleague's own typed key is never touched; `teamDrop` removes only team-supplied keys on sign-out), members UI (`teamLoadMembers, teamAddMember, teamRemoveMember, teamToggleAdmin`), workspace link `#team=<b64 {v:2,u,k}>` (public info only: URL + publishable key; no secrets) handled by `teamBoot/teamJoin`.
+- Payload schema: `{v:1, kind:'proofread', title, language, pages, wordCount, createdBy, createdAt, note, issues:[{id,type,severity,page,loc,context,original,corrected,explanation,source:{label,text}}]}`. `loc`/`source` are reserved for translation-check issues. Issue ids can be numbers; the server returns applied keys as strings, so compare with `String(i.id)`.
+- Decisions schema: `{v:1, reviewer, reviewers[], items:{id:{d:'agree'|'disagree'|'edit', t, c, at}}, updatedAt}`.
+
+### Testing
+Scratchpad (not in repo): a PGlite-based stand-in for Supabase (`pg_shim.mjs`: PostgREST RPC + Auth token/refresh/ban + default grants) and `acct_test.mjs` (156 checks: anon/stranger/member/admin rules, instant lockout, token refresh, reviewer flow, member management). Real-project checks done: function/table privileges via SQL, anonymous calls refused (401), sign-in error shape. NOT yet done on the real project: signing in with a real account (needs the user's admin account).
 
 ### Known gotchas
-- Global `label {text-transform:uppercase}` in index.html leaks into new UI; use `.sr-field > label.sr-opt`-style overrides.
-- `.nav-badge[hidden]` needs an explicit `display:none` rule.
+- Global `label {text-transform:uppercase}` in index.html leaks into new UI; override explicitly (`.sr-opt`).
+- `.nav-badge[hidden]` and `#team-card[hidden]` need explicit `display:none` rules.
 - Navigating a tab to the identical URL does not reload; use `location.reload()` when testing.
 - Write tool turns `\uXXXX` escapes into literal characters (breaks regex literals for U+2028); use constants.
+- Browser-pane screenshots can lag one step behind; confirm state with DOM reads.
+- Upgrading a database: re-run `supabase/setup.sql` (idempotent; it drops pre-v4 passphrase functions/tables).
 
 ### Still to build (agreed scope)
-Translation check: optional source-document upload (DOCX/RTF/IDML/TXT; the user's real source `.doc` is actually RTF), chapter-aligned compare for missing/added text, translation quality score (Critical 10 / Major 5 / Minor 1 / Query 0; score = 100 - 4 x penalty per 1000 words; Pass >= 90 and 0 Critical, Revise 75-89 or any Critical, Fail < 75), a "Translation check" report tab, and Word-vs-Word sharing to the translator before layout.
+Translation check: optional source-document upload (DOCX/RTF/IDML/TXT; the user's real source `.doc` is actually RTF), chapter-aligned compare for missing/added text, translation quality score (Critical 10 / Major 5 / Minor 1 / Query 0; score = 100 - 4 x penalty per 1000 words; Pass >= 90 and 0 Critical, Revise 75-89 or any Critical, Fail < 75), a "Translation check" report tab, and Word-vs-Word sharing to the translator before layout. Optional hardening later: a server-side proxy so the API key never reaches browsers.
 
 ---
 
