@@ -8,7 +8,7 @@ Single-file browser app for professional AI-powered proofreading. Powered by Ant
 **Live repo:** github.com/askexplorer/ai-proofreader (remote `askexplorer`; the old `origin` = shakkeer-cloud is retired)  
 **Live site:** https://askexplorer.github.io/ai-proofreader/ (GitHub Pages, serves `master`)  
 **Branch:** master  
-**Current version:** v4.1.0
+**Current version:** v4.1.1
 
 ---
 
@@ -223,6 +223,7 @@ Scratchpad (not in repo): a PGlite-based stand-in for Supabase (`pg_shim.mjs`: P
 - Navigating a tab to the identical URL does not reload; use `location.reload()` when testing.
 - Write tool turns `\uXXXX` escapes into literal characters (breaks regex literals for U+2028); use constants.
 - Browser-pane screenshots can lag one step behind; confirm state with DOM reads.
+- "Failed to fetch" / "Load failed" means the browser got NO answer from the AI provider (VPN/firewall/ad-blocker/DNS/offline), not a bad key or document. `callApiWithRetry` and `callOpenAI` retry brief drops 3 times (6/12/18 s) then throw `NETWORK: Could not reach <provider> (...)`; `netErrorHelpHtml` shows the steps; **Setup -> Test connection** (`apiProbe`, one 1-token request per saved key) tells connection, key and credit problems apart.
 - Upgrading a database: re-run `supabase/setup.sql` (idempotent; it drops pre-v4 passphrase functions/tables).
 
 ## Translation check (v4.1.0)

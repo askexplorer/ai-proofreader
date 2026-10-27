@@ -798,7 +798,8 @@
     <input type="text" id="user-name-input" placeholder="e.g. Shakkeer" autocomplete="off" style="margin-top:6px">
     <p class="help">Shown as "Initiated by" on every report and review request.</p>
     <br>
-    <button class="btn btn-primary" onclick="saveSetup()">Save</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" onclick="saveSetup()">Save</button><button class="btn btn-secondary" id="api-test-btn" onclick="testApiConnection()" title="Sends one tiny request to check that your browser can reach the AI service and that the key works">Test connection</button></div>
+    <div id="api-test-out"></div>
   </div>
   <div class="card" id="team-card">
     <h3 style="margin-bottom:2px">👥 Team workspace <span style="font-weight:400;font-size:12px;color:var(--muted)">(shared reviews &amp; one API key)</span></h3>
@@ -910,7 +911,7 @@
 <footer class="app-footer">
   <span>© 2026 Explorer Publishing &amp; Distribution LLC · All rights reserved</span>
   <span id="cost-footer" style="font-size:10px;color:var(--muted);opacity:.65"></span>
-  <span class="app-footer-version">v4.1.0</span>
+  <span class="app-footer-version">v4.1.1</span>
 </footer>
 
 <div class="toast" id="toast"></div>
@@ -2438,8 +2439,9 @@ function isPolicyError(msg) {
 
 async function callApiWithRetry(payload, apiKey, ci, total, showUI) {
   const MAX_RETRIES=3;
+  let netFails=0, skipRateWait=false;
   for (let attempt=0; attempt<MAX_RETRIES; attempt++) {
-    if (attempt>0) {
+    if (attempt>0 && !skipRateWait) {
       await sleepWithCountdown(RATE_LIMIT_WAIT_S, s=>{
         if (showUI) {
           document.getElementById('loading-title').textContent=`Chunk ${ci} of ${total} — rate limited`;
@@ -2447,13 +2449,30 @@ async function callApiWithRetry(payload, apiKey, ci, total, showUI) {
         }
       });
     }
-    const res=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-api-key':apiKey,
-               'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true',
-               'anthropic-beta':'prompt-caching-2024-07-31'},
-      body:JSON.stringify(payload),
-    });
+    skipRateWait=false;
+    let res;
+    try {
+      res=await fetch('https://api.anthropic.com/v1/messages',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','x-api-key':apiKey,
+                 'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true',
+                 'anthropic-beta':'prompt-caching-2024-07-31'},
+        body:JSON.stringify(payload),
+      });
+    } catch (netErr) {
+      // The request never got an answer: offline, VPN/firewall, blocked by an extension, DNS ... Retry a few times first.
+      if (netFails<3) {
+        netFails++; attempt--; skipRateWait=true;
+        await sleepWithCountdown(6*netFails, s=>{
+          if (showUI) {
+            document.getElementById('loading-title').textContent=`Chunk ${ci} of ${total} — connection problem`;
+            document.getElementById('loading-sub').textContent=`Could not reach Anthropic. Retrying in ${s}s… (${netFails} of 3)`;
+          }
+        });
+        continue;
+      }
+      throw new Error('NETWORK: Could not reach Anthropic ('+(netErr.message||'Failed to fetch')+')');
+    }
     if (res.ok) return res;
     const e=await res.json().catch(()=>({}));
     const msg=e.error?.message||`API error ${res.status}`;
@@ -2470,8 +2489,9 @@ async function callApiWithRetry(payload, apiKey, ci, total, showUI) {
 async function callOpenAI(payload, apiKey, ci, total, showUI) {
   const MAX_RETRIES = 3;
   const WAIT_S = 30; // OpenAI rate limit wait (shorter than Anthropic)
+  let netFails = 0, skipRateWait = false;
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-    if (attempt > 0) {
+    if (attempt > 0 && !skipRateWait) {
       await sleepWithCountdown(WAIT_S, s => {
         if (showUI) {
           document.getElementById('loading-title').textContent = `Chunk ${ci} of ${total} — rate limited`;
@@ -2479,14 +2499,30 @@ async function callOpenAI(payload, apiKey, ci, total, showUI) {
         }
       });
     }
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(payload),
-    });
+    skipRateWait = false;
+    let res;
+    try {
+      res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(payload),
+      });
+    } catch (netErr) {
+      if (netFails < 3) {
+        netFails++; attempt--; skipRateWait = true;
+        await sleepWithCountdown(6 * netFails, s => {
+          if (showUI) {
+            document.getElementById('loading-title').textContent = `Chunk ${ci} of ${total} — connection problem`;
+            document.getElementById('loading-sub').textContent = `Could not reach OpenAI. Retrying in ${s}s… (${netFails} of 3)`;
+          }
+        });
+        continue;
+      }
+      throw new Error('NETWORK: Could not reach OpenAI (' + (netErr.message || 'Failed to fetch') + ')');
+    }
     if (res.ok) return res;
     const e = await res.json().catch(() => ({}));
     const msg = e.error?.message || `OpenAI API error ${res.status}`;
@@ -2906,12 +2942,15 @@ Return ONLY valid JSON (no markdown, no extra text):
           const isJsonErr   = msg.toLowerCase().includes('json') || msg.toLowerCase().includes('parse') ||
                               msg.toLowerCase().includes('incomplete');
           const isPolicyErr = msg.startsWith('POLICY_ERROR:') || isPolicyError(msg);
+          const isNetErr = isNetworkError(msg);
           const docName = docInfo.filename || 'this document';
           const wc = docInfo.wordCount ? `${docInfo.wordCount.toLocaleString()}-word ` : '';
           showApiError(
             `Proofread failed — no results saved`,
             `Zero chunks completed on the ${wc}<strong>${esc(docName)}</strong> run.<br><br>`+
-            (isPolicyErr
+            (isNetErr
+              ? netErrorHelpHtml(msg)
+              : isPolicyErr
               ? `<strong>Cause:</strong> Anthropic's content safety filter flagged the document content. This is a <strong>false positive</strong> — it commonly occurs with Bengali, Arabic, and other non-Latin scripts.<br><br>`+
                 `<strong>Fix:</strong><br>`+
                 `• Switch to <strong>Sonnet 4.6</strong> — has a more accurate safety classifier<br>`+
@@ -3720,6 +3759,47 @@ function toast(msg,type,ms) {
   const el=document.getElementById('toast'); el.textContent=msg;
   el.style.borderColor=type==='err'?'#ef4444':type==='warn'?'#f97316':'var(--accent)';
   el.classList.add('show'); clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),ms||4000);
+}
+// ── Connection problems ───────────────────────────────────────────────
+const isNetworkError = (msg) => /^NETWORK:|failed to fetch|networkerror|load failed|network request failed|network error/i.test(msg || '');
+function netErrorHelpHtml(msg) {
+  const who = /openai/i.test(msg) ? 'OpenAI' : 'Anthropic', host = who === 'OpenAI' ? 'api.openai.com' : 'api.anthropic.com';
+  return '<strong>Your browser could not reach ' + who + '</strong> (' + host + '). The request got no answer at all, so this is a <strong>connection problem</strong>, not a problem with your document, your API key or the model.<br><br>' +
+    '<strong>Try, in this order:</strong><br>' +
+    '1. Check you are online. If you use a VPN, proxy or office firewall, try without it, or ask IT to allow <em>' + host + '</em>.<br>' +
+    '2. Pause ad-blockers and privacy extensions for this site (or open the portal in a private window).<br>' +
+    '3. Try another network (for example a phone hotspot) or another browser.<br>' +
+    '4. Open <strong>Setup &rarr; Test connection</strong> for a precise result.<br><br>' +
+    '<span style="color:var(--muted)">Technical detail: ' + esc(String(msg).replace(/^NETWORK:\s*/, '')) + '</span>';
+}
+// One tiny request (1 token, a fraction of a cent) through the same path the real runs use
+async function apiProbe(which, key) {
+  const name = which === 'openai' ? 'OpenAI' : 'Anthropic', host = which === 'openai' ? 'api.openai.com' : 'api.anthropic.com';
+  try {
+    const res = which === 'openai'
+      ? await fetch('https://api.openai.com/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key }, body: JSON.stringify({ model: 'gpt-4o-mini', max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }) })
+      : await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' }, body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }) });
+    if (res.ok) return { ok: true, text: name + ': connected, and the key is accepted.' };
+    const e = await res.json().catch(() => ({})), msg = (e.error && e.error.message) || ('HTTP ' + res.status);
+    if (res.status === 401 || /invalid.*(api|key)|authentication/i.test(msg)) return { ok: false, text: name + ': reachable, but the key was rejected. Re-copy it from the ' + name + ' console and save it again.' };
+    if (res.status === 402 || /credit|billing|quota/i.test(msg)) return { ok: false, text: name + ': reachable and the key is valid, but the account has no credit left (' + msg + ').' };
+    if (res.status === 429) return { ok: true, text: name + ': reachable and the key is valid, but it is rate limited right now. Wait a minute and try again.' };
+    if (res.status === 403) return { ok: false, text: name + ': reachable, but access was denied (' + msg + '). The account or region may not be allowed.' };
+    return { ok: false, text: name + ': reachable, but it answered: ' + msg };
+  } catch (e) {
+    return { ok: false, text: name + ': this browser could not reach ' + host + ' (' + (e.message || 'Failed to fetch') + '). Check your internet, VPN or firewall, and pause ad-blockers for this site.' };
+  }
+}
+async function testApiConnection() {
+  const out = document.getElementById('api-test-out'), btn = document.getElementById('api-test-btn');
+  const a = ((document.getElementById('api-key-input').value || localStorage.getItem('proof_api_key') || '')).trim(), o = ((document.getElementById('openai-key-input').value || localStorage.getItem('proof_openai_key') || '')).trim();
+  if (!a && !o) { out.innerHTML = '<span style="color:#f97316">Add an API key first.</span>'; return; }
+  btn.disabled = true; btn.textContent = 'Testing...'; out.innerHTML = '';
+  const rows = [];
+  if (a) rows.push(await apiProbe('anthropic', a));
+  if (o) rows.push(await apiProbe('openai', o));
+  out.innerHTML = rows.map((r) => '<div class="sr-check ' + (r.ok ? 'ok' : 'bad') + '" style="margin-top:6px"><span>' + (r.ok ? '&#10003;' : '&#10007;') + '</span><span>' + esc(r.text) + '</span></div>').join('');
+  btn.disabled = false; btn.textContent = 'Test connection';
 }
 function saveSetup() {
   const k=document.getElementById('api-key-input').value.trim();
@@ -5087,7 +5167,8 @@ function tcFinalize() {
 }
 function tcShowError(e) {
   const msg = (e && e.message) || String(e);
-  if (/credit|billing|402/i.test(msg)) showApiError('No API credits', 'Your API key has run out of credits.<br><br>Add credits in your provider console, then press <strong>Continue</strong> on the Translation tab.');
+  if (isNetworkError(msg)) showApiError('Could not reach the AI service', netErrorHelpHtml(msg) + (TC_RUN && !TC_RUN.state.finished ? '<br><br>The parts already checked are kept. Press <strong>Continue</strong> on the Translation tab when the connection is back.' : ''));
+  else if (/credit|billing|402/i.test(msg)) showApiError('No API credits', 'Your API key has run out of credits.<br><br>Add credits in your provider console, then press <strong>Continue</strong> on the Translation tab.');
   else if (/invalid.*(api|key)|authentication|401/i.test(msg)) showApiError('Invalid API key', 'The API key was rejected. Check it in Setup.');
   else showApiError('The translation check stopped', 'The run stopped with this message:<br><br><em>' + esc(msg) + '</em><br><br>' + (TC_RUN && !TC_RUN.state.finished ? 'The parts already checked are kept. Press <strong>Continue</strong> on the Translation tab to resume.' : ''));
 }
