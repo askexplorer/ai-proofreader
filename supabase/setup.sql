@@ -37,12 +37,22 @@ create table if not exists public.review_shares (
   submitted_at    timestamptz
 );
 
+-- The team's shared API key. Encrypted in the browser with a key derived from
+-- the creator passphrase, so this database only ever holds scrambled text.
+create table if not exists public.team_secrets (
+  name       text primary key,
+  blob       text not null,                            -- ENCRYPTED
+  updated_at timestamptz not null default now()
+);
+
 -- Lock the tables completely. No policies on purpose = deny everything;
 -- only the SECURITY DEFINER functions below can touch the data.
 alter table public.app_config    enable row level security;
 alter table public.review_shares enable row level security;
+alter table public.team_secrets  enable row level security;
 revoke all on table public.app_config    from anon, authenticated;
 revoke all on table public.review_shares from anon, authenticated;
+revoke all on table public.team_secrets  from anon, authenticated;
 
 -- ── Internal helpers (not callable from outside) ─────────────────────────
 create or replace function public._sha256(t text) returns text
@@ -232,6 +242,47 @@ begin
   return jsonb_build_object('ok', true);
 end $$;
 
+-- Team: store / read / remove the shared (encrypted) API key.
+-- p_creator is a token derived in the browser from the creator passphrase;
+-- the passphrase itself never reaches this database.
+create or replace function public.team_put(p_creator text, p_blob text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare t timestamptz;
+begin
+  if not public._creator_ok(p_creator) then
+    return jsonb_build_object('ok', false, 'error', 'denied');
+  end if;
+  if length(coalesce(p_blob, '')) > 20000 then
+    return jsonb_build_object('ok', false, 'error', 'too_large');
+  end if;
+  insert into public.team_secrets(name, blob, updated_at) values ('api_keys', p_blob, now())
+    on conflict (name) do update set blob = excluded.blob, updated_at = excluded.updated_at
+    returning updated_at into t;
+  return jsonb_build_object('ok', true, 'updated_at', t);
+end $$;
+
+create or replace function public.team_get(p_creator text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare r public.team_secrets;
+begin
+  if not public._creator_ok(p_creator) then
+    return jsonb_build_object('ok', false, 'error', 'denied');
+  end if;
+  select * into r from public.team_secrets where name = 'api_keys';
+  if not found then return jsonb_build_object('ok', true, 'blob', null); end if;
+  return jsonb_build_object('ok', true, 'blob', r.blob, 'updated_at', r.updated_at);
+end $$;
+
+create or replace function public.team_clear(p_creator text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public._creator_ok(p_creator) then
+    return jsonb_build_object('ok', false, 'error', 'denied');
+  end if;
+  delete from public.team_secrets where name = 'api_keys';
+  return jsonb_build_object('ok', true);
+end $$;
+
 -- ── Permissions: only the public functions are callable, nothing else ────
 revoke all on function public._sha256(text)                        from public, anon, authenticated;
 revoke all on function public._creator_ok(text)                    from public, anon, authenticated;
@@ -243,6 +294,13 @@ revoke all on function public.share_create(text, uuid, text, int, text, text, in
 revoke all on function public.share_list(text)                     from public;
 revoke all on function public.share_manage(text, uuid, text, int)  from public;
 
+revoke all on function public.team_put(text, text)                 from public;
+revoke all on function public.team_get(text)                       from public;
+revoke all on function public.team_clear(text)                     from public;
+
+grant execute on function public.team_put(text, text)              to anon, authenticated;
+grant execute on function public.team_get(text)                    to anon, authenticated;
+grant execute on function public.team_clear(text)                  to anon, authenticated;
 grant execute on function public.share_info(uuid)                  to anon, authenticated;
 grant execute on function public.share_open(uuid, text)            to anon, authenticated;
 grant execute on function public.share_save(uuid, text, text, boolean, int) to anon, authenticated;

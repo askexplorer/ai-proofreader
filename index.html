@@ -728,6 +728,17 @@
       </div>
     </div>
   </div>
+  <div class="card" id="team-card">
+    <h3 style="margin-bottom:2px">👥 Team access <span style="font-weight:400;font-size:12px;color:var(--muted)">(colleagues type nothing)</span></h3>
+    <p class="sr-intro">Store <strong>one API key for the whole team</strong>. It is encrypted in your browser and kept in your Supabase project, so Supabase cannot read it. Then create a <strong>team link</strong>: a colleague who opens it is ready to proofread in one click, with no key and no passphrase to type. If you change the key here later, everyone picks up the new one automatically.</p>
+    <div id="team-status" class="sr-hint" style="margin:0 0 10px"></div>
+    <div class="row">
+      <button class="btn btn-primary btn-sm" onclick="teamSaveKeys()">Save API key for the team</button>
+      <button class="btn btn-secondary btn-sm" onclick="teamRemoveKeys()">Remove team key</button>
+      <button class="btn btn-secondary btn-sm" onclick="teamCreateLink()">Create team link</button>
+    </div>
+    <div id="team-out"></div>
+  </div>
   <div class="card" style="border-color:rgba(99,102,241,.3)">
     <h3>ℹ️ About</h3>
     <p class="help" style="font-size:12px">
@@ -763,11 +774,14 @@
 <div class="modal-overlay" id="fb-modal">
   <div class="modal-box wide" id="fb-box"></div>
 </div>
+<div class="modal-overlay" id="team-modal">
+  <div class="modal-box mid" id="team-box"></div>
+</div>
 
 <footer class="app-footer">
   <span>© 2026 Explorer Publishing &amp; Distribution LLC · All rights reserved</span>
   <span id="cost-footer" style="font-size:10px;color:var(--muted);opacity:.65"></span>
-  <span class="app-footer-version">v3.5.0</span>
+  <span class="app-footer-version">v3.6.0</span>
 </footer>
 
 <div class="toast" id="toast"></div>
@@ -949,7 +963,7 @@ function showTab(name) {
     document.querySelectorAll('nav button')[i].classList.toggle('active', t===name);
   });
   if (name === 'history') renderHistory();
-  if (name === 'setup')   { renderCostTracker(); renderShareSetup(); }
+  if (name === 'setup')   { renderCostTracker(); renderShareSetup(); teamRenderCard(); }
   if (name === 'reviews') { renderReviews(); srRefresh(false); }
 }
 
@@ -4388,9 +4402,149 @@ async function srExportWord(kind) {
   toast('Apply-list downloaded');
 }
 
+// ── Team link (one-click setup for colleagues) ─────────────────────────
+// The link carries the shared keys in the URL fragment (#team=...). Browsers never send
+// the fragment to a server, and it is removed from the address bar as soon as it is read.
+let TEAM_PENDING = null;
+const teamEnc = (o) => { const b = new TextEncoder().encode(JSON.stringify(o)); let s = ''; b.forEach((c) => { s += String.fromCharCode(c); }); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
+const teamDec = (t) => { const s = atob(t.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((t.length + 3) % 4)); const b = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) b[i] = s.charCodeAt(i); return JSON.parse(new TextDecoder().decode(b)); };
+// Admin: store / replace / remove the shared key (encrypted in the browser, kept in Supabase)
+let TEAM_ST = { loaded: false, stored: false, at: null, a: false, o: false, err: '' };
+const TEAM_MARK = { a: 'sr_team_a', o: 'sr_team_o' };     // '1' = this browser's key came from the team
+function teamPaint() {
+  const el = $sr('team-status'); if (!el) return;
+  const ok = (t) => '<span style="color:#10b981">&#10003;</span> ' + t, off = (t) => '<span style="opacity:.75">&#9675; ' + t + '</span>', bad = (t) => '<span style="color:#f97316">&#10007; ' + t + '</span>';
+  if (!srReady()) { el.innerHTML = off('Review sharing is not set up yet. Finish the 4 steps above first: the team key is stored in the same Supabase project.'); return; }
+  if (TEAM_ST.err) { el.innerHTML = bad(esc(TEAM_ST.err)); return; }
+  if (!TEAM_ST.loaded) { el.innerHTML = off('Checking the team key...'); return; }
+  el.innerHTML = TEAM_ST.stored
+    ? ok('Team key stored (' + [TEAM_ST.a ? 'Anthropic' : '', TEAM_ST.o ? 'OpenAI' : ''].filter(Boolean).join(' + ') + '), updated ' + esc(srDate(TEAM_ST.at, true)) + '.')
+    : off('No team key stored yet. Type your API key in the card above, then press &ldquo;Save API key for the team&rdquo;.');
+}
+async function teamRenderCard() {
+  teamPaint();
+  if (!srReady()) return;
+  try {
+    const got = await SR.getTeamKeys(srCfg(), srSecret());
+    TEAM_ST = { loaded: true, stored: !!got, at: got && got.updated_at, a: !!(got && got.keys.a), o: !!(got && got.keys.o), err: '' };
+  } catch (e) {
+    TEAM_ST = { loaded: true, stored: false, at: null, a: false, o: false, err: e.code === 'setup_missing' ? 'Team keys need the updated setup SQL. Open step 3 above, press Copy setup SQL and Run it again in Supabase (it is safe to re-run).' : SR.friendly(e) };
+  }
+  teamPaint();
+}
+async function teamSaveKeys() {
+  if (!srReady()) { toast('Finish Review sharing setup first (steps 1 to 4 above).', 'warn'); return; }
+  const a = ($sr('api-key-input').value || srGet('proof_api_key') || '').trim(), o = ($sr('openai-key-input').value || srGet('proof_openai_key') || '').trim();
+  if (!a && !o) { toast('Type your API key in the card above first.', 'warn'); return; }
+  if (TEAM_ST.stored && !confirm('Replace the team key? Colleagues switch to the new key automatically within a few minutes.')) return;
+  try {
+    const keys = { v: 1, by: srGet('proof_user_name') || '', at: new Date().toISOString() }; if (a) keys.a = a; if (o) keys.o = o;
+    await SR.putTeamKeys(srCfg(), srSecret(), keys);
+    if (a) srSet('proof_api_key', a); if (o) srSet('proof_openai_key', o);
+    toast('Team key saved. It is encrypted before it leaves this browser.');
+  } catch (e) { toast(SR.friendly(e), 'err'); }
+  teamRenderCard();
+}
+async function teamRemoveKeys() {
+  if (!srReady()) { toast('Review sharing is not set up yet.', 'warn'); return; }
+  if (!confirm('Remove the team key? Colleagues lose access on their next refresh. For full safety also delete the key in the Anthropic Console.')) return;
+  try { await SR.clearTeamKeys(srCfg(), srSecret()); toast('Team key removed.'); } catch (e) { toast(SR.friendly(e), 'err'); }
+  teamRenderCard();
+}
+
+// Everyone: keep this browser's key in step with the team key (only keys that came from the team are touched)
+async function teamPull(announce) {
+  if (!srReady()) return;
+  let got;
+  try { got = await SR.getTeamKeys(srCfg(), srSecret()); } catch (e) { if (announce) toast(SR.friendly(e), 'warn'); return; }
+  const want = (got && got.keys) || {};
+  const lsKey = { a: 'proof_api_key', o: 'proof_openai_key' };
+  let changed = false, removed = false;
+  ['a', 'o'].forEach((f) => {
+    const cur = srGet(lsKey[f]), fromTeam = srGet(TEAM_MARK[f]) === '1', v = want[f];
+    if (v) {
+      if (!cur || (fromTeam && cur !== v)) { srSet(lsKey[f], v); srSet(TEAM_MARK[f], '1'); changed = true; }
+    } else if (fromTeam) { srDel(lsKey[f]); srDel(TEAM_MARK[f]); removed = true; }
+  });
+  if (changed || removed) { $sr('api-key-input').value = srGet('proof_api_key') || ''; $sr('openai-key-input').value = srGet('proof_openai_key') || ''; }
+  if (removed) toast('The team API key was removed by the admin. Ask them for access.', 'warn', 8000);
+  else if (changed) toast('Team API key ready.');
+}
+function teamCreateLink() {
+  const ready = srReady(), cfg = srCfg(), a = (srGet('proof_api_key') || '').trim(), o = (srGet('proof_openai_key') || '').trim();
+  if (ready && !TEAM_ST.stored) { toast('Press "Save API key for the team" first, so colleagues get a key.', 'warn'); return; }
+  const p = { v: 1 };
+  if (ready) { p.u = cfg.url; p.k = cfg.key; p.c = srSecret(); }          // the key itself is fetched (encrypted) from Supabase
+  else if (a || o) { if (a) p.a = a; if (o) p.o = o; }                    // no Supabase: the key travels inside the link
+  else { toast('Save an API key first (card above), then create the link.', 'warn'); return; }
+  const link = location.href.split('#')[0].split('?')[0] + '#team=' + teamEnc(p);
+  const local = location.protocol === 'file:';
+  $sr('team-out').innerHTML =
+    (local ? '<div class="sr-check bad" style="margin-top:12px"><span>!</span><span><b>You are running the portal from a local file.</b><small>This link only works on this computer. Open the portal from its web address to create a link for your team.</small></span></div>' : '') +
+    '<div class="sr-field" style="margin-top:12px"><label>Team link</label><div class="sr-copyrow"><div class="sr-box" id="team-link-box"></div><button class="btn btn-primary btn-sm" id="team-copy">Copy link</button></div></div>' +
+    '<div class="sr-hint"><strong>Treat this link like a password.</strong> It lets the holder use your team API key and manage your reviews. Send it in a private message, never in a public channel.' + (ready ? '' : ' (No Supabase is connected, so this link carries the key itself. Set up Review sharing to keep the key out of links.)') + '</div>' +
+    '<div class="sr-hint"><strong>Before you share:</strong> in the Anthropic Console create a separate key just for the team and give it a monthly spend limit, so a leak can never cost more than that.</div>' +
+    '<div class="sr-hint"><strong>To remove access:</strong> press &ldquo;Remove team key&rdquo;, delete the key in the Anthropic Console and store a new one. The key sits in each colleague&apos;s browser, so only share the link with people you trust.</div>';
+  $sr('team-link-box').textContent = link;
+  $sr('team-copy').onclick = async () => { const ok2 = await srCopy(link); toast(ok2 ? 'Team link copied' : 'Copy was blocked. Select the link and copy it manually.', ok2 ? undefined : 'warn'); };
+}
+function teamBoot() {
+  const m = /^#team=([A-Za-z0-9_-]{20,})$/.exec(location.hash || '');
+  if (!m) return false;
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (_) {}
+  let p = null; try { p = teamDec(m[1]); } catch (_) {}
+  const str = (v, min, max) => typeof v === 'string' && v.length >= min && v.length <= max && !/\s/.test(v);
+  const valid = !!p && p.v === 1 &&
+    (p.a === undefined || str(p.a, 20, 400)) && (p.o === undefined || str(p.o, 20, 400)) &&
+    (p.u === undefined || (/^(https:\/\/[^\s/]+\.[^\s/]+|http:\/\/(localhost|127\.0\.0\.1)(:\d+)?)$/i.test(p.u || '') && str(p.u, 8, 200) && str(p.k, 20, 2000) && typeof p.c === 'string' && p.c.length >= 8 && p.c.length <= 200)) &&
+    !!(p.a || p.o || p.u);
+  if (!valid) { toast('This team link is not valid or is incomplete. Ask the person who sent it for a new one.', 'warn', 8000); return false; }
+  TEAM_PENDING = p; teamShowJoin(); return true;
+}
+function teamShowJoin() {
+  const p = TEAM_PENDING, mask = (s) => s.slice(0, 7) + '...' + s.slice(-4);
+  const curA = srGet('proof_api_key'), curO = srGet('proof_openai_key');
+  const replaces = (p.a && curA && curA !== p.a) || (p.o && curO && curO !== p.o);
+  let host = ''; try { host = new URL(p.u).host; } catch (_) {}
+  const row = (t, s) => '<div class="sr-check ok" style="margin-bottom:8px"><span>&#10003;</span><span><b>' + esc(t) + '</b>' + (s ? '<small>' + esc(s) + '</small>' : '') + '</span></div>';
+  $sr('team-box').innerHTML = '<div class="modal-title">Set up this browser for the team</div>' +
+    '<p class="sr-hint" style="margin:0 0 12px;font-size:13px">You opened a team link. Press the button and this browser is ready to use. You do not need to type anything. This will be saved here:</p>' +
+    (p.a ? row('Anthropic API key', mask(p.a)) : '') + (p.o ? row('OpenAI API key', mask(p.o)) : '') + (p.u && !p.a && !p.o ? row('Team API key', 'Fetched automatically and decrypted in this browser') : '') + (p.u ? row('Review sharing', 'Database ' + host + ' and the shared creator passphrase') : '') +
+    (replaces ? '<div class="sr-check bad" style="margin:4px 0 8px"><span>!</span><span><b>This replaces the API key already saved in this browser.</b></span></div>' : '') +
+    '<p class="sr-hint">Only continue if the link came from someone you trust at Explorer.</p>' +
+    '<div class="modal-actions"><button class="btn btn-secondary" onclick="teamCancel()">Cancel</button><button class="btn btn-primary" id="team-go" onclick="teamJoin()">Set up this browser</button></div>';
+  $sr('team-modal').classList.add('open');
+}
+function teamCancel() {
+  TEAM_PENDING = null; $sr('team-modal').classList.remove('open');
+  if (!srGet('proof_api_key') && !srGet('proof_openai_key')) showTab('setup');
+}
+async function teamJoin() {
+  const p = TEAM_PENDING; if (!p) return;
+  const btn = $sr('team-go'); btn.disabled = true; btn.textContent = 'Setting up...';
+  if (p.a) srSet('proof_api_key', p.a);
+  if (p.o) srSet('proof_openai_key', p.o);
+  let msg = 'This browser is ready. You can start proofing.', bad = false;
+  if (p.u) {
+    srSet(SRK.url, p.u); srSet(SRK.key, p.k); srSet(SRK.creator, p.c); srSet(SRK.s1, '1'); srDel(SRK.verified);
+    try { const cfg = { url: p.u, key: p.k }; await SR.testDatabase(cfg); await SR.testCreator(cfg, p.c); srSet(SRK.verified, '1'); }
+    catch (e) { bad = true; msg = 'Could not connect to the team database (' + SR.friendly(e) + '). Ask for a new team link.'; }
+    if (!bad) {
+      await teamPull(false);
+      if (!srGet('proof_api_key') && !srGet('proof_openai_key')) { bad = true; msg = 'Connected, but the admin has not stored a team API key yet. Ask them to press "Save API key for the team".'; }
+    }
+  }
+  TEAM_PENDING = null; $sr('team-modal').classList.remove('open');
+  $sr('api-key-input').value = srGet('proof_api_key') || ''; $sr('openai-key-input').value = srGet('proof_openai_key') || '';
+  renderShareSetup(); srPaintBadge(); teamRenderCard();
+  if (srReady()) srRefresh(false);
+  if (!bad && !srGet('proof_user_name')) msg += ' Add your name in Setup so reports show who ran them.';
+  showTab('proof'); toast(msg, bad ? 'warn' : undefined, bad ? 9000 : 6000);
+}
+
 function srInit() {
   srPaintBadge();
-  if (srReady()) { setTimeout(() => srRefresh(false), 2500); setInterval(() => srRefresh(false), 180000); }
+  if (srReady()) { setTimeout(() => { srRefresh(false); teamPull(false); }, 2500); setInterval(() => { srRefresh(false); teamPull(false); }, 180000); }
 }
 
 // ══════════════════════════════════════════════
@@ -4401,7 +4555,8 @@ function srInit() {
   if (k) document.getElementById('api-key-input').value=k;
   const ok=localStorage.getItem('proof_openai_key');
   if (ok) document.getElementById('openai-key-input').value=ok;
-  if (!k && !ok) setTimeout(()=>showTab('setup'),200);
+  const joiningTeam = teamBoot();
+  if (!k && !ok && !joiningTeam) setTimeout(()=>showTab('setup'),200);
   const t=localStorage.getItem('proof_theme')||'dark';
   document.documentElement.dataset.theme=t;
   document.getElementById('theme-btn').textContent=t==='light'?'☀️':'🌙';

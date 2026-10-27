@@ -47,7 +47,8 @@
     submitted:      'This review has already been submitted and is now read-only.',
     conflict:       'Someone else saved changes at the same time.',
     exists:         'A review with this id already exists. Please try again.',
-    too_large:      'This report is too large to share. Share only the issues that still need review.',
+    too_large:      'This is too large to store. Share only the issues that still need review.',
+    team_unreadable:'The saved team key could not be read. Save it again from the admin browser.',
     server:         'The server returned an unexpected error.',
     unsupported:    'This browser cannot do secure encryption. Use an up-to-date Chrome, Edge, Safari or Firefox over https.',
   };
@@ -63,6 +64,26 @@
     const key = await crypto.subtle.importKey('raw', bits.slice(0, 32), 'AES-GCM', false, ['encrypt', 'decrypt']);
     return { key, auth: hex(bits.slice(32)) };
   }
+
+  // Creator passphrase: the server never sees it. Two independent slow hashes of it are used.
+  //   "auth" -> hex token sent as p_creator (the database stores only sha256 of the token)
+  //   "team" -> AES-GCM key that encrypts team secrets such as the shared API key
+  // Different salts, so the token reveals nothing about the key.
+  const creatorMemo = new Map();
+  function creatorDerive(secret, purpose) {
+    const s = normPassword(secret), id = purpose + '|' + s;
+    if (!creatorMemo.has(id)) {
+      creatorMemo.set(id, (async () => {
+        const base = await crypto.subtle.importKey('raw', enc.encode(s), 'PBKDF2', false, ['deriveBits']);
+        const bits = await crypto.subtle.deriveBits(
+          { name: 'PBKDF2', hash: 'SHA-256', salt: enc.encode('explorer-proofreader/creator/' + purpose + '/v1'), iterations: KDF_ITER }, base, 256);
+        return purpose === 'auth' ? hex(bits) : crypto.subtle.importKey('raw', bits, 'AES-GCM', false, ['encrypt', 'decrypt']);
+      })().catch((e) => { creatorMemo.delete(id); throw e; }));
+    }
+    return creatorMemo.get(id);
+  }
+  const creatorToken = (secret) => creatorDerive(secret, 'auth');
+  const creatorKey = (secret) => creatorDerive(secret, 'team');
 
   const hasGzip = typeof CompressionStream !== 'undefined' && typeof DecompressionStream !== 'undefined';
   async function pipe(u8, Stream, kind) {
@@ -111,17 +132,17 @@
     const salt = b64e(crypto.getRandomValues(new Uint8Array(16)));
     const { key, auth } = await deriveKeys(password, salt, KDF_ITER);
     const blob = await encryptJSON(payload, key);
-    const r = await rpc(cfg, 'share_create', { p_creator: creator, p_id: id, p_salt: salt, p_iter: KDF_ITER, p_auth: auth, p_payload: blob, p_days: days });
+    const r = await rpc(cfg, 'share_create', { p_creator: await creatorToken(creator), p_id: id, p_salt: salt, p_iter: KDF_ITER, p_auth: auth, p_payload: blob, p_days: days });
     if (!r.ok) throw new SRError(r.error);
     return { id, bytes: blob.length };
   }
   async function listShares(cfg, creator) {
-    const r = await rpc(cfg, 'share_list', { p_creator: creator });
+    const r = await rpc(cfg, 'share_list', { p_creator: await creatorToken(creator) });
     if (!r.ok) throw new SRError(r.error);
     return r.shares;
   }
   async function manageShare(cfg, creator, id, action, days) {
-    const r = await rpc(cfg, 'share_manage', { p_creator: creator, p_id: id, p_action: action, p_days: days || 30 });
+    const r = await rpc(cfg, 'share_manage', { p_creator: await creatorToken(creator), p_id: id, p_action: action, p_days: days || 30 });
     if (!r.ok) throw new SRError(r.error);
     return true;
   }
@@ -134,8 +155,29 @@
     return !!(r && r.ok === false && r.error === 'not_found');
   }
   async function creatorSql(secret) {
-    return "insert into public.app_config(key, value) values ('creator_hash', '" + (await sha256hex(secret)) +
+    return "insert into public.app_config(key, value) values ('creator_hash', '" + (await sha256hex(await creatorToken(secret))) +
            "')\non conflict (key) do update set value = excluded.value;";
+  }
+
+  // ── team secrets: the shared API key(s), encrypted in the browser ──────
+  // Anyone who holds the creator passphrase (the team) can read and replace them.
+  async function putTeamKeys(cfg, creator, obj) {
+    const blob = await encryptJSON(obj, await creatorKey(creator));
+    const r = await rpc(cfg, 'team_put', { p_creator: await creatorToken(creator), p_blob: blob });
+    if (!r.ok) throw new SRError(r.error);
+    return { updated_at: r.updated_at };
+  }
+  async function getTeamKeys(cfg, creator) {
+    const r = await rpc(cfg, 'team_get', { p_creator: await creatorToken(creator) });
+    if (!r.ok) throw new SRError(r.error);
+    if (!r.blob) return null;
+    let keys; try { keys = await decryptJSON(r.blob, await creatorKey(creator)); } catch (_) { throw new SRError('team_unreadable'); }
+    return { keys, updated_at: r.updated_at };
+  }
+  async function clearTeamKeys(cfg, creator) {
+    const r = await rpc(cfg, 'team_clear', { p_creator: await creatorToken(creator) });
+    if (!r.ok) throw new SRError(r.error);
+    return true;
   }
 
   // ── reviewer / shared operations ───────────────────────────────────────
@@ -229,7 +271,8 @@
   global.SR = {
     KDF_ITER, SRError, friendly, isSupported, normPassword,
     deriveKeys, encryptJSON, decryptJSON, rpc,
-    createShare, listShares, manageShare, testCreator, testDatabase, creatorSql,
+    createShare, listShares, manageShare, testCreator, testDatabase, creatorSql, creatorToken,
+    putTeamKeys, getTeamKeys, clearTeamKeys,
     openShare, saveDecisions, mergeDecisions, buildLink, parseLink,
     newPassphrase, strength, sha256hex, WORDS,
   };

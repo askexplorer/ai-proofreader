@@ -6,7 +6,7 @@ Single-file browser app for professional AI-powered proofreading. Powered by Ant
 **Live repo:** github.com/askexplorer/ai-proofreader (remote `askexplorer`; the old `origin` = shakkeer-cloud is retired)  
 **Live site:** https://askexplorer.github.io/ai-proofreader/ (GitHub Pages, serves `master`)  
 **Branch:** master  
-**Current version:** v3.5.0
+**Current version:** v3.6.0
 
 ---
 
@@ -192,13 +192,22 @@ Flow: creator presses **Share for review** on a report -> issues are encrypted i
 - **Zero-knowledge:** password -> PBKDF2-SHA256 (600k iterations, `KDF_ITER`) -> 64 bytes = AES-GCM key (32 B) + `proof` (32 B hex). The server only ever stores `sha256(proof)` and ciphertext (payload is gzipped via CompressionStream first). The password never leaves the browser.
 - **Database:** user's own Supabase project. Tables have RLS on with no policies and all rights revoked from `anon`/`authenticated`; everything goes through SECURITY DEFINER RPCs (`share_create, share_info, share_open, share_save, share_list, share_manage`) that RETURN an error jsonb instead of raising, so failed-attempt counters persist.
 - **Brute-force limits:** reviewer link locks 15 min after 8 wrong passwords (also for the correct password while locked); creator secret (hash in `app_config.creator_hash`) locks 10 min after 20 wrong tries. Expiry <= 90 days, expired rows purged after 14 days.
-- **Creator passphrase:** typed in Setup step 2, embedded in the setup SQL by `SR.creatorSql()`, kept only in this browser's localStorage (`sr_creator`). Never send it anywhere else.
+- **Creator passphrase:** typed in Setup step 2, kept only in this browser's localStorage (`sr_creator`). It is shared by the whole team. It is **never sent to the server**: `SR.creatorToken()` derives a 256-bit token (PBKDF2, salt `.../creator/auth/v1`) that goes out as `p_creator`, and `SR.creatorSql()` registers sha256(token). A second, independent derivation (salt `.../creator/team/v1`) gives the AES key that encrypts team secrets, so Supabase can never derive it.
 - **Connection config** (Project URL + public anon/publishable key) travels inside the link fragment `#c=` (fragments are not sent to servers). Legacy JWT keys also get an `Authorization` header; `sb_publishable_` keys must not.
 - **Concurrency:** version-based optimistic locking in `share_save`; client merges (newest `at` per issue wins).
-- **localStorage keys (index.html):** `sr_sb_url, sr_sb_key, sr_creator, sr_shares, sr_verified, sr_s1_done, sr_applied_<shareId>`. `srReady()` needs URL+key+creator and `sr_verified==='1'` (set by Save & test connection).
+- **localStorage keys (index.html):** `sr_sb_url, sr_sb_key, sr_creator, sr_shares, sr_verified, sr_s1_done, sr_applied_<shareId>, sr_team_a, sr_team_o` (the last two = `'1'` when that browser's Anthropic/OpenAI key came from the team). `srReady()` needs URL+key+creator and `sr_verified==='1'` (set by Save & test connection).
 - **Payload schema:** `{v:1, kind:'proofread', title, language, pages, wordCount, createdBy, createdAt, note, issues:[{id,type,severity,page,loc,context,original,corrected,explanation,source:{label,text}}]}`. `loc` and `source` are reserved for translation-check issues ("Ch 33 - para 7", source-language text).
 - **Decisions schema:** `{v:1, reviewer, reviewers[], items:{id:{d:'agree'|'disagree'|'edit', t, c, at}}, updatedAt}`.
 - **Tested** against a PGlite (real Postgres) stand-in for Supabase: 40/40 SQL tests (anon blocked on direct table access, lockouts, expiry, conflicts, reopen/revoke) plus full browser E2E (wizard, share, reviewer, submit, feedback, exports, withdraw).
+
+### Team access (v3.6.0): one shared API key, colleagues type nothing
+- **Admin** (Setup tab, "Team access" card): types the API key in the API card, presses *Save API key for the team* -> `SR.putTeamKeys()` encrypts `{v,a,o,by,at}` with the creator-derived AES key and stores it in `team_secrets` (RPCs `team_put / team_get / team_clear`, all gated by `_creator_ok`). Then *Create team link*.
+- **Team link** = `index.html#team=<base64url {v:1,u,k,c}>` (Supabase URL, public anon key, shared creator passphrase). The API key is NOT in the link when Supabase is ready. Fallback when Supabase is not set up: link carries `{a,o}` itself.
+- **Colleague:** opens the link -> `teamBoot()` strips the hash immediately, validates, shows a confirm modal (host + masked key; warns when it replaces an existing key) -> `teamJoin()` saves the connection, verifies it, then `teamPull()` fetches + decrypts the team key into `proof_api_key` / `proof_openai_key`.
+- **Sync:** `teamPull()` runs 2.5 s after load and every 3 min. It only overwrites/removes keys marked `sr_team_a/o`; a colleague's own typed key is never touched. Rotation propagates automatically; *Remove team key* deletes team-sourced keys on the next pull.
+- **Honest limits:** the key still lives in each colleague's browser (devtools can read it), so use a dedicated Console key with a monthly spend limit and rotate it when someone leaves. A claude.ai subscription cannot be used as an API key. The creator lock (20 wrong tokens -> 10 min) is team-wide, and the anon key is public, so an outsider could lock the team out of creator actions for 10 min (key stays cached in each browser). Upgrade path if keys must never reach browsers: a Supabase Edge Function / Cloudflare Worker proxy holding the key.
+- **Upgrading an existing database:** re-run `supabase/setup.sql` (idempotent) to add `team_secrets` + RPCs.
+- Tests (scratchpad, not in repo): SQL 40/40, core 38/38, team 25/25 against PGlite; browser E2E of admin save, link, join, rotate, remove, own-key, bad link, cancel, fallback.
 
 ### Known gotchas
 - Global `label {text-transform:uppercase}` in index.html leaks into new UI; use `.sr-field > label.sr-opt`-style overrides.
