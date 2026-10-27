@@ -8,7 +8,7 @@ Single-file browser app for professional AI-powered proofreading. Powered by Ant
 **Live repo:** github.com/askexplorer/ai-proofreader (remote `askexplorer`; the old `origin` = shakkeer-cloud is retired)  
 **Live site:** https://askexplorer.github.io/ai-proofreader/ (GitHub Pages, serves `master`)  
 **Branch:** master  
-**Current version:** v4.1.2
+**Current version:** v4.1.3
 
 ---
 
@@ -224,6 +224,7 @@ Scratchpad (not in repo): a PGlite-based stand-in for Supabase (`pg_shim.mjs`: P
 - Write tool turns `\uXXXX` escapes into literal characters (breaks regex literals for U+2028); use constants.
 - Browser-pane screenshots can lag one step behind; confirm state with DOM reads.
 - "Failed to fetch" / "Load failed" means the browser got NO answer from the AI provider (VPN/firewall/ad-blocker/DNS/offline), not a bad key or document. `callApiWithRetry` and `callOpenAI` retry brief drops 3 times (6/12/18 s) then throw `NETWORK: Could not reach <provider> (...)`; `netErrorHelpHtml` shows the steps; **Setup -> Test connection** (`apiProbe`, one 1-token request per saved key) tells connection, key and credit problems apart.
+- **OpenAI + "Failed to fetch" is often a REJECTED KEY, not the network.** api.openai.com answers a rejected `POST /v1/chat/completions` (wrong key, restricted key, no credit/model access) WITHOUT a CORS permission header, so the browser hides the reply and reports a network failure (curl shows the real 401). `GET /v1/models` does carry the header even on 401, so `openaiDiagnose(key)` uses it to tell accepted / rejected / other / unreachable. `callOpenAI`, `tcCall` and **Setup -> Test connection** run it on the first network failure; anything but "unreachable" becomes a `KEY_PROBLEM:` error (`openaiKeyError`, `isKeyProblem`, `keyProblemHtml`) with key-specific steps, and only a truly unreachable OpenAI goes through the 3 retries and the connection dialog. Anthropic is not affected (its 401 is readable). Tested for real with a fake key from the browser pane and by `tests/openai-key.test.mjs`.
 - "Could not read the reply" (JSON) errors: models sometimes leave quotes inside a value unescaped, put a raw line break in a value, add a trailing comma or answer in prose. At temperature 0 an identical retry repeats the same reply, so `parseClaudeJSON` now repairs these (`repairJSON`: escapes inner quotes/control characters, drops trailing commas; valid JSON is never altered), a retry adds a format reminder (`JSON_FIX_NOTE`), after 3 unreadable replies the chunk is split in half, then complete errors are salvaged (`salvageErrors`, recorded as unchecked) and only then does the run fail; the dialog (`jsonErrHelpHtml`) shows the model's real reply under "Technical detail". Anthropic `stop_reason: refusal` and OpenAI `finish_reason: content_filter` are treated like a content-filter block (split, then record as unchecked). Tested by `tests/proof-json.test.mjs` (the functions are cut out of index.html).
 - Upgrading a database: re-run `supabase/setup.sql` (idempotent; it drops pre-v4 passphrase functions/tables).
 

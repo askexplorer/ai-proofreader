@@ -911,7 +911,7 @@
 <footer class="app-footer">
   <span>© 2026 Explorer Publishing &amp; Distribution LLC · All rights reserved</span>
   <span id="cost-footer" style="font-size:10px;color:var(--muted);opacity:.65"></span>
-  <span class="app-footer-version">v4.1.2</span>
+  <span class="app-footer-version">v4.1.3</span>
 </footer>
 
 <div class="toast" id="toast"></div>
@@ -2577,6 +2577,10 @@ async function callOpenAI(payload, apiKey, ci, total, showUI) {
         body: JSON.stringify(payload),
       });
     } catch (netErr) {
+      if (netFails === 0) {                       // "Failed to fetch" from OpenAI is often a rejected key, not the network
+        const st = await openaiDiagnose(apiKey);
+        if (st !== 'unreachable') throw openaiKeyError(st);
+      }
       if (netFails < 3) {
         netFails++; attempt--; skipRateWait = true;
         await sleepWithCountdown(6 * netFails, s => {
@@ -2923,6 +2927,8 @@ Return ONLY valid JSON (no markdown, no extra text):
               `• Wait 1–2 minutes and click <strong>Continue</strong> — the system already auto-retried 3 times<br>`+
               `• Or switch to <strong>Haiku 4.5</strong> (lowest token usage)`
             );
+          } else if (isKeyProblem(chunkErr)) {
+            showApiError('OpenAI key problem', (completedChunks > 0 ? `A partial report for ${completedChunks} of ${chunks.length} chunks has been generated below.<br><br>` : '') + keyProblemHtml(chunkErr));
           } else if (isJsonErr) {
             showApiError(`Could not read the reply on chunk ${ci+1}`,
               (completedChunks > 0
@@ -2998,7 +3004,10 @@ Return ONLY valid JSON (no markdown, no extra text):
     if (showOnDone) {
       const msg = err.message||'';
       if (!isRateLimitError(msg)) { // rate limit already shown per-chunk above
-        if (msg.toLowerCase().includes('credit')||msg.toLowerCase().includes('billing')||msg.includes('402')) {
+        if (isKeyProblem(err)) {
+          showApiError('OpenAI key problem', `Zero chunks completed on the ${docInfo.wordCount ? docInfo.wordCount.toLocaleString() + '-word ' : ''}<strong>${esc(docInfo.filename || 'pasted text')}</strong> run.<br><br>` + keyProblemHtml(err));
+          showTab('report');
+        } else if (msg.toLowerCase().includes('credit')||msg.toLowerCase().includes('billing')||msg.includes('402')) {
           showApiError('No API credits','Your Anthropic API key has run out of credits.<br><br>Go to <strong>console.anthropic.com → Billing</strong> to add credits, then try again.');
         } else if (msg.toLowerCase().includes('invalid')&&msg.toLowerCase().includes('api')) {
           showApiError('Invalid API key','The API key in Setup is invalid or expired.<br><br>Go to <strong>console.anthropic.com → API Keys</strong> to generate a new key.');
@@ -3823,6 +3832,34 @@ function toast(msg,type,ms) {
   el.classList.add('show'); clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),ms||4000);
 }
 // ── Connection problems ───────────────────────────────────────────────
+// OpenAI sends no cross-origin permission with a REJECTED call (wrong key, restricted key, no credit), so the
+// browser reports it as "Failed to fetch" and it looks like a network problem. GET /v1/models does carry the
+// permission, so it tells the cases apart: accepted / rejected (401) / something else / really unreachable.
+async function openaiDiagnose(key) {
+  try {
+    const res = await fetch('https://api.openai.com/v1/models', { headers: { 'Authorization': 'Bearer ' + key } });
+    if (res.ok) return 'accepted';
+    return res.status === 401 ? 'rejected' : 'other';
+  } catch (_) { return 'unreachable'; }
+}
+function openaiKeyError(state) {
+  const e = new Error('KEY_PROBLEM: ' + (state === 'rejected'
+    ? 'OpenAI rejected the API key saved in Setup (wrong, revoked, or not an OpenAI key).'
+    : 'OpenAI recognises the key but refused the request, and the browser is not allowed to read why (a restricted key without permission for chat, no credit, or no access to this model).'));
+  e.keyProblem = state; return e;
+}
+const isKeyProblem = (e) => !!(e && (e.keyProblem || /^KEY_PROBLEM:/.test(e.message || '')));
+function keyProblemHtml(e) {
+  const state = e && e.keyProblem, text = String((e && e.message) || '').replace(/^KEY_PROBLEM:\s*/, '');
+  const steps = state === 'rejected'
+    ? '1. Open <strong>platform.openai.com &rarr; API keys</strong> and create a new secret key (it starts with <em>sk-</em> or <em>sk-proj-</em>; a key starting <em>sk-ant-</em> is an Anthropic key and belongs in the Anthropic field).<br>' +
+      '2. Paste it in <strong>Setup &rarr; OpenAI key</strong>, press Save, then <strong>Test connection</strong>.<br>' +
+      '3. Make sure the OpenAI account has credit (platform.openai.com &rarr; Billing).'
+    : '1. Create the key with <strong>All</strong> permissions (or at least Chat completions and Models) at <strong>platform.openai.com &rarr; API keys</strong>.<br>' +
+      '2. Check there is credit in <strong>Billing</strong> and that the account can use this model; GPT-4o mini is the most widely available.<br>' +
+      '3. Or switch to a Claude model on the Proof page.';
+  return '<strong>' + esc(text) + '</strong><br><br>This is <strong>not</strong> a problem with your document or your internet connection. Your browser reached OpenAI.<br><br><strong>To fix:</strong><br>' + steps;
+}
 const isNetworkError = (msg) => /^NETWORK:|failed to fetch|networkerror|load failed|network request failed|network error/i.test(msg || '');
 function jsonErrHelpHtml(err) {
   const raw = String((err && err.raw) || '').trim();
@@ -3849,6 +3886,12 @@ function netErrorHelpHtml(msg) {
 // One tiny request (1 token, a fraction of a cent) through the same path the real runs use
 async function apiProbe(which, key) {
   const name = which === 'openai' ? 'OpenAI' : 'Anthropic', host = which === 'openai' ? 'api.openai.com' : 'api.anthropic.com';
+  let openaiState = '';
+  if (which === 'openai') {
+    openaiState = await openaiDiagnose(key);
+    if (openaiState === 'unreachable') return { ok: false, text: 'OpenAI: this browser could not reach api.openai.com at all. Check your internet, VPN or firewall, and pause ad-blockers for this site.' };
+    if (openaiState === 'rejected') return { ok: false, text: 'OpenAI: reachable, but the key was rejected (this is also why the proofread showed "Failed to fetch"). Create a new key at platform.openai.com/api-keys; it starts with sk- (a key starting sk-ant- is an Anthropic key).' };
+  }
   try {
     const res = which === 'openai'
       ? await fetch('https://api.openai.com/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key }, body: JSON.stringify({ model: 'gpt-4o-mini', max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }) })
@@ -3861,6 +3904,7 @@ async function apiProbe(which, key) {
     if (res.status === 403) return { ok: false, text: name + ': reachable, but access was denied (' + msg + '). The account or region may not be allowed.' };
     return { ok: false, text: name + ': reachable, but it answered: ' + msg };
   } catch (e) {
+    if (which === 'openai') return { ok: false, text: 'OpenAI: reachable and the key is recognised, but it refused the test message and the browser cannot read why. Usual causes: a restricted key (create one with All permissions), no credit in Billing, or no access to gpt-4o-mini.' };
     return { ok: false, text: name + ': this browser could not reach ' + host + ' (' + (e.message || 'Failed to fetch') + '). Check your internet, VPN or firewall, and pause ad-blockers for this site.' };
   }
 }
@@ -4075,6 +4119,8 @@ async function retryFailedChunks() {
         if (isRateLimitError(msg)) {
           showApiError('Rate limit reached',
             `Rate limit hit on chunk ${ci+1}.<br><br>Wait 1–2 minutes and click <strong>Continue</strong> again.`);
+        } else if (isKeyProblem(chunkErr)) {
+          showApiError('OpenAI key problem', keyProblemHtml(chunkErr));
         } else {
           toast(`Chunk ${ci+1} error: ${msg}`, 'err');
         }
@@ -5165,7 +5211,10 @@ async function tcCall(system, user, meta) {
         : await fetch('https://api.anthropic.com/v1/messages', { method: 'POST',
             headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true', 'anthropic-beta': 'prompt-caching-2024-07-31' },
             body: JSON.stringify({ model, max_tokens: Math.min(maxTokensFor(model), 8000), system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }], messages: [{ role: 'user', content: user }] }) });
-    } catch (e) { lastErr = new Error('Network error: ' + (e.message || e)); await tcSleep(6 * (attempt + 1), R); continue; }
+    } catch (e) {
+      if (openai && !R.keyChecked) { const st = await openaiDiagnose(key); if (st !== 'unreachable') throw openaiKeyError(st); R.keyChecked = true; }
+      lastErr = new Error('Network error: ' + (e.message || e)); await tcSleep(6 * (attempt + 1), R); continue;
+    }
     if (res.ok) {
       const data = await res.json();
       TC_BUDGET.ok++; if (TC_BUDGET.ok % 6 === 0) TC_BUDGET.tpm = Math.min(Math.round(TC_BUDGET.tpm * 1.25), 800000);
@@ -5241,7 +5290,8 @@ function tcFinalize() {
 }
 function tcShowError(e) {
   const msg = (e && e.message) || String(e);
-  if (isNetworkError(msg)) showApiError('Could not reach the AI service', netErrorHelpHtml(msg) + (TC_RUN && !TC_RUN.state.finished ? '<br><br>The parts already checked are kept. Press <strong>Continue</strong> on the Translation tab when the connection is back.' : ''));
+  if (isKeyProblem(e)) showApiError('OpenAI key problem', keyProblemHtml(e) + (TC_RUN && !TC_RUN.state.finished ? '<br><br>Nothing already checked is lost. Fix the key, then press <strong>Continue</strong> on the Translation tab.' : ''));
+  else if (isNetworkError(msg)) showApiError('Could not reach the AI service', netErrorHelpHtml(msg) + (TC_RUN && !TC_RUN.state.finished ? '<br><br>The parts already checked are kept. Press <strong>Continue</strong> on the Translation tab when the connection is back.' : ''));
   else if (/credit|billing|402/i.test(msg)) showApiError('No API credits', 'Your API key has run out of credits.<br><br>Add credits in your provider console, then press <strong>Continue</strong> on the Translation tab.');
   else if (/invalid.*(api|key)|authentication|401/i.test(msg)) showApiError('Invalid API key', 'The API key was rejected. Check it in Setup.');
   else showApiError('The translation check stopped', 'The run stopped with this message:<br><br><em>' + esc(msg) + '</em><br><br>' + (TC_RUN && !TC_RUN.state.finished ? 'The parts already checked are kept. Press <strong>Continue</strong> on the Translation tab to resume.' : ''));
