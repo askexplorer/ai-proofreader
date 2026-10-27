@@ -3,1277 +3,619 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Proofread Share · Explorer</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="no-referrer">
+  <title>Secure Review · Explorer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Arabic:wght@400;600;700&family=Noto+Sans+Bengali:wght@400;600;700&family=Noto+Sans+Devanagari:wght@400;600;700&family=Noto+Sans+Hebrew:wght@400;600;700&family=Noto+Sans+Tamil:wght@400;600;700&family=Noto+Sans+Thai:wght@400;600;700&family=Noto+Nastaliq+Urdu:wght@400;700&display=swap" rel="stylesheet">
+  <script src="share-core.js"></script>
   <style>
-    :root {
-      --bg:      #0f1117; --surface: #1a1d27; --sf2: #22263a;
-      --border:  #2a2d3a; --text:    #e1e4f0; --muted:   #8b8fa8;
-      --primary: #6c63ff; --ph:      #5b52ee;
-      --success: #10b981; --danger:  #ef4444; --warning: #f59e0b;
-    }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; min-height: 100vh; }
-    .page { display: none; max-width: 980px; margin: 0 auto; padding: 24px 16px 100px; }
-    .page.active { display: block; }
-
-    /* Header */
-    .app-header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 20px; display: flex; align-items: center; gap: 12px; height: 52px; position: sticky; top: 0; z-index: 50; }
-    .app-logo { font-size: 15px; font-weight: 700; color: var(--text); text-decoration: none; display: flex; align-items: center; gap: 8px; }
-    .header-tabs { display: flex; gap: 2px; margin-left: auto; }
-    .header-tab { background: none; border: none; color: var(--muted); font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 6px; cursor: pointer; transition: all .15s; }
-    .header-tab.active, .header-tab:hover { background: var(--sf2); color: var(--text); }
-    .header-tab.active { color: var(--primary); }
-
-    /* Cards */
-    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 16px; }
-    .card h3 { font-size: 14px; font-weight: 700; margin-bottom: 12px; }
-    .help { font-size: 12px; color: var(--muted); line-height: 1.6; }
-
-    /* Inputs */
-    input[type=text], input[type=password] {
-      width: 100%; background: var(--sf2); border: 1px solid var(--border); border-radius: 8px;
-      color: var(--text); font-size: 13px; padding: 9px 12px; outline: none; transition: border-color .15s;
+    :root {
+      --bg:#0f172a; --surface:#1e293b; --sf2:#263348; --border:#334155; --text:#f1f5f9; --muted:#94a3b8;
+      --accent:#6366f1; --accent-h:#5558e6; --ok:#10b981; --no:#f97316; --edit:#3b82f6; --warn:#f59e0b;
+      --mark-o-bg:rgba(239,68,68,.24); --mark-o-fg:#fca5a5; --mark-c-bg:rgba(16,185,129,.24); --mark-c-fg:#86efac;
+      --shadow:0 10px 40px rgba(0,0,0,.45); --radius:14px;
     }
-    input:focus { border-color: var(--primary); }
-    label { font-size: 12px; font-weight: 600; color: var(--muted); display: block; margin-bottom: 5px; }
+    [data-theme="light"] {
+      --bg:#f0f4f8; --surface:#ffffff; --sf2:#f1f5f9; --border:#dbe3ec; --text:#1e293b; --muted:#64748b;
+      --accent:#4f46e5; --accent-h:#4338ca; --ok:#059669; --no:#ea580c; --edit:#2563eb; --warn:#d97706;
+      --mark-o-bg:rgba(220,38,38,.12); --mark-o-fg:#b91c1c; --mark-c-bg:rgba(5,150,105,.13); --mark-c-fg:#047857;
+      --shadow:0 10px 30px rgba(15,23,42,.12);
+    }
+    html { scroll-behavior: smooth; }
+    body { background:var(--bg); color:var(--text); min-height:100vh; line-height:1.5; font-size:15px;
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Noto Sans','Noto Sans Arabic','Noto Sans Bengali','Noto Sans Devanagari','Noto Sans Hebrew','Noto Sans Tamil','Noto Sans Thai',sans-serif; }
+    button { font-family:inherit; }
+    :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+    .sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+    [hidden] { display:none !important; }
+    svg.i { width:1em; height:1em; vertical-align:-.125em; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; flex-shrink:0; }
 
-    /* Buttons */
-    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: all .15s; text-decoration: none; white-space: nowrap; }
-    .btn-primary  { background: var(--primary); color: #fff; }
-    .btn-primary:hover  { background: var(--ph); }
-    .btn-secondary { background: var(--sf2); color: var(--text); border: 1px solid var(--border); }
-    .btn-secondary:hover { background: var(--border); }
-    .btn-success  { background: #10b98122; color: var(--success); border: 1px solid #10b98140; }
-    .btn-success:hover  { background: #10b98133; }
-    .btn-danger   { background: #ef444422; color: var(--danger);  border: 1px solid #ef444440; }
-    .btn-danger:hover   { background: #ef444433; }
-    .btn-warn     { background: #f59e0b22; color: var(--warning); border: 1px solid #f59e0b40; }
-    .btn-warn:hover     { background: #f59e0b33; }
-    .btn-sm { padding: 5px 10px; font-size: 12px; }
-    .btn:disabled { opacity: .4; cursor: not-allowed; }
+    /* ── top bar ── */
+    .topbar { position:sticky; top:0; z-index:40; display:flex; align-items:center; gap:10px; padding:0 18px; height:54px;
+      background:var(--surface); border-bottom:1px solid var(--border); }
+    .brand { display:flex; align-items:center; gap:9px; font-weight:800; font-size:15px; letter-spacing:-.01em; }
+    .brand .mark { width:28px; height:28px; border-radius:8px; background:linear-gradient(135deg,var(--accent),#8b5cf6); display:grid; place-items:center; color:#fff; }
+    .brand small { font-weight:600; color:var(--muted); font-size:12px; }
+    .topbar .sp { flex:1; }
+    .iconbtn { background:none; border:1px solid var(--border); color:var(--muted); border-radius:9px; height:34px; min-width:34px; padding:0 10px;
+      display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:600; cursor:pointer; transition:.15s; }
+    .iconbtn:hover { color:var(--text); border-color:var(--accent); }
 
-    /* Toast */
-    #toast { position: fixed; bottom: 20px; right: 20px; padding: 10px 16px; border-radius: 10px; font-size: 13px; font-weight: 600; opacity: 0; transform: translateY(8px); transition: all .25s; pointer-events: none; z-index: 999; max-width: 320px; }
-    #toast.show { opacity: 1; transform: translateY(0); }
-    #toast.ok { background: #10b981; color: #fff; }
-    #toast.warn { background: #f59e0b; color: #000; }
-    #toast.err  { background: #ef4444; color: #fff; }
+    /* ── cards / buttons / fields ── */
+    .center { min-height:calc(100vh - 54px); display:grid; place-items:center; padding:24px 16px; }
+    .card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); }
+    .btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; border:1px solid transparent; border-radius:10px; padding:11px 20px;
+      font-size:14px; font-weight:700; cursor:pointer; transition:.15s; }
+    .btn-primary { background:var(--accent); color:#fff; } .btn-primary:hover:not(:disabled) { background:var(--accent-h); }
+    .btn-ghost { background:var(--sf2); color:var(--text); border-color:var(--border); } .btn-ghost:hover { border-color:var(--accent); }
+    .btn:disabled { opacity:.55; cursor:not-allowed; }
+    .btn-lg { padding:13px 26px; font-size:15px; }
+    label.fl { display:block; font-size:12px; font-weight:700; color:var(--muted); margin:0 0 6px; letter-spacing:.02em; }
+    .field { width:100%; background:var(--sf2); border:1px solid var(--border); color:var(--text); border-radius:10px; padding:11px 13px; font-size:15px; font-family:inherit; }
+    .field:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(99,102,241,.2); }
+    textarea.field { resize:vertical; min-height:74px; line-height:1.5; }
+    .pwwrap { position:relative; } .pwwrap .field { padding-right:76px; }
+    .pwwrap button { position:absolute; right:6px; top:6px; bottom:6px; background:none; border:none; color:var(--muted); font-size:12px; font-weight:700; padding:0 10px; cursor:pointer; border-radius:7px; }
+    .pwwrap button:hover { color:var(--text); background:var(--border); }
+    .msg { border-radius:10px; padding:11px 14px; font-size:13.5px; line-height:1.5; }
+    .msg.err { background:rgba(239,68,68,.12); border:1px solid rgba(239,68,68,.4); color:#fca5a5; }
+    [data-theme="light"] .msg.err { color:#b91c1c; }
+    .msg.info { background:rgba(99,102,241,.12); border:1px solid rgba(99,102,241,.35); }
+    .msg.warn { background:rgba(245,158,11,.13); border:1px solid rgba(245,158,11,.4); }
+    .spin { width:16px; height:16px; border:2.5px solid rgba(255,255,255,.35); border-top-color:#fff; border-radius:50%; animation:sp .7s linear infinite; }
+    @keyframes sp { to { transform:rotate(360deg); } }
 
-    /* Loading */
-    #loading-overlay { display: none; position: fixed; inset: 0; background: rgba(15,17,23,.85); backdrop-filter: blur(4px); z-index: 200; align-items: center; justify-content: center; flex-direction: column; gap: 12px; }
-    #loading-overlay.show { display: flex; }
-    .spinner { width: 36px; height: 36px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin .7s linear infinite; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    #loading-msg { font-size: 14px; font-weight: 600; color: var(--muted); }
+    /* ── unlock screen ── */
+    .lock { width:100%; max-width:440px; padding:30px 28px 24px; }
+    .lock .shield { width:54px; height:54px; border-radius:16px; background:linear-gradient(135deg,var(--accent),#8b5cf6); display:grid; place-items:center; color:#fff; font-size:26px; margin-bottom:16px; }
+    .lock h1 { font-size:22px; letter-spacing:-.02em; margin-bottom:6px; }
+    .lock p.lead { color:var(--muted); font-size:14px; margin-bottom:20px; }
+    .lock .row { margin-bottom:14px; }
+    .lock .fine { margin-top:16px; padding-top:14px; border-top:1px solid var(--border); font-size:12px; color:var(--muted); line-height:1.7; display:grid; gap:4px; }
+    .lock .fine b { color:var(--text); }
 
-    /* Banners */
-    .banner-warn    { background: #f59e0b18; border: 1px solid #f59e0b40; border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; font-size: 13px; }
-    .banner-info    { background: #6c63ff18; border: 1px solid #6c63ff40; border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; font-size: 13px; }
-    .banner-success { background: #10b98118; border: 1px solid #10b98140; border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; font-size: 13px; }
+    /* ── welcome / modal ── */
+    .overlay { position:fixed; inset:0; z-index:80; background:rgba(2,6,23,.66); backdrop-filter:blur(3px); display:grid; place-items:center; padding:18px; overflow:auto; }
+    .modal { width:100%; max-width:560px; padding:28px; }
+    .modal h2 { font-size:21px; letter-spacing:-.02em; margin-bottom:4px; }
+    .modal .sub { color:var(--muted); font-size:14px; margin-bottom:18px; }
+    .steps { display:grid; gap:12px; margin:6px 0 18px; counter-reset:s; }
+    .step { display:flex; gap:14px; align-items:flex-start; padding:13px 14px; background:var(--sf2); border:1px solid var(--border); border-radius:12px; }
+    .step::before { counter-increment:s; content:counter(s); flex:0 0 28px; height:28px; border-radius:50%; background:var(--accent); color:#fff; display:grid; place-items:center; font-weight:800; font-size:13px; }
+    .step b { display:block; font-size:14.5px; margin-bottom:2px; }
+    .step span { color:var(--muted); font-size:13.5px; }
+    .legend { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+    .pill { display:inline-flex; align-items:center; gap:6px; border-radius:999px; padding:4px 11px; font-size:12.5px; font-weight:700; border:1px solid var(--border); background:var(--sf2); }
+    .pill.agree { color:var(--ok); border-color:rgba(16,185,129,.4); } .pill.disagree { color:var(--no); border-color:rgba(249,115,22,.4); } .pill.edit { color:var(--edit); border-color:rgba(59,130,246,.4); }
+    kbd { background:var(--sf2); border:1px solid var(--border); border-bottom-width:2px; border-radius:6px; padding:1px 7px; font-size:12px; font-weight:700; font-family:inherit; }
+    .note-box { background:rgba(245,158,11,.1); border:1px solid rgba(245,158,11,.4); border-radius:12px; padding:12px 14px; margin-bottom:16px; font-size:14px; white-space:pre-wrap; }
+    .note-box b { display:block; font-size:11.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--warn); margin-bottom:4px; }
 
-    /* Report preview */
-    .report-preview { background: var(--sf2); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
-    .rp-meta { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 8px; }
-    .rp-label { font-size: 10px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
-    .rp-value { font-size: 13px; font-weight: 600; margin-top: 2px; }
+    /* ── review layout ── */
+    .wrap { max-width:960px; margin:0 auto; padding:20px 16px 120px; }
+    .docbar { padding:18px 20px; margin-bottom:14px; }
+    .docbar h1 { font-size:19px; letter-spacing:-.02em; word-break:break-word; }
+    .docbar .meta { display:flex; flex-wrap:wrap; gap:6px 16px; margin-top:8px; color:var(--muted); font-size:13px; }
+    .docbar .meta span { display:inline-flex; align-items:center; gap:6px; }
+    .docbar .note-box { margin:14px 0 0; }
+    .toolbar { position:sticky; top:54px; z-index:30; background:var(--bg); padding:10px 0 12px; }
+    .progress { display:flex; align-items:center; gap:12px; margin-bottom:10px; }
+    .track { flex:1; height:8px; background:var(--border); border-radius:99px; overflow:hidden; }
+    .fill { height:100%; width:0; background:linear-gradient(90deg,var(--accent),var(--ok)); border-radius:99px; transition:width .35s; }
+    .progress .lbl { font-size:13px; font-weight:700; white-space:nowrap; }
+    .progress .lbl span { color:var(--muted); font-weight:600; }
+    .filters { display:flex; gap:8px; align-items:center; overflow-x:auto; padding-bottom:2px; scrollbar-width:thin; }
+    .chip { background:var(--surface); border:1px solid var(--border); color:var(--muted); border-radius:999px; padding:6px 13px; font-size:13px; font-weight:700; cursor:pointer; white-space:nowrap; transition:.15s; }
+    .chip:hover { color:var(--text); }
+    .chip.on { background:var(--accent); border-color:var(--accent); color:#fff; }
+    .chip .n { opacity:.75; font-weight:600; margin-left:4px; }
+    .filters select, .filters input { background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:999px; padding:6px 13px; font-size:13px; font-family:inherit; min-width:0; }
+    .filters input { width:170px; }
+    .empty { text-align:center; padding:48px 16px; color:var(--muted); }
+    .empty b { display:block; color:var(--text); font-size:17px; margin-bottom:6px; }
 
-    /* Link box */
-    .link-box { background: var(--sf2); border: 1px solid var(--primary); border-radius: 8px; padding: 10px 44px 10px 12px; font-size: 12px; font-family: monospace; word-break: break-all; color: var(--primary); margin-top: 10px; cursor: pointer; position: relative; }
-    .link-box::after { content: '📋 Copy'; position: absolute; top: 50%; right: 10px; transform: translateY(-50%); font-size: 11px; color: var(--muted); font-family: inherit; }
-    .link-box:hover { border-color: var(--ph); }
+    /* ── issue card ── */
+    .issue { background:var(--surface); border:1px solid var(--border); border-left:5px solid var(--border); border-radius:var(--radius); padding:16px 18px 14px; margin-bottom:12px; transition:border-color .2s, box-shadow .2s; scroll-margin-top:170px; }
+    .issue[data-s="agree"] { border-left-color:var(--ok); } .issue[data-s="disagree"] { border-left-color:var(--no); } .issue[data-s="edit"] { border-left-color:var(--edit); }
+    .issue.active { box-shadow:0 0 0 2px var(--accent); }
+    .ihead { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+    .inum { font-weight:800; color:var(--muted); font-size:13px; }
+    .badge { display:inline-block; border-radius:6px; padding:2px 9px; font-size:11.5px; font-weight:800; letter-spacing:.02em; border:1px solid; }
+    .sev-Critical { color:#ef4444; } .sev-Moderate { color:#f97316; } .sev-Minor { color:var(--muted); } .sev-Query { color:#8b5cf6; }
+    .loc { color:var(--muted); font-size:13px; font-weight:600; margin-left:auto; }
+    .cols { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .col { background:var(--sf2); border:1px solid var(--border); border-radius:11px; padding:11px 13px; min-width:0; }
+    .col .cl { display:block; font-size:10.5px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); margin-bottom:5px; }
+    .ctx { font-size:15px; line-height:1.65; word-break:break-word; white-space:pre-wrap; }
+    mark { border-radius:4px; padding:1px 3px; font-weight:700; }
+    mark.o { background:var(--mark-o-bg); color:var(--mark-o-fg); text-decoration:line-through; text-decoration-thickness:1.5px; }
+    mark.c { background:var(--mark-c-bg); color:var(--mark-c-fg); }
+    .src { margin-top:12px; border-style:dashed; }
+    .why { margin:12px 0 0; color:var(--muted); font-size:13.5px; }
+    .why b { color:var(--text); }
+    .decide { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; }
+    .dbtn { display:inline-flex; align-items:center; gap:8px; background:var(--sf2); border:1.5px solid var(--border); color:var(--text); border-radius:11px; padding:10px 16px; font-size:14px; font-weight:800; cursor:pointer; transition:.15s; }
+    .dbtn small { font-weight:600; color:var(--muted); font-size:12px; }
+    .dbtn:hover { transform:translateY(-1px); }
+    .dbtn.agree:hover, .dbtn.agree[aria-pressed="true"] { border-color:var(--ok); }     .dbtn.agree[aria-pressed="true"] { background:var(--ok); color:#fff; }
+    .dbtn.disagree:hover, .dbtn.disagree[aria-pressed="true"] { border-color:var(--no); } .dbtn.disagree[aria-pressed="true"] { background:var(--no); color:#fff; }
+    .dbtn.edit:hover, .dbtn.edit[aria-pressed="true"] { border-color:var(--edit); }        .dbtn.edit[aria-pressed="true"] { background:var(--edit); color:#fff; }
+    .dbtn[aria-pressed="true"] small { color:rgba(255,255,255,.85); }
+    .cbtn { margin-left:auto; background:none; border:1.5px dashed var(--border); color:var(--muted); border-radius:11px; padding:10px 14px; font-size:13.5px; font-weight:700; cursor:pointer; display:inline-flex; gap:7px; align-items:center; }
+    .cbtn:hover, .cbtn.has { color:var(--text); border-color:var(--accent); border-style:solid; }
+    .extra { margin-top:12px; display:grid; gap:10px; }
+    .extra .fl { margin-bottom:5px; }
+    .readonly .dbtn, .readonly .cbtn { pointer-events:none; opacity:.8; }
+    .readonly textarea { pointer-events:none; opacity:.85; }
+    .more { display:block; margin:6px auto 0; }
 
-    /* Session list */
-    .session-item { background: var(--sf2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 8px; display: flex; align-items: center; gap: 12px; }
-    .si-info { flex: 1; min-width: 0; }
-    .si-title { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .si-meta  { font-size: 11px; color: var(--muted); margin-top: 3px; }
-    .si-actions { display: flex; gap: 6px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
-    .empty-state { text-align: center; padding: 28px; color: var(--muted); font-size: 13px; }
+    /* ── bottom action bar ── */
+    .actionbar { position:fixed; left:0; right:0; bottom:0; z-index:35; background:var(--surface); border-top:1px solid var(--border); padding:10px 18px; display:flex; align-items:center; gap:12px; }
+    .savestate { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--muted); font-weight:600; min-width:0; }
+    .dot { width:9px; height:9px; border-radius:50%; background:var(--ok); flex-shrink:0; }
+    .dot.saving { background:var(--warn); animation:pulse 1s infinite; } .dot.off { background:#ef4444; }
+    @keyframes pulse { 50% { opacity:.35; } }
+    .actionbar .sp { flex:1; }
 
-    /* Badges */
-    .badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px; text-transform: uppercase; letter-spacing: .03em; white-space: nowrap; }
-    .badge-pending  { background: #f59e0b22; color: var(--warning); border: 1px solid #f59e0b40; }
-    .badge-reviewed { background: #10b98122; color: var(--success); border: 1px solid #10b98140; }
+    /* ── submit modal ── */
+    .tally { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin:14px 0 6px; }
+    .tally div { background:var(--sf2); border:1px solid var(--border); border-radius:11px; padding:10px 12px; font-size:13px; color:var(--muted); }
+    .tally b { display:block; font-size:22px; color:var(--text); }
+    .tally .agree b { color:var(--ok); } .tally .disagree b { color:var(--no); } .tally .edit b { color:var(--edit); }
 
-    /* Review header */
-    .review-header { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; margin-bottom: 14px; }
-    .review-header h2 { font-size: 17px; font-weight: 700; }
-    .review-header .meta { font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.7; }
-    .review-header .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-    .chip { background: var(--sf2); border: 1px solid var(--border); border-radius: 8px; padding: 5px 11px; font-size: 12px; font-weight: 600; }
-    .chip span { color: var(--muted); font-weight: 400; }
+    /* ── done ── */
+    .done { text-align:center; max-width:520px; padding:36px 30px; }
+    .done .tick { width:68px; height:68px; margin:0 auto 16px; border-radius:50%; background:var(--ok); color:#fff; display:grid; place-items:center; font-size:34px; }
+    .done h1 { font-size:24px; letter-spacing:-.02em; margin-bottom:8px; }
+    .done p { color:var(--muted); margin-bottom:16px; }
+    .drawer-list { text-align:left; display:grid; gap:7px; margin:0 0 4px; padding:0; list-style:none; font-size:13.5px; color:var(--muted); }
+    .drawer-list li { display:flex; gap:10px; align-items:flex-start; }
 
-    /* Progress */
-    .progress-row { display: flex; align-items: center; gap: 12px; background: var(--sf2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; margin-bottom: 12px; }
-    .progress-track { flex: 1; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
-    .progress-fill  { height: 100%; background: var(--primary); border-radius: 3px; transition: width .3s; }
-    .progress-label { font-size: 12px; color: var(--muted); white-space: nowrap; }
-
-    /* Filter bars */
-    .filter-section { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 8px; }
-    .filter-row { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
-    .filter-row-label { font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; min-width: 36px; }
-    .filt-btn { background: var(--sf2); border: 1px solid var(--border); border-radius: 6px; color: var(--muted); font-size: 11px; font-weight: 600; padding: 3px 9px; cursor: pointer; transition: all .15s; }
-    .filt-btn.on { color: #fff; border-color: transparent; }
-    .filt-btn.fd-all.on      { background: var(--primary); }
-    .filt-btn.fd-approved.on { background: var(--success); }
-    .filt-btn.fd-rejected.on { background: var(--danger); }
-    .filt-btn.fd-suggested.on { background: var(--warning); color: #000; }
-    .filt-btn.fd-pending.on  { background: var(--muted); }
-    .filt-btn.fs-Critical.on { background: var(--danger); }
-    .filt-btn.fs-Moderate.on { background: var(--warning); color: #000; }
-    .filt-btn.fs-Minor.on    { background: var(--muted); }
-    .filter-count { font-size: 11px; color: var(--muted); margin-left: auto; white-space: nowrap; }
-
-    /* Results stats */
-    .results-stats { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
-    .stat-box { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; flex: 1; min-width: 100px; text-align: center; }
-    .stat-box .num { font-size: 22px; font-weight: 800; }
-    .stat-box .lbl { font-size: 11px; color: var(--muted); margin-top: 2px; }
-    .stat-approved  .num { color: var(--success); }
-    .stat-rejected  .num { color: var(--danger); }
-    .stat-suggested .num { color: var(--warning); }
-    .stat-pending   .num { color: var(--muted); }
-
-    /* Table */
-    .table-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid var(--border); }
-    table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
-    thead th { background: var(--sf2); color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; }
-    tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
-    tbody tr:last-child { border-bottom: none; }
-    tbody tr.hidden-row { display: none; }
-    tbody tr.row-approved  { background: #10b98108; }
-    tbody tr.row-rejected  { background: #ef444408; }
-    tbody tr.row-suggested { background: #f59e0b08; }
-    td { padding: 8px 10px; vertical-align: top; }
-    col.c-num  { width: 30px; }
-    col.c-type { width: 88px; }
-    col.c-pg   { width: 34px; }
-    col.c-orig { width: 16%; }
-    col.c-corr { width: 16%; }
-    col.c-expl { width: auto; }
-    col.c-dec  { width: 160px; }
-
-    .type-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px; display: inline-block; white-space: nowrap; }
-    .sev-badge  { font-size: 9px; font-weight: 600; padding: 1px 5px; border-radius: 3px; margin-top: 3px; display: inline-block; }
-    .sev-Critical { background: #ef444422; color: var(--danger); }
-    .sev-Moderate { background: #f59e0b22; color: var(--warning); }
-    .sev-Minor    { background: #8b8fa822; color: var(--muted); }
-
-    .pg-num   { font-size: 11px; color: var(--muted); }
-    .orig-txt { color: #fca5a5; font-size: 12px; line-height: 1.5; word-break: break-word; }
-    .corr-txt { color: #6ee7b7; font-size: 12px; line-height: 1.5; word-break: break-word; }
-    .expl-txt { font-size: 12px; color: var(--muted); line-height: 1.5; word-break: break-word; }
-
-    /* Decision buttons */
-    .dec-cell { display: flex; flex-direction: column; gap: 5px; }
-    .dec-btns { display: flex; gap: 4px; flex-wrap: wrap; }
-    .dec-btn  { font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 5px; cursor: pointer; border: 1px solid; transition: all .15s; background: none; }
-    .dec-btn.approve { color: var(--success); border-color: #10b98140; }
-    .dec-btn.approve.sel { background: var(--success); color: #fff; border-color: var(--success); }
-    .dec-btn.reject  { color: var(--danger);  border-color: #ef444440; }
-    .dec-btn.reject.sel  { background: var(--danger);  color: #fff; border-color: var(--danger); }
-    .dec-btn.suggest { color: var(--warning); border-color: #f59e0b40; }
-    .dec-btn.suggest.sel { background: var(--warning); color: #000; border-color: var(--warning); }
-    .suggest-input { width: 100%; font-size: 11px; padding: 4px 7px; border-radius: 5px; background: var(--sf2); border: 1px solid var(--border); color: var(--text); resize: none; display: none; }
-    .suggest-input.show { display: block; }
-
-    /* Decision labels */
-    .dec-label { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 5px; display: inline-block; }
-    .lbl-approved  { background: #10b98122; color: var(--success); }
-    .lbl-rejected  { background: #ef444422; color: var(--danger); }
-    .lbl-suggested { background: #f59e0b22; color: var(--warning); }
-    .lbl-pending   { background: var(--sf2); color: var(--muted); border: 1px solid var(--border); }
-    .sug-text { font-size: 11px; color: var(--warning); margin-top: 4px; font-style: italic; word-break: break-word; }
-
-    /* Reviewer name bar */
-    .reviewer-bar { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; margin-bottom: 12px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-    .reviewer-bar label { margin: 0; white-space: nowrap; }
-    .reviewer-bar input { max-width: 220px; flex: 1; }
-
-    /* Sticky bottom bar */
-    .bottom-bar { position: sticky; bottom: 0; background: var(--bg); border-top: 1px solid var(--border); padding: 10px 16px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 14px; z-index: 40; }
-    .bottom-bar .summary { font-size: 12px; color: var(--muted); flex: 1; min-width: 0; }
-
-    /* Export dropdown */
-    .export-wrap { position: relative; display: inline-block; }
-    .export-dropdown { display: none; position: absolute; bottom: calc(100% + 6px); right: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; min-width: 200px; overflow: hidden; z-index: 60; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
-    .export-dropdown.open { display: block; }
-    .export-dropdown button { display: flex; width: 100%; padding: 10px 14px; font-size: 12px; font-weight: 600; color: var(--text); background: none; border: none; cursor: pointer; gap: 8px; align-items: center; }
-    .export-dropdown button:hover { background: var(--sf2); }
-    .export-dropdown .sep { height: 1px; background: var(--border); margin: 2px 0; }
-
-    /* Resend card */
-    .resend-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; margin-top: 16px; }
-    .resend-card h3 { font-size: 14px; font-weight: 700; margin-bottom: 8px; }
-    .resend-options { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
-
-    /* New link banner (floating) */
-    .new-link-banner { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); z-index: 100; max-width: 560px; width: calc(100% - 32px); background: var(--surface); border: 1px solid var(--success); border-radius: 12px; padding: 16px 18px; box-shadow: 0 8px 32px rgba(0,0,0,.5); }
-
-    /* SQL block */
-    .sql-block { background: #0a0c14; border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; font-family: monospace; font-size: 11px; color: #a5b4fc; line-height: 1.7; white-space: pre-wrap; word-break: break-all; margin-top: 8px; overflow-x: auto; }
-    .sep { height: 1px; background: var(--border); margin: 16px 0; }
-    .app-footer { text-align: center; font-size: 11px; color: var(--muted); padding: 20px; opacity: .5; }
+    @media (max-width: 720px) {
+      body { font-size:15px; }
+      .cols { grid-template-columns:1fr; }
+      .loc { margin-left:0; width:100%; }
+      .dbtn { flex:1 1 calc(33% - 8px); justify-content:center; flex-direction:column; gap:2px; text-align:center; padding:10px 6px; }
+      .dbtn small { display:none; }
+      .cbtn { width:100%; justify-content:center; margin-left:0; }
+      .filters input { width:130px; }
+      .actionbar { padding:10px 12px; }
+      .savestate .txt { max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
+      .brand small { display:none; }
+    }
+    @media (prefers-reduced-motion: reduce) { * { animation:none !important; transition:none !important; scroll-behavior:auto !important; } }
   </style>
 </head>
 <body>
 
-<div id="loading-overlay"><div class="spinner"></div><div id="loading-msg">Loading…</div></div>
-<div id="toast"></div>
-
-<header class="app-header">
-  <a class="app-logo" href="index.html">📝 <span style="color:var(--muted);font-weight:400">Proofreader</span> <span style="color:var(--border)">›</span> Share</a>
-  <div class="header-tabs" id="header-tabs">
-    <button class="header-tab active" onclick="showPage('dash')" id="tab-dash">Dashboard</button>
-    <button class="header-tab" onclick="showPage('setup')" id="tab-setup">Setup</button>
-  </div>
+<header class="topbar">
+  <div class="brand"><div class="mark"><svg class="i" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/></svg></div>
+    <div>Explorer <small>Secure Review</small></div></div>
+  <div class="sp"></div>
+  <button class="iconbtn" id="btn-help" hidden title="How this works"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 .5c0 1.7-2.5 2-2.5 3.5"/><circle cx="12" cy="17" r=".5"/></svg><span>Help</span></button>
+  <button class="iconbtn" id="btn-theme" title="Switch light / dark" aria-label="Switch light or dark theme"><svg class="i" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
 </header>
 
-<!-- ══════════ DASHBOARD ══════════ -->
-<div class="page active" id="dash-page">
+<!-- ════ unlock ════ -->
+<main id="v-lock" class="center" hidden>
+  <form class="card lock" id="lock-form" autocomplete="off">
+    <div class="shield"><svg class="i" viewBox="0 0 24 24" style="width:26px;height:26px"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></div>
+    <h1>You have been invited to review</h1>
+    <p class="lead">Enter the password from your invitation to open the document. It stays private: only people who have both the link and the password can read it.</p>
+    <div class="row"><label class="fl" for="in-name">Your name <span style="font-weight:500">(the editor will see this)</span></label>
+      <input class="field" id="in-name" required maxlength="60" placeholder="e.g. Amarjargal B." autocomplete="name"></div>
+    <div class="row"><label class="fl" for="in-pw">Password</label>
+      <div class="pwwrap"><input class="field" id="in-pw" type="password" required placeholder="e.g. river-amber-falcon-stone-lunar-47" autocapitalize="off" autocorrect="off" spellcheck="false"><button type="button" id="pw-toggle">Show</button></div></div>
+    <div id="lock-msg" class="row" role="alert" hidden></div>
+    <button class="btn btn-primary btn-lg" id="btn-open" style="width:100%" type="submit"><span id="btn-open-t">Open review</span></button>
+    <div class="fine">
+      <div><b>Don't have the password?</b> Ask the person who sent you this link. For security it is sent separately.</div>
+      <div><b>Wrong password?</b> You get 8 tries, then the link locks for 15 minutes.</div>
+      <div><b>Private by design:</b> the document is encrypted in your browser. The server only holds scrambled data.</div>
+    </div>
+  </form>
+</main>
 
-  <div class="banner-warn" id="setup-banner" style="display:none">
-    ⚙️ <strong>Supabase not configured.</strong>
-    <button class="btn btn-warn btn-sm" style="margin-left:8px" onclick="showPage('setup')">Open Setup →</button>
+<!-- ════ error ════ -->
+<main id="v-error" class="center" hidden>
+  <div class="card lock" style="text-align:center">
+    <div class="shield" style="margin:0 auto 16px;background:var(--sf2);color:var(--muted)"><svg class="i" viewBox="0 0 24 24" style="width:26px;height:26px"><circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><circle cx="12" cy="16.5" r=".6"/></svg></div>
+    <h1 id="err-title">This link cannot be opened</h1>
+    <p class="lead" id="err-text" style="margin-bottom:0"></p>
   </div>
+</main>
 
-  <div class="card">
-    <h3>📄 Latest Proofreading Report</h3>
-    <p class="help">Automatically loaded from your last session in the main app — no export needed.</p>
-    <div id="report-preview-area" style="margin-top:14px"></div>
-    <div style="margin-top:14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <button class="btn btn-primary" id="share-btn" onclick="createSession()" disabled>🔗 Create Review Link</button>
-      <span class="help" id="share-hint"></span>
+<!-- ════ review ════ -->
+<main id="v-review" hidden>
+  <div class="wrap">
+    <section class="card docbar" id="docbar"></section>
+    <div class="toolbar">
+      <div class="progress"><div class="track" role="progressbar" aria-valuemin="0" aria-valuemax="100" id="track"><div class="fill" id="fill"></div></div><div class="lbl" id="plabel"></div></div>
+      <div class="filters" id="filters"></div>
     </div>
-    <div id="new-link-wrap" style="display:none;margin-top:14px">
-      <div style="font-size:12px;font-weight:600;color:var(--success);margin-bottom:6px">✓ Review session created! Share this link:</div>
-      <div class="link-box" id="new-link" onclick="copyText(this.dataset.url)"></div>
-      <div class="help" style="margin-top:6px">Link expires in 30 days · Anyone with the link can review</div>
-    </div>
+    <div id="list"></div>
+    <button class="btn btn-ghost more" id="btn-more" hidden>Show more issues</button>
   </div>
-
-  <div class="card">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-      <h3 style="margin:0">📋 My Review Sessions</h3>
-      <button class="btn btn-secondary btn-sm" onclick="refreshSessions()">↻ Refresh</button>
-    </div>
-    <div id="sessions-list"></div>
+  <div class="actionbar" id="actionbar">
+    <div class="savestate" role="status" aria-live="polite"><span class="dot" id="dot"></span><span class="txt" id="savetxt">Ready</span></div>
+    <div class="sp"></div>
+    <button class="btn btn-primary" id="btn-submit"><svg class="i" viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>Submit to editor</button>
   </div>
+</main>
 
-</div>
-
-<!-- ══════════ REVIEW / RESULTS ══════════ -->
-<div class="page" id="review-page">
-
-  <div id="rv-header"></div>
-
-  <div class="reviewer-bar" id="rv-name-bar">
-    <label>Your name:</label>
-    <input type="text" id="rv-name" placeholder="Enter your name before submitting…">
+<!-- ════ done ════ -->
+<main id="v-done" class="center" hidden>
+  <div class="card done">
+    <div class="tick"><svg class="i" viewBox="0 0 24 24" style="width:34px;height:34px;stroke-width:3"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+    <h1 id="done-title">Thank you!</h1>
+    <p id="done-text">Your review has been sent to the editor.</p>
+    <ul class="drawer-list" id="done-tally"></ul>
+    <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:18px">
+      <button class="btn btn-ghost" id="btn-viewmine">View my answers</button>
+    </div>
+    <p style="font-size:12.5px;margin:18px 0 0">Need to change something? Ask the editor to reopen your review. You can close this page now.</p>
   </div>
+</main>
 
-  <div class="progress-row" id="rv-progress">
-    <div class="progress-track"><div class="progress-fill" id="prog-fill" style="width:0%"></div></div>
-    <div class="progress-label" id="prog-label">0 / 0 reviewed</div>
-  </div>
-
-  <!-- Filter section -->
-  <div class="filter-section">
-    <!-- Row 1: Decision -->
-    <div class="filter-row">
-      <span class="filter-row-label">Decision</span>
-      <button class="filt-btn fd-all on"      onclick="setFilter('dec','all',this)">All</button>
-      <button class="filt-btn fd-approved"    onclick="setFilter('dec','approved',this)">✓ Approved</button>
-      <button class="filt-btn fd-rejected"    onclick="setFilter('dec','rejected',this)">✗ Rejected</button>
-      <button class="filt-btn fd-suggested"   onclick="setFilter('dec','suggested',this)">✎ Suggested</button>
-      <button class="filt-btn fd-pending"     onclick="setFilter('dec','pending',this)">Undecided</button>
-      <span class="filter-count" id="filter-count"></span>
+<!-- ════ welcome / help ════ -->
+<div class="overlay" id="ov-welcome" hidden role="dialog" aria-modal="true" aria-labelledby="w-title">
+  <div class="card modal">
+    <h2 id="w-title">Welcome</h2>
+    <p class="sub" id="w-sub"></p>
+    <div id="w-note"></div>
+    <div class="steps">
+      <div class="step"><div><b>Read each flagged item</b><span>You see the current text, the suggested change and why it was flagged. The changed words are highlighted.</span></div></div>
+      <div class="step"><div><b>Choose your answer</b><span>Tap one button on every item. Click it again to undo.</span></div></div>
+      <div class="step"><div><b>Submit when you are done</b><span>Your answers go straight to the editor. Your work is saved automatically, so you can close the page and come back until you submit.</span></div></div>
     </div>
-    <!-- Row 2: Type (built dynamically) -->
-    <div class="filter-row" id="type-filter-row">
-      <span class="filter-row-label">Type</span>
-      <button class="filt-btn ft-all on" onclick="setFilter('type','all',this)">All</button>
-      <span id="type-filter-btns"></span>
+    <div class="legend">
+      <span class="pill agree"><svg class="i" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg> Agree: use the suggestion</span>
+      <span class="pill disagree"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg> Disagree: keep as it is</span>
+      <span class="pill edit"><svg class="i" viewBox="0 0 24 24"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3z"/></svg> Edit: write your own fix</span>
     </div>
-    <!-- Row 3: Severity -->
-    <div class="filter-row">
-      <span class="filter-row-label">Severity</span>
-      <button class="filt-btn fs-all on"          onclick="setFilter('sev','all',this)">All</button>
-      <button class="filt-btn fs-Critical"         onclick="setFilter('sev','Critical',this)" style="color:var(--danger);border-color:#ef444440">Critical</button>
-      <button class="filt-btn fs-Moderate"         onclick="setFilter('sev','Moderate',this)" style="color:var(--warning);border-color:#f59e0b40">Moderate</button>
-      <button class="filt-btn fs-Minor"            onclick="setFilter('sev','Minor',this)">Minor</button>
-    </div>
-  </div>
-
-  <!-- Results stats (results mode) -->
-  <div class="results-stats" id="results-stats" style="display:none"></div>
-
-  <div class="table-wrap">
-    <table>
-      <colgroup>
-        <col class="c-num"><col class="c-type"><col class="c-pg">
-        <col class="c-orig"><col class="c-corr"><col class="c-expl"><col class="c-dec">
-      </colgroup>
-      <thead>
-        <tr>
-          <th>#</th><th>Type / Sev</th><th>Pg</th>
-          <th>Original</th><th>Corrected</th><th>Explanation</th>
-          <th id="dec-th">Your Decision</th>
-        </tr>
-      </thead>
-      <tbody id="rv-tbody"></tbody>
-    </table>
-  </div>
-
-  <!-- Submit bar -->
-  <div class="bottom-bar" id="submit-bar">
-    <div class="summary" id="submit-summary">Make decisions above, then submit.</div>
-    <button class="btn btn-primary" id="submit-btn" onclick="submitReview()" disabled>Submit Review</button>
-  </div>
-
-  <!-- Results bar -->
-  <div class="bottom-bar" id="results-bar" style="display:none">
-    <div class="summary" id="results-summary"></div>
-    <div class="export-wrap">
-      <button class="btn btn-secondary" onclick="toggleExport(event)">⬇ Export ▾</button>
-      <div class="export-dropdown" id="export-dd">
-        <button onclick="exportPDF()">📄 PDF Report</button>
-        <button onclick="exportWord()">📝 Word (.doc)</button>
-        <button onclick="exportCSV()">📊 CSV</button>
-        <div class="sep"></div>
-        <button onclick="exportApproved()">✓ Approved changes (.txt)</button>
-        <button onclick="exportFullJSON()">⚙ Full JSON</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Resend card (results mode) -->
-  <div class="resend-card" id="resend-card" style="display:none">
-    <h3>↻ Send for Another Round of Review</h3>
-    <p class="help">Create a new review session from this report. Useful when corrections have been made and need a second pass.</p>
-    <div class="resend-options">
-      <button class="btn btn-secondary" onclick="resendReview('all')">
-        📋 Resend all <span id="resend-all-count"></span> errors
-      </button>
-      <button class="btn btn-warn" id="resend-unresolved-btn" onclick="resendReview('unresolved')">
-        ⚠ Resend rejected + undecided only (<span id="resend-unresolved-count"></span>)
-      </button>
-    </div>
-    <div id="resend-result" style="display:none;margin-top:14px">
-      <div style="font-size:12px;font-weight:600;color:var(--success);margin-bottom:6px">✓ New session created:</div>
-      <div class="link-box" id="resend-link" onclick="copyText(this.dataset.url)"></div>
-    </div>
-  </div>
-
-</div>
-
-<!-- ══════════ SETUP ══════════ -->
-<div class="page" id="setup-page">
-  <div class="card">
-    <h3>⚙️ Supabase Configuration</h3>
-    <p class="help">One-time setup. Create a free project at <a href="https://supabase.com" target="_blank" style="color:var(--primary)">supabase.com</a>, run the SQL, then paste your credentials.</p>
-    <div style="margin-top:16px">
-      <div style="font-size:13px;font-weight:700;margin-bottom:8px">Step 1 — Run in Supabase SQL Editor</div>
-      <div class="sql-block" id="setup-sql">create table public.review_sessions (
-  id text primary key,
-  report jsonb not null,
-  doc_name text,
-  initiated_by text,
-  model_name text,
-  created_at timestamptz default now(),
-  expires_at timestamptz default (now() + interval '30 days'),
-  status text default 'pending',
-  reviewed_by text,
-  reviewed_at timestamptz,
-  decisions jsonb default '{}'::jsonb
-);
-alter table public.review_sessions enable row level security;
-create policy "anon_read"   on public.review_sessions for select using (true);
-create policy "anon_insert" on public.review_sessions for insert with check (true);
-create policy "anon_update" on public.review_sessions for update using (status = 'pending') with check (true);</div>
-      <button class="btn btn-secondary btn-sm" style="margin-top:8px" onclick="copySQL()">📋 Copy SQL</button>
-    </div>
-    <div class="sep"></div>
-    <div style="font-size:13px;font-weight:700;margin-bottom:8px">Step 2 — Paste your credentials</div>
-    <p class="help">Supabase → <strong>Settings → API</strong> → Project URL + anon public key.</p>
-    <div style="margin-top:14px;display:flex;flex-direction:column;gap:10px">
-      <div>
-        <label>Supabase Project URL</label>
-        <input type="text" id="sb-url" placeholder="https://xxxxxxxxxxxx.supabase.co">
-      </div>
-      <div>
-        <label>Supabase Anon Key (public)</label>
-        <input type="password" id="sb-key" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9…">
-      </div>
-      <div>
-        <label>Your Name</label>
-        <input type="text" id="sb-name" placeholder="e.g. Shakkeer">
-      </div>
-    </div>
-    <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn btn-primary" onclick="saveSetup()">Save Configuration</button>
-      <button class="btn btn-secondary" onclick="testConn()">Test Connection</button>
-    </div>
+    <p class="sub" style="margin-bottom:18px">Shortcuts on a computer: <kbd>A</kbd> agree · <kbd>D</kbd> disagree · <kbd>E</kbd> edit · <kbd>C</kbd> comment · <kbd>J</kbd> / <kbd>K</kbd> next / previous item.</p>
+    <button class="btn btn-primary btn-lg" id="btn-start" style="width:100%">Start reviewing</button>
   </div>
 </div>
 
-<footer class="app-footer">© 2026 Explorer Publishing &amp; Distribution LLC · All rights reserved</footer>
+<!-- ════ submit ════ -->
+<div class="overlay" id="ov-submit" hidden role="dialog" aria-modal="true" aria-labelledby="s-title">
+  <div class="card modal">
+    <h2 id="s-title">Submit your review?</h2>
+    <p class="sub">This sends your answers to the editor. You will not be able to change them afterwards unless the editor reopens your review.</p>
+    <div class="tally" id="s-tally"></div>
+    <div id="s-warn"></div>
+    <div style="display:flex;gap:10px;margin-top:20px;flex-wrap:wrap">
+      <button class="btn btn-ghost" id="s-back" style="flex:1">Go back</button>
+      <button class="btn btn-primary" id="s-go" style="flex:2">Yes, submit to editor</button>
+    </div>
+  </div>
+</div>
 
 <script>
 'use strict';
-// ══════════════════════════════════════════
-// ★ Fill these after Supabase setup
-// ══════════════════════════════════════════
-const SB_URL_DEFAULT = 'YOUR_SUPABASE_URL';
-const SB_KEY_DEFAULT = 'YOUR_ANON_KEY';
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const ICON = {
+  agree:    '<svg class="i" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  disagree: '<svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  edit:     '<svg class="i" viewBox="0 0 24 24"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3z"/></svg>',
+  comment:  '<svg class="i" viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>',
+};
+const TYPE_COLORS = { Typos:'#ff6b35', Spelling:'#ef4444', Grammar:'#f97316', Punctuation:'#eab308', Capitalization:'#a855f7', Style:'#3b82f6',
+  Consistency:'#06b6d4', Clarity:'#10b981', Factual:'#f43f5e', Omission:'#ef4444', Addition:'#f97316', Mistranslation:'#a855f7', Terminology:'#06b6d4', Numbers:'#eab308', Untranslated:'#3b82f6' };
 
-const TYPE_COLORS = {
-  Typos:'#ef4444', Spelling:'#f97316', Grammar:'#f59e0b',
-  Punctuation:'#10b981', Capitalization:'#3b82f6',
-  Style:'#8b5cf6', Consistency:'#06b6d4', Clarity:'#ec4899'
+// ── state ──
+const link = SR.parseLink(window.location);
+const ID = link.id, CFG = link.cfg;
+let SESS = null, PAYLOAD = null, VER = 0, SUBMITTED = false;
+let D = { v: 1, reviewer: '', reviewers: [], items: {}, updatedAt: 0 };
+let NAME = '', FILTER = 'all', TYPE = 'all', QUERY = '', SHOWN = 40, ACTIVE = null, READONLY = false;
+let dirty = false, saving = false, saveTimer = null, retryTimer = null;
+
+// ── theme ──
+(function theme() {
+  let t = null; try { t = localStorage.getItem('sr_theme'); } catch (_) {}
+  if (!t) t = (window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+  document.documentElement.dataset.theme = t;
+  $('btn-theme').onclick = () => {
+    const n = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+    document.documentElement.dataset.theme = n; try { localStorage.setItem('sr_theme', n); } catch (_) {}
+  };
+})();
+
+// ── views ──
+function show(view) { ['v-lock', 'v-error', 'v-review', 'v-done'].forEach((v) => { $(v).hidden = v !== view; }); $('btn-help').hidden = !(view === 'v-review' || view === 'v-done'); window.scrollTo(0, 0); }
+function fail(title, text) { $('err-title').textContent = title; $('err-text').textContent = text; show('v-error'); }
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch (_) { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (_) {} };
+
+// ── boot ──
+(function boot() {
+  if (!SR.isSupported()) return fail('This browser is not supported', SR.friendly({ code: 'unsupported' }));
+  if (!ID || !CFG) return fail('This link looks incomplete', 'Please open the full link exactly as it was sent to you. If it was split over two lines in an email, copy and paste the whole thing into your browser.');
+  $('in-name').value = lsGet('sr_reviewer_name') || '';
+  show('v-lock');
+  ($('in-name').value ? $('in-pw') : $('in-name')).focus();
+})();
+
+$('pw-toggle').onclick = () => { const p = $('in-pw'); const s = p.type === 'password'; p.type = s ? 'text' : 'password'; $('pw-toggle').textContent = s ? 'Hide' : 'Show'; };
+function lockMsg(kind, html) { const m = $('lock-msg'); m.hidden = !html; m.className = 'row msg ' + kind; m.innerHTML = html || ''; }
+
+$('lock-form').onsubmit = async (e) => {
+  e.preventDefault();
+  NAME = $('in-name').value.trim();
+  const pw = $('in-pw').value;
+  if (!NAME || !pw.trim()) return;
+  lsSet('sr_reviewer_name', NAME);
+  const btn = $('btn-open'); btn.disabled = true; $('btn-open-t').innerHTML = '<span class="spin"></span> Unlocking…';
+  lockMsg('info', 'Unlocking. This can take a few seconds the first time.');
+  try {
+    const r = await SR.openShare(CFG, ID, pw);
+    SESS = r.session; PAYLOAD = r.payload; VER = r.version; SUBMITTED = r.status === 'submitted';
+    if (r.decisions) D = r.decisions;
+    D.items = D.items || {}; D.reviewers = Array.from(new Set((D.reviewers || (D.reviewer ? [D.reviewer] : [])).concat([NAME])));
+    D.reviewer = NAME;
+    const draft = lsGet('sr_draft_' + ID);                                      // unsent changes from an earlier visit
+    if (draft && !SUBMITTED) { try { D = SR.mergeDecisions(D, JSON.parse(draft)); D.reviewer = NAME; D.reviewers = Array.from(new Set((D.reviewers || []).concat([NAME]))); } catch (_) {} }
+    $('in-pw').value = '';
+    startReview(r);
+  } catch (err) {
+    btn.disabled = false; $('btn-open-t').textContent = 'Open review';
+    if (err.code === 'bad_password') lockMsg('err', 'That password is not correct.' + (typeof err.left === 'number' ? ' <b>' + err.left + '</b> ' + (err.left === 1 ? 'try' : 'tries') + ' left before this link locks for 15 minutes.' : '') + ' Check for spaces and capital letters, or ask the sender to resend it.');
+    else if (err.code === 'locked') lockMsg('err', 'Too many wrong attempts. This link is locked for about 15 minutes. Please try again later.');
+    else if (err.code === 'not_found') fail('This link is no longer available', 'It may have expired or been withdrawn by the sender. Please ask them to send you a new link.');
+    else lockMsg('err', esc(SR.friendly(err)));
+  }
 };
 
-// ── State ──────────────────────────────────
-let _sbUrl = '', _sbKey = '', _myName = '';
-let _report    = null;
-let _session   = null;
-let _sessionId = null;
-let _decisions = {};
-let _isResults = false;
+// ── review ──
+const ISSUES = () => (PAYLOAD && PAYLOAD.issues) || [];
+const stateOf = (id) => (D.items[id] && D.items[id].d) || 'none';
+const counts = () => {
+  const c = { agree: 0, disagree: 0, edit: 0, none: 0, comment: 0, total: ISSUES().length };
+  ISSUES().forEach((i) => { const it = D.items[i.id]; const s = (it && it.d) || 'none'; c[s]++; if (it && it.c) c.comment++; });
+  return c;
+};
 
-let _filterDec  = 'all';
-let _filterType = 'all';
-let _filterSev  = 'all';
-
-let _origReviewHTML = '';
-
-// ── Supabase helpers ───────────────────────
-function _h() {
-  return { 'apikey': _sbKey, 'Authorization': `Bearer ${_sbKey}`, 'Content-Type': 'application/json' };
-}
-
-async function sbInsert(row) {
-  const r = await fetch(`${_sbUrl}/rest/v1/review_sessions`, {
-    method: 'POST',
-    headers: { ..._h(), 'Prefer': 'return=representation' },
-    body: JSON.stringify(row)
-  });
-  if (!r.ok) throw new Error(`Insert failed: ${r.status} ${await r.text()}`);
-  return r.json();
-}
-
-async function sbGet(id) {
-  const r = await fetch(
-    `${_sbUrl}/rest/v1/review_sessions?id=eq.${encodeURIComponent(id)}&select=*`,
-    { headers: _h() }
-  );
-  if (!r.ok) throw new Error(`Fetch failed: ${r.status}`);
-  const rows = await r.json();
-  return rows[0] || null;
-}
-
-async function sbPatch(id, data) {
-  const r = await fetch(
-    `${_sbUrl}/rest/v1/review_sessions?id=eq.${encodeURIComponent(id)}`,
-    { method: 'PATCH', headers: { ..._h(), 'Prefer': 'return=representation' }, body: JSON.stringify(data) }
-  );
-  if (!r.ok) throw new Error(`Update failed: ${r.status} ${await r.text()}`);
-  return r.json();
-}
-
-async function sbListMine(ids) {
-  if (!ids.length) return [];
-  const q = ids.map(id => `id.eq.${encodeURIComponent(id)}`).join(',');
-  const r = await fetch(
-    `${_sbUrl}/rest/v1/review_sessions?or=(${q})&select=id,doc_name,initiated_by,created_at,status,reviewed_by`,
-    { headers: _h() }
-  );
-  return r.ok ? r.json() : [];
-}
-
-// ── Utilities ──────────────────────────────
-function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
-function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-
-function toast(msg, type = 'ok') {
-  const t = document.getElementById('toast');
-  t.textContent = msg; t.className = `show ${type}`;
-  clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('show'), 3200);
-}
-
-function setLoading(on, msg = 'Loading…') {
-  document.getElementById('loading-overlay').classList.toggle('show', on);
-  document.getElementById('loading-msg').textContent = msg;
-}
-
-function showPage(name) {
-  ['dash','review','setup'].forEach(p => {
-    document.getElementById(p + '-page').classList.toggle('active', p === name);
-  });
-  document.querySelectorAll('.header-tab').forEach(b => b.classList.remove('active'));
-  const t = document.getElementById('tab-' + name);
-  if (t) t.classList.add('active');
-}
-
-function copyText(text) {
-  navigator.clipboard.writeText(text).then(() => toast('Copied!')).catch(() => {
-    const ta = document.createElement('textarea');
-    ta.value = text; document.body.appendChild(ta); ta.select();
-    document.execCommand('copy'); ta.remove(); toast('Copied!');
-  });
-}
-
-function fmtDate(iso) {
-  if (!iso) return '';
-  return new Date(iso).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
-}
-
-function dlBlob(blob, name) {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob); a.download = name; a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-}
-
-function safeName(s) { return (s||'review').replace(/[^a-z0-9]/gi,'_'); }
-
-// ── Config ─────────────────────────────────
-function loadConfig() {
-  _sbUrl  = localStorage.getItem('review_sb_url')  || SB_URL_DEFAULT;
-  _sbKey  = localStorage.getItem('review_sb_key')  || SB_KEY_DEFAULT;
-  _myName = localStorage.getItem('review_sb_name') || '';
-}
-
-function isConfigured() {
-  return _sbUrl && _sbKey && _sbUrl !== 'YOUR_SUPABASE_URL' && _sbKey !== 'YOUR_ANON_KEY';
-}
-
-function saveSetup() {
-  const url  = document.getElementById('sb-url').value.trim().replace(/\/$/, '');
-  const key  = document.getElementById('sb-key').value.trim();
-  const name = document.getElementById('sb-name').value.trim();
-  if (!url || !key) { toast('Enter both URL and key.', 'warn'); return; }
-  localStorage.setItem('review_sb_url', url);
-  localStorage.setItem('review_sb_key', key);
-  localStorage.setItem('review_sb_name', name);
-  _sbUrl = url; _sbKey = key; _myName = name;
-  toast('Configuration saved!');
-  showPage('dash'); checkConfig();
-}
-
-async function testConn() {
-  const url = document.getElementById('sb-url').value.trim().replace(/\/$/, '');
-  const key = document.getElementById('sb-key').value.trim();
-  if (!url || !key) { toast('Enter URL and key first.', 'warn'); return; }
-  setLoading(true, 'Testing…');
-  try {
-    const r = await fetch(`${url}/rest/v1/review_sessions?limit=1`, {
-      headers: { 'apikey': key, 'Authorization': `Bearer ${key}` }
-    });
-    if (r.status === 200 || r.status === 206) toast('✓ Connection successful!');
-    else if (r.status === 404) toast('Table not found — run the SQL first.', 'warn');
-    else toast(`Error ${r.status}`, 'err');
-  } catch(e) { toast('Connection failed: ' + e.message, 'err'); }
-  finally { setLoading(false); }
-}
-
-function copySQL() { copyText(document.getElementById('setup-sql').textContent); }
-function checkConfig() {
-  const b = document.getElementById('setup-banner');
-  if (b) b.style.display = isConfigured() ? 'none' : 'block';
-}
-
-// ── Doc name helper ────────────────────────
-// Main app doesn't save _doc_name in the report — read from proof_history instead
-function resolveDocName(report) {
-  if (report && report._doc_name) return report._doc_name;
-  try {
-    const h = JSON.parse(localStorage.getItem('proof_history') || '[]');
-    if (h.length && h[0].filename) return h[0].filename;
-  } catch(e) {}
-  return 'Untitled';
-}
-
-// ── Dashboard ──────────────────────────────
-function loadLastReport() {
-  const area = document.getElementById('report-preview-area');
-  const btn  = document.getElementById('share-btn');
-  const hint = document.getElementById('share-hint');
-
-  try {
-    const raw = localStorage.getItem('proof_last_report');
-    if (!raw) {
-      area.innerHTML = `<div class="empty-state">No report found.<br><br>
-        Go to <a href="index.html" style="color:var(--primary)">the proofreader</a>, proofread a document, then return here.</div>`;
-      hint.textContent = 'Proofread a document first.';
-      return;
-    }
-
-    const data = JSON.parse(raw);
-    const report = data.report || data;
-    _report = report;
-
-    const docName  = resolveDocName(report);
-    const initBy   = report._initiated_by || _myName || '—';
-    const errCount = (report.errors || []).length;
-    const lang     = report.language || '—';
-    const model    = report._model ? report._model.replace('claude-','Claude ') : '—';
-
-    area.innerHTML = `
-      <div class="report-preview">
-        <div class="rp-meta">
-          <div><div class="rp-label">Document</div><div class="rp-value">${esc(docName)}</div></div>
-          <div><div class="rp-label">Issues Found</div><div class="rp-value" style="color:var(--warning)">${errCount}</div></div>
-          <div><div class="rp-label">Language</div><div class="rp-value">${esc(lang)}</div></div>
-          <div><div class="rp-label">Model</div><div class="rp-value">${esc(model)}</div></div>
-          <div><div class="rp-label">Initiated By</div><div class="rp-value">${esc(initBy)}</div></div>
-        </div>
-      </div>`;
-    btn.disabled = false;
-    hint.textContent = 'Creates a shareable link instantly — no export needed.';
-  } catch(e) {
-    area.innerHTML = `<div class="empty-state" style="color:var(--danger)">Error reading report: ${esc(e.message)}</div>`;
-  }
-}
-
-async function createSession() {
-  if (!isConfigured()) { toast('Configure Supabase in Setup tab first.', 'warn'); showPage('setup'); return; }
-  if (!_report) { toast('No report loaded.', 'warn'); return; }
-  setLoading(true, 'Creating review link…');
-  try {
-    const id          = genId();
-    const docName     = resolveDocName(_report);
-    const initiatedBy = _report._initiated_by || _myName || '';
-    await sbInsert({
-      id, report: _report,
-      doc_name: docName, initiated_by: initiatedBy, model_name: _report._model || '',
-      expires_at: new Date(Date.now() + 30*24*3600*1000).toISOString()
-    });
-    const link = `${location.origin}${location.pathname}?r=${id}`;
-    const box  = document.getElementById('new-link');
-    box.textContent = link; box.dataset.url = link;
-    document.getElementById('new-link-wrap').style.display = 'block';
-    saveSessionLocal(id, docName, initiatedBy, new Date().toISOString());
-    renderSessions();
-    toast('Review link created! 🎉');
-  } catch(e) { toast('Error: ' + e.message, 'err'); }
-  finally { setLoading(false); }
-}
-
-// ── Session list ───────────────────────────
-function saveSessionLocal(id, docName, initiatedBy, createdAt) {
-  try {
-    const list = JSON.parse(localStorage.getItem('sr_sessions') || '[]');
-    if (!list.find(s => s.id === id)) {
-      list.unshift({ id, docName, initiatedBy, createdAt, status: 'pending' });
-      localStorage.setItem('sr_sessions', JSON.stringify(list.slice(0, 100)));
-    }
-  } catch(e) {}
-}
-
-function getSessionsLocal() {
-  try { return JSON.parse(localStorage.getItem('sr_sessions') || '[]'); } catch(e) { return []; }
-}
-
-async function refreshSessions() {
-  if (!isConfigured()) { renderSessions(); return; }
-  const list = getSessionsLocal();
-  if (!list.length) { renderSessions(); return; }
-  setLoading(true, 'Refreshing…');
-  try {
-    const remote = await sbListMine(list.map(s => s.id));
-    remote.forEach(r => {
-      const loc = list.find(s => s.id === r.id);
-      if (loc) { loc.status = r.status; loc.reviewedBy = r.reviewed_by; loc.docName = r.doc_name || loc.docName; }
-    });
-    localStorage.setItem('sr_sessions', JSON.stringify(list));
-    renderSessions(); toast('Refreshed!');
-  } catch(e) { toast('Refresh error: ' + e.message, 'err'); }
-  finally { setLoading(false); }
-}
-
-function renderSessions() {
-  const list = getSessionsLocal();
-  const el   = document.getElementById('sessions-list');
-  if (!list.length) {
-    el.innerHTML = '<div class="empty-state">No sessions yet. Create a review link above.</div>';
-    return;
-  }
-  el.innerHTML = list.map(s => {
-    const reviewed = s.status === 'reviewed';
-    const link = `${location.origin}${location.pathname}?r=${s.id}`;
-    return `<div class="session-item">
-      <div class="si-info">
-        <div class="si-title">${esc(s.docName || 'Untitled')}</div>
-        <div class="si-meta">${s.initiatedBy ? esc(s.initiatedBy)+' · ' : ''}${fmtDate(s.createdAt)}${reviewed && s.reviewedBy ? ' · Reviewed by '+esc(s.reviewedBy) : ''}</div>
-      </div>
-      <div class="si-actions">
-        <span class="badge ${reviewed ? 'badge-reviewed':'badge-pending'}">${reviewed ? '✓ Reviewed':'Pending'}</span>
-        <button class="btn btn-secondary btn-sm" onclick="window.location.href='?r=${s.id}'">${reviewed ? '👁 Results' : '🔗 Open'}</button>
-        <button class="btn btn-secondary btn-sm" title="Copy link" onclick="copyText('${link.replace(/'/g,"\\'")}')">📋</button>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-// ── Load review session ────────────────────
-async function loadReviewSession(id) {
-  setLoading(true, 'Loading session…');
-  try {
-    if (!isConfigured()) { setLoading(false); showReviewerKeyPrompt(id); return; }
-    const row = await sbGet(id);
-    if (!row) {
-      document.getElementById('review-page').innerHTML =
-        `<div class="card" style="margin-top:24px;text-align:center">
-           <p style="font-size:15px;font-weight:700;margin-bottom:8px">Session not found</p>
-           <p class="help">This session may have expired or the link is incorrect.</p>
-           <a href="${location.pathname}" class="btn btn-primary" style="margin-top:14px;display:inline-flex">← Back</a>
-         </div>`;
-      document.getElementById('review-page').classList.add('active');
-      document.getElementById('header-tabs').style.display = 'none';
-      return;
-    }
-    _session   = row;
-    _sessionId = id;
-    _isResults = row.status === 'reviewed';
-    _decisions = _isResults
-      ? (typeof row.decisions === 'string' ? JSON.parse(row.decisions) : (row.decisions || {}))
-      : {};
-    renderReviewPage();
-  } catch(e) { toast('Error: ' + e.message, 'err'); }
-  finally { setLoading(false); }
-}
-
-function showReviewerKeyPrompt(sessionId) {
-  document.getElementById('header-tabs').style.display = 'none';
-  document.getElementById('review-page').innerHTML = `
-    <div class="card" style="max-width:460px;margin:32px auto">
-      <h3>🔑 Enter access key to view this review</h3>
-      <p class="help" style="margin:10px 0 16px">Ask the person who shared this link for the Supabase URL and anon key. Saved locally — only needed once on this browser.</p>
-      <label>Supabase Project URL</label>
-      <input type="text" id="rv-sb-url" placeholder="https://xxxx.supabase.co" style="margin-bottom:10px">
-      <label>Supabase Anon Key</label>
-      <input type="password" id="rv-sb-key" placeholder="eyJ…" style="margin-bottom:14px">
-      <button class="btn btn-primary" onclick="saveReviewerKey('${sessionId}')">Load Review →</button>
-    </div>`;
-  document.getElementById('review-page').classList.add('active');
-}
-
-async function saveReviewerKey(sid) {
-  const url = document.getElementById('rv-sb-url')?.value.trim().replace(/\/$/, '');
-  const key = document.getElementById('rv-sb-key')?.value.trim();
-  if (!url || !key) { toast('Enter both fields.', 'warn'); return; }
-  localStorage.setItem('review_sb_url', url);
-  localStorage.setItem('review_sb_key', key);
-  _sbUrl = url; _sbKey = key;
-  document.getElementById('review-page').innerHTML = _origReviewHTML;
-  await loadReviewSession(sid);
-}
-
-// ── Render review page ─────────────────────
-function renderReviewPage() {
-  const s      = _session;
-  const report = s.report || {};
-  const errors = report.errors || [];
-
-  // Header
-  const hdr = document.getElementById('rv-header');
-  if (hdr) {
-    const typeChips = Object.entries(report.summary || {})
-      .filter(([k,v]) => k !== 'total_errors' && v > 0)
-      .map(([k,v]) => `<div class="chip" style="color:${TYPE_COLORS[k]||'inherit'}">${v} <span>${k}</span></div>`)
-      .join('');
-    hdr.innerHTML = `
-      <div class="review-header">
-        <h2>📋 ${esc(s.doc_name || 'Proofreading Review')}</h2>
-        <div class="meta">
-          ${s.initiated_by ? `Shared by <strong>${esc(s.initiated_by)}</strong> · ` : ''}
-          ${fmtDate(s.created_at)}
-          ${s.model_name ? ` · ${esc(s.model_name.replace('claude-','Claude '))}` : ''}
-          ${report.language ? ` · ${esc(report.language)}` : ''}
-          ${_isResults ? ` · <span style="color:var(--success)">✓ Reviewed by <strong>${esc(s.reviewed_by)}</strong> — ${fmtDate(s.reviewed_at)}</span>` : ''}
-        </div>
-        <div class="chips">
-          <div class="chip">${errors.length} <span>issues</span></div>
-          ${typeChips}
-        </div>
-      </div>`;
-  }
-
-  // Build type filter buttons dynamically
-  const types = [...new Set(errors.map(e => e.type).filter(Boolean))].sort();
-  const typeBtnsEl = document.getElementById('type-filter-btns');
-  if (typeBtnsEl) {
-    typeBtnsEl.innerHTML = types.map(t => {
-      const c = TYPE_COLORS[t] || '#8b8fa8';
-      return `<button class="filt-btn" style="color:${c};border-color:${c}44"
-        onclick="setFilter('type','${t}',this)">${t}</button>`;
-    }).join('');
-  }
-
-  // Results stats
-  if (_isResults) {
-    const app = Object.values(_decisions).filter(d => d.decision==='approved').length;
-    const rej = Object.values(_decisions).filter(d => d.decision==='rejected').length;
-    const sug = Object.values(_decisions).filter(d => d.decision==='suggested').length;
-    const pen = errors.length - app - rej - sug;
-    const rsEl = document.getElementById('results-stats');
-    if (rsEl) {
-      rsEl.style.display = 'flex';
-      rsEl.innerHTML = `
-        <div class="stat-box stat-approved"><div class="num">${app}</div><div class="lbl">Approved</div></div>
-        <div class="stat-box stat-rejected"><div class="num">${rej}</div><div class="lbl">Rejected</div></div>
-        <div class="stat-box stat-suggested"><div class="num">${sug}</div><div class="lbl">Suggested</div></div>
-        <div class="stat-box stat-pending"><div class="num">${pen}</div><div class="lbl">No Decision</div></div>`;
-    }
-
-    // Results bar summary
-    const rsBar = document.getElementById('results-bar');
-    const rsSummary = document.getElementById('results-summary');
-    if (rsBar) rsBar.style.display = 'flex';
-    if (rsSummary) rsSummary.innerHTML =
-      `<strong style="color:var(--success)">${app} approved</strong> · ` +
-      `<strong style="color:var(--danger)">${rej} rejected</strong> · ` +
-      `<strong style="color:var(--warning)">${sug} suggestions</strong>` +
-      (pen > 0 ? ` · ${pen} no decision` : '');
-
-    // Resend card
-    const resendCard = document.getElementById('resend-card');
-    if (resendCard) {
-      resendCard.style.display = 'block';
-      const unresolved = errors.filter(e => {
-        const d = _decisions[String(e.id)];
-        return !d || d.decision === 'rejected';
-      }).length;
-      document.getElementById('resend-all-count').textContent = errors.length;
-      document.getElementById('resend-unresolved-count').textContent = unresolved;
-      const unBtn = document.getElementById('resend-unresolved-btn');
-      if (unBtn) unBtn.disabled = unresolved === 0;
-    }
-  }
-
-  // Show/hide UI per mode
-  const nameBar   = document.getElementById('rv-name-bar');
-  const submitBar = document.getElementById('submit-bar');
-  const progress  = document.getElementById('rv-progress');
-  const decTh     = document.getElementById('dec-th');
-  if (nameBar)  nameBar.style.display  = _isResults ? 'none' : 'flex';
-  if (submitBar) submitBar.style.display = _isResults ? 'none' : 'flex';
-  if (decTh) decTh.textContent = _isResults ? 'Decision' : 'Your Decision';
-
-  // Build rows
-  const tbody = document.getElementById('rv-tbody');
-  if (tbody) tbody.innerHTML = errors.map(e => buildRow(e)).join('');
-
+function startReview(r) {
+  READONLY = SUBMITTED;
+  const p = PAYLOAD;
+  const bits = [];
+  if (p.language) bits.push('<span>' + esc(p.language) + '</span>');
+  if (p.pages) bits.push('<span>' + esc(p.pages) + ' pages</span>');
+  bits.push('<span><b>' + ISSUES().length + '</b>&nbsp;items to review</span>');
+  if (p.createdBy) bits.push('<span>From ' + esc(p.createdBy) + '</span>');
+  if (r.expires_at) bits.push('<span>Link valid until ' + new Date(r.expires_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) + '</span>');
+  $('docbar').innerHTML = '<h1>' + esc(p.title || 'Document review') + '</h1><div class="meta">' + bits.join('') + '</div>' +
+    (p.note ? '<div class="note-box"><b>Note from the editor</b>' + esc(p.note) + '</div>' : '');
+  buildFilters();
+  render();
   updateProgress();
-  showPage('review');
-  document.getElementById('header-tabs').style.display = 'none';
+  setSave('ok', READONLY ? 'Submitted' : 'All changes saved');
+  if (SUBMITTED) return showDone(true);
+  show('v-review');
+  if (!lsGet('sr_seen_' + ID)) openWelcome(true);
 }
 
-function buildRow(e) {
-  const color = TYPE_COLORS[e.type] || '#8b8fa8';
-  const dec   = _decisions[String(e.id)];
-  const rowCls = dec ? `row-${dec.decision}` : '';
-  const sev   = e.severity || 'Minor';
+function openWelcome(first) {
+  $('w-title').textContent = first ? 'Welcome, ' + NAME : 'How this works';
+  $('w-sub').textContent = first ? (PAYLOAD.title ? 'You are reviewing “' + PAYLOAD.title + '”. Here is how it works:' : 'Here is how it works:') : 'A quick reminder:';
+  $('w-note').innerHTML = (first && PAYLOAD.note) ? '<div class="note-box"><b>Note from the editor</b>' + esc(PAYLOAD.note) + '</div>' : '';
+  $('btn-start').textContent = first ? 'Start reviewing' : 'Got it';
+  $('ov-welcome').hidden = false; $('btn-start').focus();
+}
+$('btn-start').onclick = () => { $('ov-welcome').hidden = true; lsSet('sr_seen_' + ID, '1'); };
+$('btn-help').onclick = () => openWelcome(false);
 
-  const typeCell = `
-    <div class="type-badge" style="background:${color}22;color:${color}">${esc(e.type)}</div>
-    <div class="sev-badge sev-${sev}">${sev}</div>`;
-
-  if (_isResults) {
-    let decHtml = '<span class="dec-label lbl-pending">No decision</span>';
-    if (dec) {
-      if (dec.decision === 'approved')  decHtml = '<span class="dec-label lbl-approved">✓ Approved</span>';
-      if (dec.decision === 'rejected')  decHtml = '<span class="dec-label lbl-rejected">✗ Rejected</span>';
-      if (dec.decision === 'suggested') decHtml =
-        `<span class="dec-label lbl-suggested">✎ Suggestion</span>
-         <div class="sug-text">${esc(dec.suggestion||'')}</div>`;
-    }
-    return `<tr class="${rowCls}" data-id="${e.id}" data-dec="${dec?.decision||'pending'}" data-type="${esc(e.type)}" data-sev="${sev}">
-      <td style="color:var(--muted);font-size:11px">${e.id}</td>
-      <td>${typeCell}</td>
-      <td class="pg-num">${e.page ? 'p.'+e.page : '—'}</td>
-      <td class="orig-txt">${esc(e.original)}</td>
-      <td class="corr-txt">${esc(e.corrected)}</td>
-      <td class="expl-txt">${esc(e.explanation)}</td>
-      <td>${decHtml}</td>
-    </tr>`;
-  }
-
-  const sel    = dec?.decision || null;
-  const sugVal = dec?.suggestion || '';
-  return `<tr class="${rowCls}" data-id="${e.id}" data-dec="${sel||'pending'}" data-type="${esc(e.type)}" data-sev="${sev}">
-    <td style="color:var(--muted);font-size:11px">${e.id}</td>
-    <td>${typeCell}</td>
-    <td class="pg-num">${e.page ? 'p.'+e.page : '—'}</td>
-    <td class="orig-txt">${esc(e.original)}</td>
-    <td class="corr-txt">${esc(e.corrected)}</td>
-    <td class="expl-txt">${esc(e.explanation)}</td>
-    <td>
-      <div class="dec-cell">
-        <div class="dec-btns">
-          <button class="dec-btn approve ${sel==='approved'?'sel':''}" onclick="setDecision(${e.id},'approved',this)">✓ Approve</button>
-          <button class="dec-btn reject  ${sel==='rejected'?'sel':''}" onclick="setDecision(${e.id},'rejected',this)">✗ Reject</button>
-          <button class="dec-btn suggest ${sel==='suggested'?'sel':''}" onclick="setDecision(${e.id},'suggested',this)">✎ Suggest</button>
-        </div>
-        <textarea class="suggest-input ${sel==='suggested'?'show':''}"
-          id="sug-${e.id}" rows="2" placeholder="Enter your alternative correction…"
-          oninput="updateSuggestion(${e.id},this.value)"
-        >${esc(sugVal)}</textarea>
-      </div>
-    </td>
-  </tr>`;
+function buildFilters() {
+  const types = Array.from(new Set(ISSUES().map((i) => i.type).filter(Boolean)));
+  $('filters').innerHTML =
+    ['all', 'none', 'agree', 'disagree', 'edit', 'comment'].map((k) => '<button class="chip" data-f="' + k + '"></button>').join('') +
+    (types.length > 1 ? '<select id="f-type" aria-label="Filter by type"><option value="all">All types</option>' + types.map((t) => '<option>' + esc(t) + '</option>').join('') + '</select>' : '') +
+    '<input id="f-q" type="search" placeholder="Search…" aria-label="Search issues">';
+  $('filters').querySelectorAll('.chip').forEach((b) => { b.onclick = () => { FILTER = b.dataset.f; SHOWN = 40; render(); }; });
+  const ft = $('f-type'); if (ft) ft.onchange = () => { TYPE = ft.value; SHOWN = 40; render(); };
+  $('f-q').oninput = (e) => { QUERY = e.target.value.trim().toLowerCase(); SHOWN = 40; render(); };
+}
+const LABEL = { all: 'All', none: 'To review', agree: 'Agree', disagree: 'Disagree', edit: 'Edited', comment: 'With comments' };
+function paintChips() {
+  const c = counts();
+  const n = { all: c.total, none: c.none, agree: c.agree, disagree: c.disagree, edit: c.edit, comment: c.comment };
+  $('filters').querySelectorAll('.chip').forEach((b) => {
+    b.classList.toggle('on', b.dataset.f === FILTER);
+    b.innerHTML = LABEL[b.dataset.f] + '<span class="n">' + n[b.dataset.f] + '</span>';
+  });
+}
+function visible() {
+  return ISSUES().filter((i) => {
+    const it = D.items[i.id]; const s = (it && it.d) || 'none';
+    if (FILTER === 'comment') { if (!(it && it.c)) return false; } else if (FILTER !== 'all' && s !== FILTER) return false;
+    if (TYPE !== 'all' && i.type !== TYPE) return false;
+    if (QUERY) { const hay = (i.context + ' ' + i.original + ' ' + i.corrected + ' ' + (i.explanation || '') + ' ' + (i.source && i.source.text || '') + ' ' + (i.loc || '')).toLowerCase(); if (!hay.includes(QUERY)) return false; }
+    return true;
+  });
 }
 
-// ── Decisions ──────────────────────────────
-function setDecision(errorId, decision, btn) {
-  const id  = String(errorId);
-  const row = document.querySelector(`tr[data-id="${errorId}"]`);
-  if (!row) return;
-  const allBtns  = row.querySelectorAll('.dec-btn');
-  const sugInput = document.getElementById(`sug-${errorId}`);
-
-  if (_decisions[id]?.decision === decision) {
-    delete _decisions[id];
-    allBtns.forEach(b => b.classList.remove('sel'));
-    row.className = '';
-    row.dataset.dec = 'pending';
-    if (sugInput) sugInput.classList.remove('show');
-    updateProgress(); _applyFilters(); return;
-  }
-
-  _decisions[id] = { decision, suggestion: sugInput?.value || '' };
-  allBtns.forEach(b => b.classList.remove('sel'));
-  btn.classList.add('sel');
-  row.className = `row-${decision}`;
-  row.dataset.dec = decision;
-  if (sugInput) sugInput.classList.toggle('show', decision === 'suggested');
-  updateProgress(); _applyFilters();
+function parts(ctx, orig) {
+  if (!ctx || !orig) return null;
+  const i = ctx.indexOf(orig); if (i < 0) return null;
+  return [ctx.slice(0, i), orig, ctx.slice(i + orig.length)];
+}
+function ctxHtml(i, kind) {
+  const hl = kind === 'o' ? i.original : i.corrected;
+  const p = parts(i.context, i.original);
+  if (!p) return '<mark class="' + kind + '">' + esc(hl || '') + '</mark>' + (i.context ? '<span style="color:var(--muted)">  (in: ' + esc(i.context) + ')</span>' : '');
+  return esc(p[0]) + '<mark class="' + kind + '">' + esc(hl || '') + '</mark>' + esc(p[2]);
 }
 
-function updateSuggestion(errorId, value) {
-  const id = String(errorId);
-  if (_decisions[id]) _decisions[id].suggestion = value;
+function cardHtml(i) {
+  const it = D.items[i.id] || {}; const s = it.d || 'none';
+  const col = TYPE_COLORS[i.type] || '#6366f1';
+  const loc = i.loc || (i.page ? 'Page ' + i.page : '');
+  const pressed = (k) => 'aria-pressed="' + (s === k) + '"';
+  const showEdit = s === 'edit';
+  return '<article class="issue' + (READONLY ? ' readonly' : '') + (ACTIVE === i.id ? ' active' : '') + '" id="i-' + i.id + '" data-id="' + i.id + '" data-s="' + s + '" tabindex="-1">' +
+    '<div class="ihead"><span class="inum">#' + esc(i.id) + '</span>' +
+    '<span class="badge" style="color:' + col + ';border-color:' + col + '66;background:' + col + '18">' + esc(i.type || 'Issue') + '</span>' +
+    (i.severity ? '<span class="badge sev-' + esc(i.severity) + '" style="border-color:currentColor;background:transparent">' + esc(i.severity) + '</span>' : '') +
+    (loc ? '<span class="loc">' + esc(loc) + '</span>' : '') + '</div>' +
+    '<div class="cols"><div class="col"><span class="cl">Current text</span><div class="ctx" dir="auto">' + ctxHtml(i, 'o') + '</div></div>' +
+    '<div class="col"><span class="cl">Suggested</span><div class="ctx" dir="auto">' + ctxHtml(i, 'c') + '</div></div></div>' +
+    (i.source && i.source.text ? '<div class="col src"><span class="cl">' + esc(i.source.label || 'Source') + '</span><div class="ctx" dir="auto">' + esc(i.source.text) + '</div></div>' : '') +
+    (i.explanation ? '<p class="why"><b>Why:</b> ' + esc(i.explanation) + '</p>' : '') +
+    '<div class="decide">' +
+    '<button class="dbtn agree" data-a="agree" ' + pressed('agree') + '>' + ICON.agree + ' Agree <small>use the suggestion</small></button>' +
+    '<button class="dbtn disagree" data-a="disagree" ' + pressed('disagree') + '>' + ICON.disagree + ' Disagree <small>keep as it is</small></button>' +
+    '<button class="dbtn edit" data-a="edit" ' + pressed('edit') + '>' + ICON.edit + ' Edit <small>write your own fix</small></button>' +
+    '<button class="cbtn' + (it.c ? ' has' : '') + '" data-a="comment">' + ICON.comment + (it.c ? ' Comment added' : ' Add a comment') + '</button></div>' +
+    '<div class="extra">' +
+    (showEdit ? '<div><label class="fl">Your corrected text <span style="font-weight:500">(replaces “' + esc(i.original) + '”)</span></label><textarea class="field" data-k="t" dir="auto" ' + (READONLY ? 'readonly' : '') + '>' + esc(it.t != null ? it.t : (i.corrected || '')) + '</textarea></div>' : '') +
+    ((it.c || it._c) ? '<div><label class="fl">Your comment for the editor</label><textarea class="field" data-k="c" dir="auto" placeholder="Optional note…" ' + (READONLY ? 'readonly' : '') + '>' + esc(it.c || '') + '</textarea></div>' : '') +
+    '</div></article>';
 }
+
+function render() {
+  paintChips();
+  const all = visible(); const list = all.slice(0, SHOWN);
+  $('list').innerHTML = list.length ? list.map(cardHtml).join('') :
+    '<div class="empty"><b>' + (FILTER === 'none' && !QUERY && TYPE === 'all' ? 'Everything is reviewed' : 'Nothing here') + '</b>' +
+    (FILTER === 'none' && !QUERY && TYPE === 'all' ? 'Great work. Press “Submit to editor” when you are ready.' : 'Try a different filter or clear the search.') + '</div>';
+  $('btn-more').hidden = all.length <= SHOWN;
+  $('btn-more').textContent = 'Show ' + Math.min(40, all.length - SHOWN) + ' more (' + (all.length - SHOWN) + ' left)';
+}
+$('btn-more').onclick = () => { SHOWN += 40; render(); };
 
 function updateProgress() {
-  if (!_session) return;
-  const total   = (_session.report?.errors || []).length;
-  const decided = Object.keys(_decisions).length;
-  const pct     = total ? Math.round(decided / total * 100) : 0;
+  const c = counts(); const done = c.total - c.none; const pct = c.total ? Math.round(done / c.total * 100) : 100;
+  $('fill').style.width = pct + '%'; $('track').setAttribute('aria-valuenow', pct);
+  $('plabel').innerHTML = done + ' of ' + c.total + ' <span>reviewed</span>';
+  paintChips();
+}
 
-  const fill  = document.getElementById('prog-fill');
-  const label = document.getElementById('prog-label');
-  if (fill)  fill.style.width = pct + '%';
-  if (label) label.textContent = `${decided} / ${total} reviewed`;
+// ── decisions ──
+function touch(id) { const it = D.items[id] || (D.items[id] = {}); it.at = Date.now(); D.updatedAt = it.at; return it; }
+function setDecision(id, d) {
+  const issue = ISSUES().find((x) => String(x.id) === String(id)); const it = touch(id);
+  it.d = it.d === d ? null : d;                                    // click again = undo
+  if (it.d === 'edit' && it.t == null) it.t = issue.corrected || '';
+  if (!it.d && !it.c) delete D.items[id];
+  refreshCard(id); updateProgress(); queueSave();
+}
+function refreshCard(id) {
+  const el = $('i-' + id); const issue = ISSUES().find((x) => String(x.id) === String(id));
+  if (!el || !issue) return;
+  const keepScroll = window.scrollY; el.outerHTML = cardHtml(issue); window.scrollTo(0, keepScroll);
+  if (FILTER !== 'all' && FILTER !== 'comment') { /* card may no longer match the filter — keep it until next render so the page does not jump */ }
+}
+$('list').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-a]'); if (!b || READONLY) return;
+  const card = b.closest('.issue'); const id = card.dataset.id; setActive(id, false);
+  const a = b.dataset.a;
+  if (a === 'comment') { const it = touch(id); it._c = true; refreshCard(id); const ta = $('i-' + id).querySelector('textarea[data-k="c"]'); if (ta) ta.focus(); return; }
+  setDecision(id, a);
+  if (a === 'edit') { const ta = $('i-' + id).querySelector('textarea[data-k="t"]'); if (ta && D.items[id] && D.items[id].d === 'edit') ta.focus(); }
+});
+$('list').addEventListener('input', (e) => {
+  const ta = e.target.closest('textarea[data-k]'); if (!ta || READONLY) return;
+  const id = ta.closest('.issue').dataset.id; const it = touch(id); const k = ta.dataset.k;
+  it[k] = ta.value; if (k === 'c' && !ta.value.trim()) delete it.c;
+  const btn = ta.closest('.issue').querySelector('.cbtn'); if (btn && k === 'c') { btn.classList.toggle('has', !!ta.value.trim()); btn.innerHTML = ICON.comment + (ta.value.trim() ? ' Comment added' : ' Add a comment'); }
+  paintChips(); queueSave();
+});
+$('list').addEventListener('focusin', (e) => { const c = e.target.closest('.issue'); if (c) setActive(c.dataset.id, false); });
 
-  const btn     = document.getElementById('submit-btn');
-  const summary = document.getElementById('submit-summary');
-  if (btn) btn.disabled = decided === 0;
-  if (summary && decided > 0) {
-    const app = Object.values(_decisions).filter(d => d.decision==='approved').length;
-    const rej = Object.values(_decisions).filter(d => d.decision==='rejected').length;
-    const sug = Object.values(_decisions).filter(d => d.decision==='suggested').length;
-    summary.textContent = `${app} approved · ${rej} rejected · ${sug} suggestions · ${total-decided} undecided`;
+// ── keyboard ──
+function setActive(id, scroll) {
+  if (ACTIVE != null) { const o = $('i-' + ACTIVE); if (o) o.classList.remove('active'); }
+  ACTIVE = id; const el = $('i-' + id); if (el) { el.classList.add('active'); if (scroll) el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+}
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.target.matches && e.target.matches('input, textarea, select')) { if (e.key === 'Escape') e.target.blur(); return; }
+  if (!$('v-review').hidden && $('ov-welcome').hidden && $('ov-submit').hidden) {
+    const cards = Array.from($('list').querySelectorAll('.issue')); if (!cards.length) return;
+    const idx = Math.max(0, cards.findIndex((c) => c.dataset.id === String(ACTIVE)));
+    const k = e.key.toLowerCase();
+    if (k === 'j' || k === 'arrowdown') { e.preventDefault(); setActive(cards[Math.min(idx + (ACTIVE == null ? 0 : 1), cards.length - 1)].dataset.id, true); }
+    else if (k === 'k' || k === 'arrowup') { e.preventDefault(); setActive(cards[Math.max(idx - 1, 0)].dataset.id, true); }
+    else if (!READONLY && ACTIVE != null && ['a', 'd', 'e', 'c'].includes(k)) {
+      e.preventDefault(); const id = ACTIVE;
+      if (k === 'c') { const it = touch(id); it._c = true; refreshCard(id); const ta = $('i-' + id).querySelector('textarea[data-k="c"]'); if (ta) ta.focus(); }
+      else { setDecision(id, { a: 'agree', d: 'disagree', e: 'edit' }[k]); if (k === 'e') { const ta = $('i-' + id).querySelector('textarea[data-k="t"]'); if (ta) ta.focus(); } }
+    } else if (k === '?') openWelcome(false);
   }
-}
-
-// ── Filters ────────────────────────────────
-function setFilter(dim, val, btn) {
-  if (dim === 'dec')  { _filterDec  = val; _syncBtns('fd-', val, btn); }
-  if (dim === 'type') { _filterType = val; _syncBtns('ft-', val, btn); }
-  if (dim === 'sev')  { _filterSev  = val; _syncBtns('fs-', val, btn); }
-  _applyFilters();
-}
-
-function _syncBtns(prefix, val, activeBtn) {
-  if (prefix === 'ft-') {
-    document.querySelectorAll('#type-filter-row .filt-btn').forEach(b => b.classList.remove('on'));
-  } else {
-    document.querySelectorAll(`.filt-btn[class*="${prefix}"]`).forEach(b => b.classList.remove('on'));
-  }
-  if (activeBtn) activeBtn.classList.add('on');
-}
-
-function _applyFilters() {
-  let visible = 0, total = 0;
-  document.querySelectorAll('#rv-tbody tr').forEach(row => {
-    total++;
-    const dec  = row.dataset.dec  || 'pending';
-    const type = row.dataset.type || '';
-    const sev  = row.dataset.sev  || '';
-    const show =
-      (_filterDec  === 'all' || dec  === _filterDec)  &&
-      (_filterType === 'all' || type === _filterType) &&
-      (_filterSev  === 'all' || sev  === _filterSev);
-    row.classList.toggle('hidden-row', !show);
-    if (show) visible++;
-  });
-  const fc = document.getElementById('filter-count');
-  if (fc) fc.textContent = (visible < total) ? `${visible} of ${total} shown` : '';
-}
-
-// ── Submit ─────────────────────────────────
-async function submitReview() {
-  const name = document.getElementById('rv-name')?.value.trim();
-  if (!name) { toast('Enter your name first.', 'warn'); document.getElementById('rv-name')?.focus(); return; }
-  if (!Object.keys(_decisions).length) { toast('Make at least one decision first.', 'warn'); return; }
-  const total   = (_session.report?.errors || []).length;
-  const decided = Object.keys(_decisions).length;
-  if (!confirm(`Submit review as "${name}"?\n\nDecisions: ${decided} of ${total} errors\n\nOnce submitted, this cannot be changed.`)) return;
-  setLoading(true, 'Submitting…');
-  try {
-    await sbPatch(_sessionId, {
-      status: 'reviewed', reviewed_by: name,
-      reviewed_at: new Date().toISOString(), decisions: _decisions
-    });
-    const list = getSessionsLocal();
-    const s = list.find(x => x.id === _sessionId);
-    if (s) { s.status = 'reviewed'; s.reviewedBy = name; localStorage.setItem('sr_sessions', JSON.stringify(list)); }
-    toast('Review submitted! 🎉');
-    _isResults = true;
-    Object.assign(_session, { status:'reviewed', reviewed_by:name, reviewed_at:new Date().toISOString(), decisions:_decisions });
-    renderReviewPage();
-  } catch(e) { toast('Submit error: ' + e.message, 'err'); }
-  finally { setLoading(false); }
-}
-
-// ── Resend ─────────────────────────────────
-async function resendReview(mode) {
-  if (!_session || !isConfigured()) return;
-  let errors = _session.report?.errors || [];
-  if (mode === 'unresolved') {
-    errors = errors.filter(e => { const d = _decisions[String(e.id)]; return !d || d.decision === 'rejected'; });
-    if (!errors.length) { toast('No rejected or undecided errors.', 'warn'); return; }
-  }
-  const label = mode === 'unresolved'
-    ? `${errors.length} rejected/undecided errors`
-    : `all ${errors.length} errors`;
-  if (!confirm(`Create a new review session with ${label}?`)) return;
-  setLoading(true, 'Creating new session…');
-  try {
-    const id        = genId();
-    const newReport = { ..._session.report, errors };
-    await sbInsert({
-      id, report: newReport,
-      doc_name: _session.doc_name,
-      initiated_by: _myName || _session.initiated_by || '',
-      model_name: _session.model_name || '',
-      expires_at: new Date(Date.now() + 30*24*3600*1000).toISOString()
-    });
-    const link = `${location.origin}${location.pathname}?r=${id}`;
-    saveSessionLocal(id, _session.doc_name, _myName || _session.initiated_by, new Date().toISOString());
-
-    const box = document.getElementById('resend-link');
-    if (box) { box.textContent = link; box.dataset.url = link; }
-    const res = document.getElementById('resend-result');
-    if (res) res.style.display = 'block';
-    toast('New review session created!');
-  } catch(e) { toast('Error: ' + e.message, 'err'); }
-  finally { setLoading(false); }
-}
-
-// ── Export: PDF ────────────────────────────
-function exportPDF() {
-  if (typeof window.jspdf === 'undefined') { toast('PDF library not loaded yet — try again.', 'warn'); return; }
-  const { jsPDF } = window.jspdf;
-  const s = _session;
-  const errors = s.report?.errors || [];
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-
-  // Title block
-  doc.setFontSize(15); doc.setFont(undefined,'bold');
-  doc.text(`Proofreading Review — ${s.doc_name || 'Document'}`, 14, 18);
-  doc.setFontSize(9); doc.setFont(undefined,'normal');
-  doc.setTextColor(120);
-  doc.text(`Reviewed by: ${s.reviewed_by || '—'}   Date: ${fmtDate(s.reviewed_at)}`, 14, 25);
-  doc.text(`Shared by: ${s.initiated_by || '—'}   Model: ${(s.model_name||'').replace('claude-','Claude ')}   Language: ${s.report?.language||'—'}`, 14, 30);
-
-  const app = Object.values(_decisions).filter(d=>d.decision==='approved').length;
-  const rej = Object.values(_decisions).filter(d=>d.decision==='rejected').length;
-  const sug = Object.values(_decisions).filter(d=>d.decision==='suggested').length;
-  const pen = errors.length - app - rej - sug;
-  doc.text(`Total: ${errors.length}  ·  Approved: ${app}  ·  Rejected: ${rej}  ·  Suggested: ${sug}  ·  No decision: ${pen}`, 14, 35);
-  doc.setTextColor(0);
-
-  // Table
-  const rows = errors.map(e => {
-    const d = _decisions[String(e.id)];
-    const decText = d ? (d.decision.charAt(0).toUpperCase() + d.decision.slice(1) + (d.suggestion ? ' → ' + d.suggestion : '')) : '—';
-    return [e.id, e.type, e.severity||'Minor', e.page?`p.${e.page}`:'—', e.original||'', e.corrected||'', e.explanation||'', decText];
-  });
-
-  doc.autoTable({
-    startY: 40,
-    head: [['#','Type','Sev','Pg','Original','Corrected','Explanation','Decision']],
-    body: rows,
-    styles: { fontSize: 7.5, cellPadding: 2, overflow: 'linebreak' },
-    headStyles: { fillColor: [34,38,58], textColor: [180,180,200], fontStyle: 'bold' },
-    columnStyles: {
-      0: { cellWidth: 8 }, 1: { cellWidth: 22 }, 2: { cellWidth: 16 },
-      3: { cellWidth: 10 }, 4: { cellWidth: 34 }, 5: { cellWidth: 34 },
-      6: { cellWidth: 'auto' }, 7: { cellWidth: 32 }
-    },
-    alternateRowStyles: { fillColor: [248,248,252] },
-    didParseCell(data) {
-      if (data.section === 'body' && data.column.index === 7) {
-        const t = (data.cell.raw||'').toLowerCase();
-        if (t.startsWith('approved'))  data.cell.styles.textColor = [16,185,129];
-        if (t.startsWith('rejected'))  data.cell.styles.textColor = [239,68,68];
-        if (t.startsWith('suggested')) data.cell.styles.textColor = [245,158,11];
-      }
-    }
-  });
-
-  doc.save(`${safeName(s.doc_name)}-review.pdf`);
-  toast('PDF exported!');
-}
-
-// ── Export: Word ───────────────────────────
-function exportWord() {
-  const s = _session;
-  const errors = s.report?.errors || [];
-  const app = Object.values(_decisions).filter(d=>d.decision==='approved').length;
-  const rej = Object.values(_decisions).filter(d=>d.decision==='rejected').length;
-  const sug = Object.values(_decisions).filter(d=>d.decision==='suggested').length;
-  const pen = errors.length - app - rej - sug;
-
-  const decColor = { approved:'#059669', rejected:'#dc2626', suggested:'#d97706' };
-
-  const rows = errors.map(e => {
-    const d   = _decisions[String(e.id)];
-    const dec = d ? d.decision : 'pending';
-    const col = decColor[dec] || '#888';
-    const txt = d ? (dec.charAt(0).toUpperCase()+dec.slice(1)+(d.suggestion?' → '+d.suggestion:'')) : 'No decision';
-    return `<tr>
-      <td style="font-size:10pt;color:#666;padding:4px 6px">${e.id}</td>
-      <td style="font-size:10pt;padding:4px 6px">${e.type}</td>
-      <td style="font-size:10pt;padding:4px 6px">${e.severity||'Minor'}</td>
-      <td style="font-size:10pt;padding:4px 6px">${e.page?'p.'+e.page:'—'}</td>
-      <td style="font-size:10pt;color:#b91c1c;padding:4px 6px">${esc(e.original||'')}</td>
-      <td style="font-size:10pt;color:#065f46;padding:4px 6px">${esc(e.corrected||'')}</td>
-      <td style="font-size:10pt;color:#555;padding:4px 6px">${esc(e.explanation||'')}</td>
-      <td style="font-size:10pt;font-weight:bold;color:${col};padding:4px 6px">${esc(txt)}</td>
-    </tr>`;
-  }).join('');
-
-  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office"
-xmlns:w="urn:schemas-microsoft-com:office:word"><head>
-<meta charset="UTF-8">
-<style>
-body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; }
-h1   { font-size: 16pt; margin-bottom: 4px; }
-p    { margin: 2px 0; font-size: 10pt; color: #444; }
-table { border-collapse: collapse; width: 100%; margin-top: 16px; }
-th { background: #f0f0f5; border: 1px solid #ccc; padding: 5px 8px; font-size: 9pt; text-align: left; }
-td { border: 1px solid #ddd; padding: 4px 6px; vertical-align: top; }
-</style></head><body>
-<h1>Proofreading Review — ${esc(s.doc_name||'Document')}</h1>
-<p>Reviewed by: <b>${esc(s.reviewed_by||'—')}</b> &nbsp;·&nbsp; ${fmtDate(s.reviewed_at)}</p>
-<p>Shared by: <b>${esc(s.initiated_by||'—')}</b> &nbsp;·&nbsp; Model: ${esc((s.model_name||'').replace('claude-','Claude '))}</p>
-<p>Summary: Total ${errors.length} &nbsp;·&nbsp; Approved <b style="color:#059669">${app}</b> &nbsp;·&nbsp; Rejected <b style="color:#dc2626">${rej}</b> &nbsp;·&nbsp; Suggested <b style="color:#d97706">${sug}</b> &nbsp;·&nbsp; No decision ${pen}</p>
-<table>
-<tr><th>#</th><th>Type</th><th>Severity</th><th>Page</th><th>Original</th><th>Corrected</th><th>Explanation</th><th>Decision</th></tr>
-${rows}
-</table>
-</body></html>`;
-
-  dlBlob(new Blob(['﻿'+html], {type:'application/msword'}), `${safeName(s.doc_name)}-review.doc`);
-  toast('Word document exported!');
-}
-
-// ── Export: CSV ────────────────────────────
-function exportCSV() {
-  const s = _session;
-  const errors = s.report?.errors || [];
-  const q = v => `"${String(v??'').replace(/"/g,'""')}"`;
-  const header = ['#','Type','Severity','Page','Original','Corrected','Explanation','Decision','Suggestion'];
-  const rows = errors.map(e => {
-    const d = _decisions[String(e.id)];
-    return [e.id, e.type, e.severity||'Minor', e.page||'', e.original||'', e.corrected||'', e.explanation||'',
-      d?d.decision:'pending', d?.suggestion||''].map(q);
-  });
-  const csv = [header.map(q), ...rows].map(r => r.join(',')).join('\n');
-  dlBlob(new Blob([csv], {type:'text/csv'}), `${safeName(s.doc_name)}-review.csv`);
-  toast('CSV exported!');
-}
-
-// ── Export: Approved changes (.txt) ────────
-function exportApproved() {
-  const s = _session;
-  const errors = (s.report?.errors||[]).filter(e => {
-    const d = _decisions[String(e.id)];
-    return d && (d.decision==='approved' || d.decision==='suggested');
-  });
-  const rows = errors.map(e => {
-    const d = _decisions[String(e.id)];
-    const corr = d.decision==='suggested' ? (d.suggestion||e.corrected) : e.corrected;
-    return `| ${e.id} | ${e.type} | p.${e.page||'?'} | ${e.original} | ${corr} | ${e.explanation} |`;
-  });
-  const txt = [
-    `# Approved Changes — ${s.doc_name||'Document'}`,
-    `Reviewed by: ${s.reviewed_by} on ${fmtDate(s.reviewed_at)}`,``,
-    `| # | Type | Page | Original | Corrected | Explanation |`,
-    `|---|------|------|----------|-----------|-------------|`,
-    ...rows,``,
-    `Total: ${errors.length} of ${(s.report?.errors||[]).length} issues accepted`
-  ].join('\n');
-  dlBlob(new Blob([txt], {type:'text/plain'}), `${safeName(s.doc_name)}-approved.txt`);
-}
-
-// ── Export: Full JSON ──────────────────────
-function exportFullJSON() {
-  const s = _session;
-  const payload = {
-    doc_name: s.doc_name, initiated_by: s.initiated_by,
-    reviewed_by: s.reviewed_by, reviewed_at: s.reviewed_at,
-    decisions: _decisions, errors: s.report?.errors,
-    summary: {
-      total: (s.report?.errors||[]).length,
-      approved:  Object.values(_decisions).filter(d=>d.decision==='approved').length,
-      rejected:  Object.values(_decisions).filter(d=>d.decision==='rejected').length,
-      suggested: Object.values(_decisions).filter(d=>d.decision==='suggested').length,
-    }
-  };
-  dlBlob(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}), `${safeName(s.doc_name)}-results.json`);
-}
-
-// ── Export dropdown toggle ─────────────────
-function toggleExport(e) {
-  e.stopPropagation();
-  document.getElementById('export-dd').classList.toggle('open');
-}
-document.addEventListener('click', () => {
-  document.getElementById('export-dd')?.classList.remove('open');
+  if (e.key === 'Escape') { if (!$('ov-submit').hidden) $('ov-submit').hidden = true; else if (!$('ov-welcome').hidden) $('btn-start').click(); }
 });
 
-// ── Init ───────────────────────────────────
-(function init() {
-  _origReviewHTML = document.getElementById('review-page').innerHTML;
-  loadConfig();
-  const uEl = document.getElementById('sb-url');
-  const kEl = document.getElementById('sb-key');
-  const nEl = document.getElementById('sb-name');
-  if (uEl && _sbUrl && _sbUrl !== SB_URL_DEFAULT) uEl.value = _sbUrl;
-  if (kEl && _sbKey && _sbKey !== SB_KEY_DEFAULT) kEl.value = _sbKey;
-  if (nEl && _myName) nEl.value = _myName;
+// ── saving ──
+function setSave(kind, text) { $('dot').className = 'dot' + (kind === 'saving' ? ' saving' : kind === 'off' ? ' off' : ''); $('savetxt').textContent = text; }
+function clean() {                                                 // strip UI-only fields before sending
+  const out = { v: 1, reviewer: D.reviewer, reviewers: D.reviewers, items: {}, updatedAt: D.updatedAt };
+  Object.keys(D.items).forEach((k) => { const it = D.items[k]; if (it.d || it.c) out.items[k] = { d: it.d || null, t: it.d === 'edit' ? it.t : undefined, c: it.c || undefined, at: it.at }; });
+  return out;
+}
+function queueSave() {
+  dirty = true; setSave('saving', 'Saving…');
+  lsSet('sr_draft_' + ID, JSON.stringify(clean()));
+  clearTimeout(saveTimer); saveTimer = setTimeout(() => save(false), 1200);
+}
+async function save(submit) {
+  if (saving) { clearTimeout(saveTimer); saveTimer = setTimeout(() => save(submit), 600); return { ok: false, busy: true }; }
+  saving = true; clearTimeout(retryTimer);
+  try {
+    let res = await SR.saveDecisions(SESS, clean(), submit, VER);
+    if (res.conflict) {                                             // someone saved in between: merge, then retry once
+      D = SR.mergeDecisions(clean(), res.decisions); VER = res.version; render(); updateProgress();
+      res = await SR.saveDecisions(SESS, clean(), submit, VER);
+    }
+    if (res.ok) { VER = res.version; dirty = false; setSave('ok', submit ? 'Submitted' : 'All changes saved · ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })); try { localStorage.removeItem('sr_draft_' + ID); } catch (_) {} return { ok: true }; }
+    setSave('off', 'Not saved'); return { ok: false };
+  } catch (err) {
+    if (err.code === 'submitted') { SUBMITTED = true; READONLY = true; render(); setSave('ok', 'Submitted'); showDone(true); return { ok: true }; }
+    const net = err.code === 'network';
+    setSave('off', net ? 'Offline. Your answers are kept on this device and will be sent when you are back online' : SR.friendly(err));
+    retryTimer = setTimeout(() => save(submit), 15000);
+    return { ok: false, err };
+  } finally { saving = false; }
+}
+window.addEventListener('beforeunload', (e) => { if (dirty && !SUBMITTED) { e.preventDefault(); e.returnValue = ''; } });
+window.addEventListener('online', () => { if (dirty) save(false); });
 
-  const params = new URLSearchParams(location.search);
-  const sid    = params.get('r');
+// ── submit ──
+$('btn-submit').onclick = () => {
+  const c = counts();
+  $('s-tally').innerHTML =
+    '<div class="agree"><b>' + c.agree + '</b>Agreed</div><div class="disagree"><b>' + c.disagree + '</b>Disagreed</div>' +
+    '<div class="edit"><b>' + c.edit + '</b>Edited</div><div><b>' + c.comment + '</b>With comments</div>';
+  $('s-warn').innerHTML = c.none ? '<div class="msg warn"><b>' + c.none + ' item' + (c.none === 1 ? '' : 's') + ' not reviewed yet.</b> You can still submit, or go back and finish them first. <a href="#" id="s-show" style="color:inherit;font-weight:700">Show me the unreviewed items</a></div>' : '<div class="msg info">You have answered every item. 🎉</div>';
+  const sh = $('s-show'); if (sh) sh.onclick = (e) => { e.preventDefault(); $('ov-submit').hidden = true; FILTER = 'none'; SHOWN = 40; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  $('ov-submit').hidden = false; $('s-go').focus();
+};
+$('s-back').onclick = () => { $('ov-submit').hidden = true; };
+$('s-go').onclick = async () => {
+  const b = $('s-go'); b.disabled = true; b.innerHTML = '<span class="spin"></span> Sending…';
+  clearTimeout(saveTimer);
+  let r = await save(true);
+  for (let n = 0; !r.ok && r.busy && n < 5; n++) { await new Promise((ok) => setTimeout(ok, 700)); r = await save(true); }
+  b.disabled = false; b.textContent = 'Yes, submit to editor';
+  if (r.ok) { SUBMITTED = true; READONLY = true; $('ov-submit').hidden = true; showDone(false); }
+  else $('s-warn').innerHTML = '<div class="msg err">Could not send right now: ' + esc(r.err ? SR.friendly(r.err) : 'please try again') + '. Your answers are safe on this device. Try again in a moment.</div>';
+};
 
-  if (sid) {
-    document.getElementById('header-tabs').style.display = 'none';
-    loadReviewSession(sid);
-  } else {
-    document.getElementById('header-tabs').style.display = 'flex';
-    checkConfig();
-    loadLastReport();
-    renderSessions();
-    showPage('dash');
-  }
-})();
+function showDone(already) {
+  const c = counts();
+  $('done-title').textContent = already ? 'This review was submitted' : 'Thank you, ' + (NAME || 'reviewer') + '!';
+  $('done-text').textContent = already ? 'Your answers were already sent to the editor. They are shown below in read-only form.' : 'Your review has been sent to the editor.';
+  $('done-tally').innerHTML =
+    '<li>' + ICON.agree + ' ' + c.agree + ' agreed</li><li>' + ICON.disagree + ' ' + c.disagree + ' disagreed</li><li>' + ICON.edit + ' ' + c.edit + ' edited</li>' +
+    '<li>' + ICON.comment + ' ' + c.comment + ' with comments</li>' + (c.none ? '<li>' + c.none + ' not reviewed</li>' : '');
+  show('v-done');
+}
+$('btn-viewmine').onclick = () => { READONLY = true; FILTER = 'all'; SHOWN = 40; render(); show('v-review'); $('btn-submit').hidden = true; setSave('ok', 'Submitted. Read-only'); };
 </script>
 </body>
 </html>

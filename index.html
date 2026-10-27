@@ -12,6 +12,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/docx@7.8.2/build/index.js"></script>
+  <script src="share-core.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -269,7 +270,7 @@
       header h1 { color:#111 !important; font-size:14pt !important; }
       header p { color:#555 !important; }
       .logo svg path { fill:#111 !important; }
-      nav, #proof-page, #setup-page, #history-page, .report-actions, .filter-bar, .sev-filter-bar, .analyse-panel, .header-actions, .export-dropdown, .app-footer, .triage-cell, .triage-th, .copy-th, .copy-btn { display:none !important; }
+      nav, #proof-page, #setup-page, #history-page, #reviews-page, .report-actions, .filter-bar, .sev-filter-bar, .analyse-panel, .header-actions, .export-dropdown, .app-footer, .triage-cell, .triage-th, .copy-th, .copy-btn { display:none !important; }
       #report-page { display:block !important; }
       .page { max-width:100% !important; padding:8px 12px !important; }
       #report-cost { display:block !important; color:#555 !important; }
@@ -313,6 +314,78 @@
       nav button { padding:10px 8px; font-size:12px; }
       colgroup col.col-expl { width:130px; }
     }
+  
+    /* ══════════ Review sharing (links for translators / proofreaders) ══════════ */
+    .btn-share { background:transparent; color:var(--accent); border:1.5px solid var(--accent); }
+    .btn-share:hover { background:var(--accent); color:#fff; }
+    .nav-badge[hidden] { display:none; }
+    .nav-badge { display:inline-block; min-width:17px; height:17px; line-height:17px; border-radius:9px; background:#10b981; color:#fff; font-size:10px; font-weight:800; text-align:center; margin-left:6px; padding:0 5px; vertical-align:1px; }
+    .modal-box.wide { max-width:min(1040px, 96vw); width:96%; max-height:92vh; overflow:auto; }
+    .modal-box.mid  { max-width:600px; max-height:92vh; overflow:auto; }
+
+    /* numbered setup steps */
+    .sr-intro { font-size:13px; color:var(--muted); line-height:1.65; margin:2px 0 14px; }
+    .sr-steps { display:grid; gap:10px; counter-reset:srs; }
+    .sr-step { position:relative; border:1px solid var(--border); background:var(--sf2); border-radius:12px; padding:14px 16px 14px 56px; counter-increment:srs; }
+    .sr-step::before { content:counter(srs); position:absolute; left:15px; top:14px; width:28px; height:28px; border-radius:50%; background:var(--accent); color:#fff; font-weight:800; font-size:13px; display:grid; place-items:center; }
+    .sr-step.done { border-color:rgba(16,185,129,.5); }
+    .sr-step.done::before { content:'✓'; background:#10b981; }
+    .sr-step h4 { font-size:14px; margin-bottom:4px; }
+    .sr-step p, .sr-step li { font-size:12.5px; color:var(--muted); line-height:1.65; }
+    .sr-step ol { margin:6px 0 8px 18px; }
+    .sr-step .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:8px; }
+    .sr-step input[type=text], .sr-step input[type=password], .sr-input { width:100%; background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:9px 11px; font-size:13px; font-family:inherit; }
+    .sr-step input:focus, .sr-input:focus { outline:none; border-color:var(--accent); }
+    .sr-checks { margin-top:10px; display:grid; gap:6px; }
+    .sr-check { font-size:12.5px; display:flex; gap:8px; align-items:flex-start; padding:7px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface); }
+    .sr-check.ok { border-color:rgba(16,185,129,.5); color:#10b981; } .sr-check.bad { border-color:rgba(239,68,68,.5); color:#f87171; }
+    .sr-check small { display:block; color:var(--muted); font-weight:400; margin-top:2px; }
+    .sr-pill { display:inline-block; font-size:11px; font-weight:800; padding:3px 10px; border-radius:99px; letter-spacing:.03em; }
+    .sr-pill.ready { background:rgba(16,185,129,.15); color:#10b981; border:1px solid rgba(16,185,129,.4); }
+    .sr-pill.todo  { background:rgba(245,158,11,.15); color:#f59e0b; border:1px solid rgba(245,158,11,.4); }
+
+    /* share modal */
+    .sr-stepper { display:flex; gap:6px; margin:2px 0 16px; }
+    .sr-stepper div { flex:1; text-align:center; font-size:11px; font-weight:700; color:var(--muted); padding-top:8px; border-top:3px solid var(--border); }
+    .sr-stepper div.on { color:var(--accent); border-top-color:var(--accent); } .sr-stepper div.ok { color:#10b981; border-top-color:#10b981; }
+    .sr-opt, .sr-field > label.sr-opt { display:flex; gap:11px; align-items:flex-start; padding:11px 13px; border:1.5px solid var(--border); border-radius:11px; margin-bottom:8px; cursor:pointer; background:var(--sf2); text-transform:none; letter-spacing:0; font-weight:400; font-size:13px; color:var(--text); }
+    .sr-opt:has(input:checked) { border-color:var(--accent); background:rgba(99,102,241,.1); }
+    .sr-opt input { margin-top:3px; accent-color:var(--accent); }
+    .sr-opt b { display:block; font-size:13.5px; } .sr-opt span { font-size:12px; color:var(--muted); }
+    .sr-field { margin-bottom:12px; }
+    .sr-field > label { display:block; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:5px; }
+    .sr-pw { display:flex; gap:6px; } .sr-pw .sr-input { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .sr-meter { display:flex; gap:4px; margin-top:6px; } .sr-meter i { flex:1; height:4px; border-radius:3px; background:var(--border); }
+    .sr-meter.s0 i:nth-child(1){background:#ef4444} .sr-meter.s1 i:nth-child(-n+2){background:#f59e0b} .sr-meter.s2 i{background:#10b981}
+    .sr-hint { font-size:12px; color:var(--muted); line-height:1.6; margin-top:6px; }
+    .sr-box { background:var(--sf2); border:1px solid var(--border); border-radius:10px; padding:11px 13px; font-size:12.5px; word-break:break-all; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .sr-copyrow { display:flex; gap:8px; align-items:stretch; } .sr-copyrow .sr-box { flex:1; min-width:0; }
+    .sr-success { text-align:center; padding:6px 0 14px; } .sr-success .tick { width:54px; height:54px; border-radius:50%; background:#10b981; color:#fff; display:grid; place-items:center; font-size:26px; margin:0 auto 10px; }
+    textarea.sr-input { resize:vertical; min-height:150px; line-height:1.55; }
+
+    /* reviews list */
+    .sr-head { display:flex; align-items:center; gap:12px; margin-bottom:14px; flex-wrap:wrap; } .sr-head h2 { font-size:20px; flex:1; }
+    .sr-card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px 16px; margin-bottom:10px; display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
+    .sr-card .info { flex:1; min-width:220px; } .sr-card .ttl { font-weight:700; font-size:14.5px; } .sr-card .sub { font-size:12px; color:var(--muted); margin-top:3px; line-height:1.6; }
+    .sr-card .acts { display:flex; gap:6px; flex-wrap:wrap; }
+    .sr-st { display:inline-block; font-size:11px; font-weight:800; padding:3px 10px; border-radius:99px; white-space:nowrap; border:1px solid; }
+    .sr-st.pending { color:#94a3b8; } .sr-st.in_progress { color:#3b82f6; } .sr-st.submitted { color:#10b981; background:rgba(16,185,129,.12); } .sr-st.expired, .sr-st.revoked { color:#ef4444; }
+    .sr-empty { text-align:center; padding:34px 20px; background:var(--surface); border:1px dashed var(--border); border-radius:14px; }
+    .sr-empty h3 { font-size:17px; margin-bottom:6px; } .sr-empty p { color:var(--muted); font-size:13px; max-width:520px; margin:0 auto 14px; line-height:1.65; }
+    .sr-flow { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:10px; text-align:left; margin:16px 0 4px; }
+    .sr-flow div { background:var(--sf2); border:1px solid var(--border); border-radius:11px; padding:11px 13px; font-size:12px; color:var(--muted); } .sr-flow b { display:block; color:var(--text); font-size:13px; margin-bottom:2px; }
+
+    /* feedback viewer */
+    .sr-tally { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:8px; margin:10px 0 12px; }
+    .sr-tally div { background:var(--sf2); border:1px solid var(--border); border-radius:10px; padding:9px 12px; font-size:11.5px; color:var(--muted); } .sr-tally b { display:block; font-size:21px; color:var(--text); }
+    .sr-fbtable { width:100%; border-collapse:collapse; font-size:12.5px; }
+    .sr-fbtable th { text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); padding:7px 9px; border-bottom:1px solid var(--border); position:sticky; top:0; background:var(--surface); }
+    .sr-fbtable td { padding:9px; border-bottom:1px solid var(--border); vertical-align:top; word-break:break-word; }
+    .sr-fbtable tr.applied td { opacity:.5; }
+    .sr-dec { font-size:11px; font-weight:800; border-radius:6px; padding:2px 8px; border:1px solid; white-space:nowrap; }
+    .sr-dec.agree { color:#10b981; } .sr-dec.disagree { color:#f97316; } .sr-dec.edit { color:#3b82f6; } .sr-dec.none { color:var(--muted); }
+    .sr-fbtable mark.o { background:var(--mark-orig-bg); color:var(--mark-orig-fg); text-decoration:line-through; border-radius:3px; padding:0 3px; }
+    .sr-fbtable mark.c { background:var(--mark-corr-bg); color:var(--mark-corr-fg); border-radius:3px; padding:0 3px; font-weight:700; }
   </style>
 </head>
 <body>
@@ -332,6 +405,7 @@
   <button class="active" onclick="showTab('proof')">Proof Document</button>
   <button onclick="showTab('report')">Report</button>
   <button onclick="showTab('history')">History</button>
+  <button onclick="showTab('reviews')">Reviews<span class="nav-badge" id="reviews-badge" hidden></span></button>
   <button onclick="showTab('setup')">Setup</button>
 </nav>
 
@@ -501,6 +575,10 @@
       </div>
       <div class="report-actions">
         <button class="btn btn-secondary btn-sm" onclick="startNewDocument()">+ New Document</button>
+        <button class="btn btn-share btn-sm" onclick="openShareModal()" title="Send a password-protected link to a translator or proofreader">
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+          Share for review
+        </button>
         <div class="export-dropdown" id="export-dropdown">
           <button class="btn btn-primary btn-sm" onclick="toggleExportMenu(event)">
             <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -530,9 +608,9 @@
               Export JSON
             </button>
             <div class="menu-divider"></div>
-            <button onclick="closeExportMenu();window.location.href='share.html'">
+            <button onclick="closeExportMenu();openShareModal()">
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-              Send for Review →
+              Share for review (secure link)…
             </button>
             <div class="menu-divider"></div>
             <button onclick="downloadCorrected();closeExportMenu()">
@@ -576,6 +654,15 @@
 
 </div>
 
+<!-- ══════════ REVIEWS PAGE ══════════ -->
+<div id="reviews-page" class="page">
+  <div class="sr-head">
+    <h2>Reviews</h2>
+    <button class="btn btn-secondary btn-sm" id="sr-refresh-btn" onclick="srRefresh(true)">↻ Refresh</button>
+  </div>
+  <div id="sr-reviews-body"></div>
+</div>
+
 <!-- ══════════ HISTORY PAGE ══════════ -->
 <div id="history-page" class="page">
   <div class="history-header">
@@ -601,6 +688,45 @@
     <p class="help">Shown as "Initiated by" on every report and review request.</p>
     <br>
     <button class="btn btn-primary" onclick="saveSetup()">Save</button>
+  </div>
+  <div class="card" id="sr-setup-card">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:2px">
+      <h3 style="margin:0;flex:1">🔗 Review sharing <span style="font-weight:400;font-size:12px;color:var(--muted)">(links for translators &amp; proofreaders)</span></h3>
+      <span class="sr-pill todo" id="sr-status-pill">Not set up</span>
+    </div>
+    <p class="sr-intro">Send a <strong>password-protected link</strong> to a translator or proofreader. They open it in their browser, decide on each flagged issue (<em>Agree / Disagree / Edit</em>) and press <em>Submit</em>. You see their answers in the <strong>Reviews</strong> tab and can export a ready-to-apply list for layout. One-time setup, about 5 minutes, using a free Supabase project.</p>
+    <div class="sr-steps">
+      <div class="sr-step" id="sr-s1">
+        <h4>Create a free Supabase project</h4>
+        <ol>
+          <li>Go to <a href="https://supabase.com/dashboard" target="_blank" rel="noopener" style="color:var(--accent)">supabase.com/dashboard</a> and sign in with an <strong>Explorer-owned</strong> account.</li>
+          <li>Click <strong>New project</strong>, give it a name (for example <em>explorer-reviews</em>), pick a region close to your team, set a database password and press <strong>Create</strong>.</li>
+        </ol>
+        <div class="row"><label style="font-size:12.5px;font-weight:500;text-transform:none;letter-spacing:0;color:var(--muted);display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" id="sr-s1-done" onchange="srSetupState()"> I have created the project</label></div>
+      </div>
+      <div class="sr-step" id="sr-s2">
+        <h4>Choose your creator passphrase</h4>
+        <p>Your private key for creating and managing reviews. Only you need it. Store it in a password manager and do not reuse another password.</p>
+        <div class="row"><input type="password" id="sr-creator" placeholder="At least 8 characters, or press Generate" autocomplete="off" oninput="srSetupState()" style="flex:1;min-width:200px"><button class="btn btn-secondary btn-sm" onclick="srGenCreator()">Generate</button><button class="btn btn-secondary btn-sm" id="sr-creator-eye" onclick="srToggleCreator()">Show</button></div>
+      </div>
+      <div class="sr-step" id="sr-s3">
+        <h4>Run the setup SQL (one time)</h4>
+        <ol>
+          <li>Click <strong>Copy setup SQL</strong> below (do step 2 first: your passphrase is included).</li>
+          <li>In Supabase open <strong>SQL Editor → New query</strong>, paste, and press <strong>Run</strong>. You should see <em>Success</em>.</li>
+        </ol>
+        <p>This creates a locked table. Nobody can read it directly: reports are encrypted in the browser, and every action is checked against a password.</p>
+        <div class="row"><button class="btn btn-primary btn-sm" onclick="srCopySql()">Copy setup SQL</button><span id="sr-sql-msg" style="font-size:12px;color:var(--muted)"></span></div>
+      </div>
+      <div class="sr-step" id="sr-s4">
+        <h4>Connect this portal</h4>
+        <p>In Supabase open <strong>Project Settings → API</strong> and copy the <strong>Project URL</strong> and the <strong>anon / publishable key</strong>. That key is public by design, so it is safe to paste here.</p>
+        <div class="sr-field" style="margin-top:10px"><label>Project URL</label><input type="text" id="sr-url" placeholder="https://xxxxxxxx.supabase.co" autocomplete="off" spellcheck="false"></div>
+        <div class="sr-field"><label>anon / publishable key</label><input type="text" id="sr-key" placeholder="eyJ…  or  sb_publishable_…" autocomplete="off" spellcheck="false"></div>
+        <div class="row"><button class="btn btn-primary btn-sm" id="sr-save-btn" onclick="srSaveAndTest()">Save &amp; test connection</button><button class="btn btn-secondary btn-sm" onclick="srDisconnect()">Remove</button></div>
+        <div class="sr-checks" id="sr-checks"></div>
+      </div>
+    </div>
   </div>
   <div class="card" style="border-color:rgba(99,102,241,.3)">
     <h3>ℹ️ About</h3>
@@ -630,10 +756,18 @@
   </div>
 </div>
 
+<!-- ══════════ SHARE + FEEDBACK MODALS ══════════ -->
+<div class="modal-overlay" id="share-modal">
+  <div class="modal-box mid" id="share-box"></div>
+</div>
+<div class="modal-overlay" id="fb-modal">
+  <div class="modal-box wide" id="fb-box"></div>
+</div>
+
 <footer class="app-footer">
   <span>© 2026 Explorer Publishing &amp; Distribution LLC · All rights reserved</span>
   <span id="cost-footer" style="font-size:10px;color:var(--muted);opacity:.65"></span>
-  <span class="app-footer-version">v3.4.0</span>
+  <span class="app-footer-version">v3.5.0</span>
 </footer>
 
 <div class="toast" id="toast"></div>
@@ -810,12 +944,13 @@ function toggleTheme() {
 // Tab navigation
 // ══════════════════════════════════════════════
 function showTab(name) {
-  ['proof','report','history','setup'].forEach((t,i) => {
+  ['proof','report','history','reviews','setup'].forEach((t,i) => {
     document.getElementById(t+'-page').classList.toggle('active', t===name);
     document.querySelectorAll('nav button')[i].classList.toggle('active', t===name);
   });
   if (name === 'history') renderHistory();
-  if (name === 'setup')   renderCostTracker();
+  if (name === 'setup')   { renderCostTracker(); renderShareSetup(); }
+  if (name === 'reviews') { renderReviews(); srRefresh(false); }
 }
 
 // ══════════════════════════════════════════════
@@ -3912,6 +4047,353 @@ function updateCostFooter() {
 }
 
 // ══════════════════════════════════════════════
+// Review sharing — password-protected links for translators / proofreaders.
+// Crypto + server calls live in share-core.js; the reviewer page is share.html.
+// The creator passphrase and each review's password are kept in THIS browser only.
+// ══════════════════════════════════════════════
+const SRK = { url:'sr_sb_url', key:'sr_sb_key', creator:'sr_creator', shares:'sr_shares', verified:'sr_verified', s1:'sr_s1_done', applied:'sr_applied_' };
+const srGet = (k) => { try { return localStorage.getItem(k); } catch(_) { return null; } };
+const srSet = (k, v) => { try { localStorage.setItem(k, v); } catch(_) {} };
+const srDel = (k) => { try { localStorage.removeItem(k); } catch(_) {} };
+const $sr = (id) => document.getElementById(id);
+const srCfg = () => { const url = (srGet(SRK.url) || '').trim(), key = (srGet(SRK.key) || '').trim(); return (url && key) ? { url, key } : null; };
+const srSecret = () => srGet(SRK.creator) || '';
+const srReady = () => !!(srCfg() && srSecret() && srGet(SRK.verified) === '1' && typeof SR !== 'undefined');
+const srList = () => { try { return JSON.parse(srGet(SRK.shares) || '[]'); } catch(_) { return []; } };
+const srSaveList = (a) => srSet(SRK.shares, JSON.stringify(a));
+const srPatch = (id, patch) => srSaveList(srList().map((m) => (m.id === id ? { ...m, ...patch } : m)));
+const srDate = (iso, time) => { try { return new Date(iso).toLocaleString(undefined, time ? { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' } : { day:'numeric', month:'short', year:'numeric' }); } catch(_) { return ''; } };
+async function srCopy(text) {
+  try { await navigator.clipboard.writeText(text); return true; }
+  catch(_) { try { const t = document.createElement('textarea'); t.value = text; t.style.cssText = 'position:fixed;opacity:0'; document.body.appendChild(t); t.select(); const ok = document.execCommand('copy'); t.remove(); return ok; } catch(__) { return false; } }
+}
+
+// ── Setup wizard (Setup tab) ───────────────────────────────────────────
+function renderShareSetup() {
+  const cfg = srCfg();
+  $sr('sr-url').value = cfg ? cfg.url : '';
+  $sr('sr-key').value = cfg ? cfg.key : '';
+  $sr('sr-creator').value = srSecret();
+  $sr('sr-s1-done').checked = srGet(SRK.s1) === '1' || srReady();
+  srSetupState();
+}
+function srSetupState() {
+  const s1 = $sr('sr-s1-done').checked; s1 ? srSet(SRK.s1, '1') : srDel(SRK.s1);
+  const ok = srReady();
+  const mark = (id, done) => $sr(id).classList.toggle('done', !!done);
+  mark('sr-s1', s1); mark('sr-s2', $sr('sr-creator').value.trim().length >= 8); mark('sr-s3', ok); mark('sr-s4', ok);
+  const pill = $sr('sr-status-pill'); pill.className = 'sr-pill ' + (ok ? 'ready' : 'todo'); pill.textContent = ok ? 'Ready ✓' : 'Not set up';
+}
+function srGenCreator() { const f = $sr('sr-creator'); f.value = SR.newPassphrase() + '-' + SR.newPassphrase().split('-')[0]; f.type = 'text'; $sr('sr-creator-eye').textContent = 'Hide'; srSetupState(); toast('Generated. Store it in a password manager before you continue.'); }
+function srToggleCreator() { const f = $sr('sr-creator'); const show = f.type === 'password'; f.type = show ? 'text' : 'password'; $sr('sr-creator-eye').textContent = show ? 'Hide' : 'Show'; }
+async function srCopySql() {
+  const msg = $sr('sr-sql-msg'); const secret = $sr('sr-creator').value.trim();
+  if (secret.length < 8) { msg.style.color = '#f97316'; msg.textContent = 'Do step 2 first: choose a passphrase of at least 8 characters.'; return; }
+  try {
+    const base = await (await fetch('supabase/setup.sql', { cache: 'no-cache' })).text();
+    if (!/create table/i.test(base)) throw new Error('setup.sql not found');
+    const sql = base + '\n-- ── Your creator passphrase: registers you as the owner of this database ──\n' + await SR.creatorSql(secret) + '\n';
+    const ok = await srCopy(sql);
+    msg.style.color = ok ? '#10b981' : '#f97316';
+    msg.textContent = ok ? 'Copied. Paste it into Supabase → SQL Editor → New query, then press Run.' : 'Copy was blocked by the browser. Open supabase/setup.sql in the project instead.';
+    srSet(SRK.creator, secret);
+  } catch (e) { msg.style.color = '#f97316'; msg.textContent = 'Could not load the SQL file (' + e.message + '). Open the portal from its web address and try again.'; }
+}
+function srChecks(list) {
+  $sr('sr-checks').innerHTML = list.map((c) => '<div class="sr-check ' + (c.ok ? 'ok' : 'bad') + '"><span>' + (c.ok ? '✓' : '✗') + '</span><span><b>' + esc(c.title) + '</b>' + (c.hint ? '<small>' + esc(c.hint) + '</small>' : '') + '</span></div>').join('');
+}
+async function srSaveAndTest() {
+  const url = $sr('sr-url').value.trim().replace(/\/+$/, ''), key = $sr('sr-key').value.trim(), secret = $sr('sr-creator').value.trim();
+  if (secret.length < 8) { srChecks([{ ok: false, title: 'Passphrase missing', hint: 'Do step 2: choose a passphrase of at least 8 characters.' }]); return; }
+  if (!/^https:\/\/[^\s/]+\.[^\s/]+$/i.test(url) && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(url)) { srChecks([{ ok: false, title: 'That does not look like a Project URL', hint: 'It should look like https://abcdefgh.supabase.co (Supabase → Project Settings → API).' }]); return; }
+  if (key.length < 20) { srChecks([{ ok: false, title: 'The key looks too short', hint: 'Copy the full anon / publishable key from Supabase → Project Settings → API.' }]); return; }
+  srSet(SRK.url, url); srSet(SRK.key, key); srSet(SRK.creator, secret); srDel(SRK.verified);
+  const btn = $sr('sr-save-btn'); btn.disabled = true; btn.textContent = 'Testing…';
+  const out = []; const cfg = { url, key };
+  try { await SR.testDatabase(cfg); out.push({ ok: true, title: 'Connected to Supabase, database is ready' }); }
+  catch (e) { out.push({ ok: false, title: SR.friendly(e), hint: e.code === 'setup_missing' ? 'Run step 3 (Copy setup SQL, then Run in the Supabase SQL Editor).' : e.code === 'bad_key' ? 'Check the key in step 4 (use the anon / publishable key, not the service role key).' : '' }); }
+  if (out[0].ok) {
+    try { await SR.testCreator(cfg, secret); out.push({ ok: true, title: 'Creator passphrase accepted' }); srSet(SRK.verified, '1'); }
+    catch (e) { out.push({ ok: false, title: SR.friendly(e), hint: e.code === 'denied' ? 'The passphrase typed in step 2 differs from the one in the SQL you ran. Press Copy setup SQL again and Run it (it updates the passphrase).' : '' }); }
+  }
+  srChecks(out); btn.disabled = false; btn.textContent = 'Save & test connection';
+  srSetupState(); srPaintBadge();
+  if (srReady()) toast('Review sharing is ready. Open a report and press "Share for review".');
+}
+function srDisconnect() {
+  if (!confirm('Remove the connection from this browser? Existing links keep working, but you will no longer see their feedback here until you reconnect.')) return;
+  [SRK.url, SRK.key, SRK.creator, SRK.verified].forEach(srDel); renderShareSetup(); $sr('sr-checks').innerHTML = ''; srPaintBadge();
+}
+
+// ── Share modal (Report → Share for review) ────────────────────────────
+let SRS = null;
+function srShareBox(step, inner) {
+  const names = ['What to send', 'Password & expiry', 'Link ready'];
+  $sr('share-box').innerHTML = '<div class="modal-title">Share for review</div><div class="sr-stepper">' +
+    names.map((n, i) => '<div class="' + (i + 1 === step ? 'on' : i + 1 < step ? 'ok' : '') + '">' + (i + 1) + ' · ' + n + '</div>').join('') + '</div>' + inner;
+}
+function openShareModal(existing) {
+  if (existing) { SRS = { meta: existing }; srShareStep3(existing); }
+  else {
+    if (!lastReport || !(lastReport.errors || []).length) { toast('Open a report with issues first.', 'warn'); return; }
+    SRS = { pw: '', scope: null, title: '', note: '', days: 30 }; srShareStep1();
+  }
+  $sr('share-modal').classList.add('open');
+}
+function closeShareModal() { $sr('share-modal').classList.remove('open'); SRS = null; }
+function srScrollSetup() { setTimeout(() => { const c = $sr('sr-setup-card'); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 80); }
+function srShareData() {
+  const r = lastReport, di = r._docInfo || docInfo;
+  const all = r.errors || [], open = all.filter((e) => !['false', 'fixed'].includes(errorTriageState[e.id]));
+  return { r, di, all, open };
+}
+function srShareStep1() {
+  if (!srReady()) {
+    srShareBox(1, '<div class="sr-empty"><h3>Set up review sharing first</h3><p>It takes about 5 minutes and is done once. Follow the 4 numbered steps in Setup, then come back here.</p><button class="btn btn-primary" onclick="closeShareModal();showTab(\'setup\');srScrollSetup()">Open Setup</button></div><div class="modal-actions"><button class="btn btn-secondary" onclick="closeShareModal()">Close</button></div>');
+    return;
+  }
+  const { di, all, open } = srShareData();
+  if (!SRS.scope) SRS.scope = open.length ? 'open' : 'all';
+  if (!SRS.title) SRS.title = di.filename || 'Document review';
+  const radio = (v, label, n, sub) => '<label class="sr-opt"><input type="radio" name="sr-scope" value="' + v + '"' + (SRS.scope === v ? ' checked' : '') + ' onchange="SRS.scope=this.value"><div><b>' + label + ' <span style="font-weight:500;color:var(--muted)">(' + n + ')</span></b><span>' + sub + '</span></div></label>';
+  srShareBox(1,
+    '<div class="sr-field"><label>What should the reviewer see?</label>' +
+    radio('open', 'Open issues only', open.length, 'Skips items you already marked as fixed or as false positives. Recommended.') +
+    radio('all', 'All issues', all.length, 'Everything in this report.') + '</div>' +
+    '<div class="sr-field"><label>Title shown to the reviewer</label><input class="sr-input" id="sr-title" value="' + esc(SRS.title) + '" maxlength="120" oninput="SRS.title=this.value"></div>' +
+    '<div class="sr-field"><label>Note to the reviewer <span style="font-weight:500;text-transform:none;letter-spacing:0">(optional)</span></label><textarea class="sr-input" id="sr-note" style="min-height:84px" maxlength="1500" placeholder="e.g. Please check chapters 5 and 33 first. Deadline Friday." oninput="SRS.note=this.value">' + esc(SRS.note) + '</textarea></div>' +
+    '<p class="sr-hint">The reviewer sees only the short text around each issue, your suggested fix and the explanation, never the whole document. Everything is encrypted in your browser before it is uploaded.</p>' +
+    '<div class="modal-actions"><button class="btn btn-secondary" onclick="closeShareModal()">Cancel</button><button class="btn btn-primary" onclick="srShareStep2()">Next →</button></div>');
+}
+function srMeter(pw) { const s = SR.strength(pw); return '<div class="sr-meter s' + s + '"><i></i><i></i><i></i></div><div class="sr-hint">' + ['Weak: use more characters.', 'OK. Longer is better.', 'Strong.'][s] + '</div>'; }
+function srShareStep2() {
+  const { open, all } = srShareData();
+  const n = SRS.scope === 'all' ? all.length : open.length;
+  if (!n) { toast('There are no issues to share with this selection.', 'warn'); return; }
+  if (!SRS.pw) SRS.pw = SR.newPassphrase();
+  srShareBox(2,
+    '<div class="sr-field"><label>Password for this review</label><div class="sr-pw"><input class="sr-input" id="sr-pw" value="' + esc(SRS.pw) + '" spellcheck="false" autocomplete="off" oninput="SRS.pw=this.value;document.getElementById(\'sr-meter\').innerHTML=srMeter(this.value)"><button class="btn btn-secondary btn-sm" onclick="SRS.pw=SR.newPassphrase();document.getElementById(\'sr-pw\').value=SRS.pw;document.getElementById(\'sr-meter\').innerHTML=srMeter(SRS.pw)">New</button><button class="btn btn-secondary btn-sm" onclick="srCopy(SRS.pw).then(()=>toast(\'Password copied\'))">Copy</button></div><div id="sr-meter">' + srMeter(SRS.pw) + '</div>' +
+    '<p class="sr-hint">Without this password nobody can open the review, not even the database host. <strong>Send the link and the password in two different messages</strong> (for example the link by email and the password by WhatsApp).</p></div>' +
+    '<div class="sr-field"><label>Link valid for</label><select class="sr-input" id="sr-days" onchange="SRS.days=+this.value">' + [7, 14, 30, 60, 90].map((d) => '<option value="' + d + '"' + (SRS.days === d ? ' selected' : '') + '>' + d + ' days</option>').join('') + '</select>' +
+    '<p class="sr-hint">After that the link stops working and the data is deleted. You can extend or withdraw it at any time from the Reviews tab.</p></div>' +
+    '<div id="sr-err"></div><div class="modal-actions"><button class="btn btn-secondary" onclick="srShareStep1()">← Back</button><button class="btn btn-primary" id="sr-create" onclick="srCreateShare()">Create secure link</button></div>');
+}
+async function srCreateShare() {
+  const pw = (SRS.pw || '').trim();
+  if (pw.length < 8) { $sr('sr-err').innerHTML = '<div class="sr-check bad"><span>✗</span><span>Please use a password of at least 8 characters.</span></div>'; return; }
+  const btn = $sr('sr-create'); btn.disabled = true; btn.innerHTML = 'Encrypting &amp; uploading…';
+  const { r, di, all, open } = srShareData();
+  const src = SRS.scope === 'all' ? all : open;
+  const payload = {
+    v: 1, kind: 'proofread', title: (SRS.title || '').trim() || di.filename || 'Document review',
+    language: r.language || di.language || '', pages: di.pages || null, wordCount: di.wordCount || null,
+    createdBy: srGet('proof_user_name') || '', createdAt: new Date().toISOString(), note: (SRS.note || '').trim(),
+    issues: src.map((e) => ({ id: e.id, type: e.type || '', severity: e.severity || '', page: e.page || null, loc: e._loc || undefined, context: e.context || '', original: e.original || '', corrected: e.corrected || '', explanation: e.explanation || '', source: e._source || undefined })),
+  };
+  try {
+    const cfg = srCfg();
+    const { id } = await SR.createShare(cfg, srSecret(), payload, pw, SRS.days);
+    const meta = { id, title: payload.title, createdAt: payload.createdAt, expiresAt: new Date(Date.now() + SRS.days * 864e5).toISOString(), password: pw, issues: src.length, link: SR.buildLink(id, cfg), status: 'pending', version: 0, seenVersion: 0 };
+    srSaveList([meta].concat(srList()));
+    SRS.meta = meta; srShareStep3(meta); srPaintBadge();
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'Create secure link';
+    $sr('sr-err').innerHTML = '<div class="sr-check bad"><span>✗</span><span><b>' + esc(SR.friendly(e)) + '</b>' + (e.code === 'denied' ? '<small>Open Setup and press &ldquo;Save &amp; test connection&rdquo; to re-check your passphrase.</small>' : '') + '</span></div>';
+  }
+}
+function srInviteText(m) {
+  const who = srGet('proof_user_name') || '';
+  return 'Hi,\n\nPlease review the flagged items in "' + m.title + '" (' + m.issues + ' item' + (m.issues === 1 ? '' : 's') + ').\n\n' +
+    '1. Open this link:\n' + m.link + '\n\n2. Enter the password that I will send you separately.\n\n' +
+    '3. For each item choose Agree, Disagree or Edit (you can add a comment), then press "Submit to editor" at the bottom of the page. Your work is saved automatically, so you can come back to it later.\n\n' +
+    'The link is valid until ' + srDate(m.expiresAt) + '.\n\nThank you!' + (who ? '\n' + who : '');
+}
+function srShareStep3(m) {
+  const local = location.protocol === 'file:';
+  srShareBox(3,
+    '<div class="sr-success"><div class="tick">✓</div><b style="font-size:16px">Your secure link is ready</b></div>' +
+    (local ? '<div class="sr-check bad" style="margin-bottom:12px"><span>!</span><span><b>You are running the portal from a local file.</b><small>This link only works on this computer. Open the portal from its web address to share with others.</small></span></div>' : '') +
+    '<div class="sr-field"><label>1 · The link</label><div class="sr-copyrow"><div class="sr-box">' + esc(m.link) + '</div><button class="btn btn-primary btn-sm" data-copy="link">Copy link</button></div></div>' +
+    '<div class="sr-field"><label>2 · The password <span style="font-weight:500;text-transform:none;letter-spacing:0">(send it separately)</span></label><div class="sr-copyrow"><div class="sr-box">' + esc(m.password) + '</div><button class="btn btn-secondary btn-sm" data-copy="pw">Copy password</button></div></div>' +
+    '<div class="sr-field"><label>Ready-to-send message <span style="font-weight:500;text-transform:none;letter-spacing:0">(you can edit it)</span></label><textarea class="sr-input" id="sr-invite">' + esc(srInviteText(m)) + '</textarea>' +
+    '<div class="row" style="margin-top:8px"><button class="btn btn-secondary btn-sm" data-copy="invite">Copy message</button></div></div>' +
+    '<p class="sr-hint">When the reviewer submits, a green badge appears on the <strong>Reviews</strong> tab and you can open their answers there.</p>' +
+    '<div class="modal-actions"><button class="btn btn-secondary" onclick="closeShareModal()">Done</button><button class="btn btn-primary" onclick="closeShareModal();showTab(\'reviews\')">Go to Reviews</button></div>');
+  $sr('share-box').querySelectorAll('[data-copy]').forEach((b) => {
+    b.onclick = async () => { const t = b.dataset.copy === 'link' ? m.link : b.dataset.copy === 'pw' ? m.password : $sr('sr-invite').value; const ok = await srCopy(t); toast(ok ? 'Copied' : 'Copy was blocked. Select the text and copy it manually.', ok ? undefined : 'warn'); };
+  });
+}
+
+// ── Reviews tab ────────────────────────────────────────────────────────
+const SR_STATUS = { pending: 'Waiting for reviewer', in_progress: 'Review in progress', submitted: 'Submitted', expired: 'Expired', revoked: 'Withdrawn' };
+function srFlowTiles() {
+  return '<div class="sr-flow"><div><b>1 · Share</b>Press &ldquo;Share for review&rdquo; on any report.</div><div><b>2 · Review</b>The translator opens the link, enters the password and answers each item.</div><div><b>3 · Receive</b>Their answers appear here when they press Submit.</div><div><b>4 · Apply</b>Export a list for layout and tick items off as they are applied.</div></div>';
+}
+function renderReviews() {
+  const body = $sr('sr-reviews-body'); if (!body) return;
+  const ready = srReady(), list = srList();
+  if (!ready) {
+    body.innerHTML = '<div class="sr-empty"><h3>Send reports to translators and proofreaders</h3><p>Share a password-protected link. They decide on each flagged issue in their browser and send the answers back to you. No accounts or files to email.</p><button class="btn btn-primary" onclick="showTab(\'setup\');srScrollSetup()">Set up review sharing (5 min)</button>' + srFlowTiles() + '</div>';
+    return;
+  }
+  if (!list.length) {
+    body.innerHTML = '<div class="sr-empty"><h3>No reviews yet</h3><p>Open a proofreading report and press <strong>Share for review</strong>. Your links and the answers you receive will show up here.</p><button class="btn btn-primary" onclick="showTab(\'report\')">Go to report</button>' + srFlowTiles() + '</div>';
+    return;
+  }
+  body.innerHTML = list.map((m) => {
+    const st = m.status || 'pending', live = st === 'pending' || st === 'in_progress';
+    const fresh = st === 'submitted' && (m.version || 0) > (m.seenVersion || 0);
+    const sub = ['Shared ' + srDate(m.createdAt), m.issues + ' item' + (m.issues === 1 ? '' : 's'),
+      st === 'submitted' && m.submittedAt ? 'submitted ' + srDate(m.submittedAt, true) : (st === 'expired' || st === 'revoked') ? '' : 'valid until ' + srDate(m.expiresAt),
+      m.openedAt && st === 'pending' ? 'opened ' + srDate(m.openedAt, true) : ''].filter(Boolean).join(' · ');
+    return '<div class="sr-card"><div class="info"><div class="ttl">' + esc(m.title) + (fresh ? ' <span class="sr-pill ready" style="margin-left:6px">New feedback</span>' : '') + '</div><div class="sub">' + esc(sub) + '</div></div>' +
+      '<span class="sr-st ' + st + '">' + SR_STATUS[st] + '</span><div class="acts">' +
+      ((st === 'in_progress' || st === 'submitted') ? '<button class="btn btn-primary btn-sm" onclick="srOpenFeedback(\'' + m.id + '\')">View feedback</button>' : '') +
+      (live || st === 'submitted' ? '<button class="btn btn-secondary btn-sm" onclick="srShowInvite(\'' + m.id + '\')">Link &amp; password</button>' : '') +
+      (st === 'submitted' ? '<button class="btn btn-secondary btn-sm" onclick="srManage(\'' + m.id + '\',\'reopen\')" title="Let the reviewer change their answers">Reopen</button>' : '') +
+      ((live || st === 'expired') ? '<button class="btn btn-secondary btn-sm" onclick="srManage(\'' + m.id + '\',\'extend\')">Extend 30 days</button>' : '') +
+      (live ? '<button class="btn btn-secondary btn-sm" onclick="srManage(\'' + m.id + '\',\'revoke\')">Withdraw</button>' : '') +
+      '<button class="btn btn-secondary btn-sm" onclick="srManage(\'' + m.id + '\',\'delete\')">Delete</button></div></div>';
+  }).join('') + '<p class="sr-hint" style="margin-top:12px">Passwords are stored only in this browser. If you clear your browser data you will need to resend a new link.</p>';
+}
+function srShowInvite(id) { const m = srList().find((x) => x.id === id); if (m) openShareModal(m); }
+async function srManage(id, action) {
+  const m = srList().find((x) => x.id === id); if (!m) return;
+  const msg = { delete: 'Delete this review and its data permanently? The reviewer can no longer open the link.', revoke: 'Withdraw this link? The reviewer will no longer be able to open it.' }[action];
+  if (msg && !confirm(msg)) return;
+  try {
+    await SR.manageShare(srCfg(), srSecret(), id, action, 30);
+    if (action === 'delete') srSaveList(srList().filter((x) => x.id !== id));
+    else await srRefresh(false);
+    toast({ delete: 'Review deleted', revoke: 'Link withdrawn', reopen: 'Reopened. The reviewer can change their answers again.', extend: 'Extended by 30 days' }[action]);
+  } catch (e) { toast(SR.friendly(e), 'err'); }
+  srPaintBadge(); renderReviews();
+}
+function srPaintBadge() {
+  const n = srReady() ? srList().filter((m) => m.status === 'submitted' && (m.version || 0) > (m.seenVersion || 0)).length : 0;
+  const b = $sr('reviews-badge'); if (b) { b.hidden = !n; b.textContent = n; }
+}
+async function srRefresh(manual) {
+  if (!srReady()) { srPaintBadge(); if (manual) toast('Set up review sharing first.', 'warn'); return; }
+  const btn = $sr('sr-refresh-btn'); if (manual && btn) { btn.disabled = true; btn.textContent = '↻ Refreshing…'; }
+  try {
+    const server = await SR.listShares(srCfg(), srSecret());
+    const byId = new Map(server.map((s) => [s.id, s]));
+    srSaveList(srList().map((m) => {
+      const s = byId.get(m.id);
+      if (!s) return m.status === 'revoked' || m.status === 'submitted' ? m : { ...m, status: 'expired' };
+      return { ...m, status: s.status, version: s.version, expiresAt: s.expires_at, openedAt: s.opened_at, submittedAt: s.submitted_at };
+    }));
+    if (manual) toast('Reviews updated');
+  } catch (e) { if (manual) toast(SR.friendly(e), 'err'); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = '↻ Refresh'; } srPaintBadge(); if ($sr('reviews-page').classList.contains('active')) renderReviews(); }
+}
+
+// ── Feedback viewer + exports for layout ───────────────────────────────
+let SRFB = null;
+const srFinal = (issue, it) => { const d = (it && it.d) || 'none'; return d === 'agree' ? issue.corrected : d === 'edit' ? (it.t != null ? it.t : issue.corrected) : null; };
+const srAppliedSet = (id) => { try { return new Set(JSON.parse(srGet(SRK.applied + id) || '[]')); } catch(_) { return new Set(); } };
+function srCloseFeedback() { $sr('fb-modal').classList.remove('open'); SRFB = null; }
+async function srOpenFeedback(id) {
+  const m = srList().find((x) => x.id === id); if (!m) return;
+  $sr('fb-box').innerHTML = '<div class="sr-empty"><h3>Opening feedback…</h3><p>Decrypting in your browser. This takes a few seconds.</p></div>';
+  $sr('fb-modal').classList.add('open');
+  try {
+    const r = await SR.openShare(srCfg(), id, m.password);
+    SRFB = { m, payload: r.payload, decisions: r.decisions, status: r.status, version: r.version, submittedAt: r.submitted_at, filter: 'apply' };
+    srPatch(id, { seenVersion: r.version, version: r.version, status: r.status }); srPaintBadge(); renderReviews();
+    srRenderFeedback();
+  } catch (e) { $sr('fb-box').innerHTML = '<div class="sr-empty"><h3>Could not open this review</h3><p>' + esc(SR.friendly(e)) + '</p><button class="btn btn-secondary" onclick="srCloseFeedback()">Close</button></div>'; }
+}
+function srRows() {
+  const { payload, decisions } = SRFB, items = (decisions && decisions.items) || {};
+  return (payload.issues || []).map((i) => { const it = items[i.id] || {}; return { i, it, d: it.d || 'none', fin: srFinal(i, it) }; });
+}
+function srRenderFeedback() {
+  const { m, payload, decisions, filter } = SRFB; const rows = srRows(); const applied = srAppliedSet(m.id);
+  const c = { agree: 0, disagree: 0, edit: 0, none: 0, comment: 0 }; rows.forEach((r) => { c[r.d]++; if (r.it.c) c.comment++; });
+  const apply = rows.filter((r) => r.fin != null), doneN = apply.filter((r) => applied.has(r.i.id)).length;
+  const shown = rows.filter((r) => filter === 'all' ? true : filter === 'apply' ? r.fin != null : filter === 'comment' ? !!r.it.c : r.d === filter);
+  const names = (decisions && (decisions.reviewers || (decisions.reviewer ? [decisions.reviewer] : []))) || [];
+  const chip = (k, label, n) => '<button class="chip' + (filter === k ? ' on' : '') + '" style="font-size:12px;padding:5px 12px" onclick="SRFB.filter=\'' + k + '\';srRenderFeedback()">' + label + ' <span style="opacity:.7">' + n + '</span></button>';
+  const decPill = (d) => '<span class="sr-dec ' + d + '">' + ({ agree: 'Agreed', disagree: 'Disagreed', edit: 'Edited', none: 'No answer' })[d] + '</span>';
+  const ctxCell = (r) => { const i = r.i, p = i.context && i.original && i.context.indexOf(i.original) >= 0 ? [i.context.slice(0, i.context.indexOf(i.original)), i.context.slice(i.context.indexOf(i.original) + i.original.length)] : null; return p ? esc(p[0]) + '<mark class="o">' + esc(i.original) + '</mark>' + esc(p[1]) : '<mark class="o">' + esc(i.original) + '</mark>'; };
+  $sr('fb-box').innerHTML =
+    '<div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap"><div style="flex:1;min-width:240px"><div class="modal-title" style="margin:0">' + esc(m.title) + '</div>' +
+    '<div class="sr-hint" style="margin-top:4px">' + (names.length ? 'Reviewer: <b>' + esc(names.join(', ')) + '</b> · ' : '') + SR_STATUS[SRFB.status] + (SRFB.submittedAt ? ' ' + srDate(SRFB.submittedAt, true) : '') + '</div></div>' +
+    '<button class="btn btn-secondary btn-sm" onclick="srCloseFeedback()">Close</button></div>' +
+    '<div class="sr-tally"><div><b style="color:#10b981">' + c.agree + '</b>Agreed</div><div><b style="color:#f97316">' + c.disagree + '</b>Disagreed</div><div><b style="color:#3b82f6">' + c.edit + '</b>Edited</div><div><b>' + c.comment + '</b>With comments</div><div><b>' + c.none + '</b>No answer</div></div>' +
+    (SRFB.status !== 'submitted' ? '<div class="sr-check" style="margin-bottom:10px"><span>ⓘ</span><span>The reviewer has not submitted yet. You are seeing their answers so far.</span></div>' : '') +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">' + chip('apply', 'To apply in layout', apply.length) + chip('disagree', 'Disagreed', c.disagree) + chip('comment', 'With comments', c.comment) + chip('none', 'No answer', c.none) + chip('all', 'All', rows.length) +
+    '<span style="flex:1"></span><button class="btn btn-primary btn-sm" onclick="srExportWord(\'apply\')">Apply-list (Word)</button><button class="btn btn-secondary btn-sm" onclick="srExportCsv(\'apply\')">Apply-list (CSV)</button><button class="btn btn-secondary btn-sm" onclick="srExportCsv(\'full\')">Full feedback (CSV)</button></div>' +
+    (apply.length ? '<div class="sr-hint" style="margin:0 0 8px">Applied in layout: <b>' + doneN + ' of ' + apply.length + '</b>. Tick items off as the designer applies them (saved in this browser).</div>' : '') +
+    '<div style="overflow:auto;max-height:56vh;border:1px solid var(--border);border-radius:10px"><table class="sr-fbtable"><thead><tr><th style="width:34px"></th><th>Where</th><th>Current text → what to use</th><th>Answer</th><th>Comment</th></tr></thead><tbody>' +
+    (shown.length ? shown.map((r) => {
+      const i = r.i, ap = applied.has(i.id), where = i.loc || (i.page ? 'p.' + i.page : '');
+      return '<tr class="' + (ap ? 'applied' : '') + '"><td>' + (r.fin != null ? '<input type="checkbox" ' + (ap ? 'checked' : '') + ' onchange="srToggleApplied(\'' + m.id + '\',' + JSON.stringify(i.id) + ',this.checked)" title="Applied in layout">' : '') + '</td>' +
+        '<td style="white-space:nowrap"><b>#' + esc(i.id) + '</b><br><span style="color:var(--muted)">' + esc(where) + '</span><br><span style="color:var(--muted);font-size:11px">' + esc(i.type || '') + '</span></td>' +
+        '<td dir="auto">' + ctxCell(r) + '<br>' + (r.fin != null ? '→ <mark class="c">' + esc(r.fin) + '</mark>' : '<span style="color:var(--muted)">→ keep as it is</span>') + '</td>' +
+        '<td>' + decPill(r.d) + '</td><td dir="auto">' + esc(r.it.c || '') + '</td></tr>';
+    }).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:26px">Nothing in this view.</td></tr>') + '</tbody></table></div>' +
+    '<div class="modal-actions" style="margin-top:14px">' + (SRFB.status === 'submitted' ? '<button class="btn btn-secondary" onclick="srCloseFeedback();srManage(\'' + m.id + '\',\'reopen\')">Reopen for the reviewer</button>' : '') + '<button class="btn btn-primary" onclick="srCloseFeedback()">Done</button></div>';
+}
+function srToggleApplied(id, issueId, on) {
+  const s = srAppliedSet(id); on ? s.add(issueId) : s.delete(issueId); srSet(SRK.applied + id, JSON.stringify([...s])); srRenderFeedback();
+}
+function srExportRows(kind) {
+  const { payload } = SRFB, applied = srAppliedSet(SRFB.m.id);
+  const rows = srRows().filter((r) => kind === 'apply' ? r.fin != null : true);
+  const head = kind === 'apply'
+    ? ['#', 'Page', 'Location', 'Type', 'Find (current text)', 'Replace with', 'Reviewer comment', 'Full sentence', 'Done']
+    : ['#', 'Page', 'Location', 'Type', 'Severity', 'Current text', 'Suggested', 'Reviewer answer', 'Reviewer final text', 'Reviewer comment', 'Full sentence', 'Applied'];
+  const dec = { agree: 'Agreed', disagree: 'Disagreed', edit: 'Edited', none: 'No answer' };
+  const body = rows.map((r) => { const i = r.i; return kind === 'apply'
+    ? [i.id, i.page || '', i.loc || '', i.type || '', i.original || '', r.fin, r.it.c || '', i.context || '', applied.has(i.id) ? 'Yes' : '']
+    : [i.id, i.page || '', i.loc || '', i.type || '', i.severity || '', i.original || '', i.corrected || '', dec[r.d], r.fin == null ? '' : r.fin, r.it.c || '', i.context || '', applied.has(i.id) ? 'Yes' : '']; });
+  return { head, body, payload };
+}
+function srSafe(s) { return String(s || 'review').replace(/\.[^.]+$/, '').replace(/[^\p{L}\p{N}]+/gu, '_').replace(/^_+|_+$/g, '').slice(0, 60) || 'review'; }
+function srExportCsv(kind) {
+  const { head, body } = srExportRows(kind);
+  const csv = String.fromCharCode(0xFEFF) + [head].concat(body).map((r) => r.map((v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"').join(',')).join('\r\n');
+  dlBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), srSafe(SRFB.m.title) + (kind === 'apply' ? '-apply-list.csv' : '-feedback.csv'));
+  toast(kind === 'apply' ? 'Apply-list downloaded' : 'Feedback downloaded');
+}
+async function srExportWord(kind) {
+  if (typeof docx === 'undefined') { toast('Word library not loaded. Reload the page.', 'err'); return; }
+  const { Document, Paragraph, Table, TableRow, TableCell, TextRun, WidthType, BorderStyle, Packer, PageOrientation } = docx;
+  kind = 'apply';                                                              // the Word export is the layout apply-list only
+  const { head, body, payload } = srExportRows(kind), font = getExportFont(payload.language);
+  const widths = [600, 900, 1100, 1300, 3300, 3300, 2200, 0, 700];            // twips; column 8 ("Full sentence") is not printed in Word
+  const keep = head.map((_, i) => i !== 7);
+  const lb = { style: BorderStyle.SINGLE, size: 1, color: 'D0D7DE' }, brd = { top: lb, bottom: lb, left: lb, right: lb };
+  const cell = (txt, w, o = {}) => new TableCell({ borders: brd, width: { size: w, type: WidthType.DXA }, shading: o.fill ? { fill: o.fill } : undefined,
+    children: [new Paragraph({ children: [new TextRun({ text: String(txt == null ? '' : txt), bold: !!o.bold, color: o.color || '111111', size: o.size || 17, font })] })] });
+  const ctxCell = (r, w) => { const i = r.i; const p = i.context && i.original && i.context.indexOf(i.original) >= 0 ? i.context.indexOf(i.original) : -1;
+    const runs = p < 0 ? [new TextRun({ text: i.original || '', bold: true, color: 'B91C1C', size: 17, font })] : [
+      new TextRun({ text: i.context.slice(0, p), color: '666666', size: 17, font }), new TextRun({ text: i.original, bold: true, color: 'B91C1C', size: 17, font }), new TextRun({ text: i.context.slice(p + i.original.length), color: '666666', size: 17, font })];
+    return new TableCell({ borders: brd, width: { size: w, type: WidthType.DXA }, children: [new Paragraph({ children: runs })] }); };
+  const cols = head.map((h, i) => i).filter((i) => keep[i]);
+  const headRow = new TableRow({ tableHeader: true, children: cols.map((i) => cell(head[i], widths[i], { bold: true, fill: 'F1F5F9', size: 16 })) });
+  const srcRows = srRows().filter((x) => x.fin != null);                       // same order as `body` (apply-list)
+  const rows = body.map((row, n) => { const r = srcRows[n];
+    return new TableRow({ children: cols.map((i) => i === 4 ? ctxCell(r, widths[i]) : i === 5 ? cell(row[i], widths[i], { bold: true, color: '047857' }) : cell(row[i], widths[i])) }); });
+  const doc = new Document({ sections: [{ properties: { page: { size: { orientation: PageOrientation.LANDSCAPE } } }, children: [
+    new Paragraph({ children: [new TextRun({ text: 'Apply-list for layout', bold: true, size: 32, font })], spacing: { after: 80 } }),
+    new Paragraph({ children: [new TextRun({ text: SRFB.m.title + ' · ' + body.length + ' change' + (body.length === 1 ? '' : 's') + ' · reviewed by ' + (((SRFB.decisions && SRFB.decisions.reviewer) || 'reviewer')) + ' · ' + srDate(new Date().toISOString()), color: '666666', size: 18, font })], spacing: { after: 200 } }),
+    new Paragraph({ children: [new TextRun({ text: 'For each row: find the highlighted text in the layout (the sentence around it is shown) and replace it with the text in "Replace with". Tick "Done" when applied.', size: 18, font })], spacing: { after: 200 } }),
+    new Table({ rows: [headRow].concat(rows), width: { size: widths.filter((_, i) => keep[i]).reduce((a, b) => a + b, 0), type: WidthType.DXA } }),
+  ] }] });
+  dlBlob(await Packer.toBlob(doc), srSafe(SRFB.m.title) + '-apply-list.docx');
+  toast('Apply-list downloaded');
+}
+
+function srInit() {
+  srPaintBadge();
+  if (srReady()) { setTimeout(() => srRefresh(false), 2500); setInterval(() => srRefresh(false), 180000); }
+}
+
+// ══════════════════════════════════════════════
 // Init
 // ══════════════════════════════════════════════
 (function init() {
@@ -3933,6 +4415,7 @@ function updateCostFooter() {
   updateCostFooter();
   // Restore last report if it was saved within the past 24 hours
   loadSavedReport();
+  srInit();
 })();
 </script>
 </body>

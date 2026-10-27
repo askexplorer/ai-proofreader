@@ -3,9 +3,10 @@
 ## What this project is
 Single-file browser app for professional AI-powered proofreading. Powered by Anthropic Claude API (direct browser → API calls). No backend, no server — pure client-side HTML/JS/CSS.
 
-**Live repo:** github.com/shakkeer-cloud/ai-proofreader  
+**Live repo:** github.com/askexplorer/ai-proofreader (remote `askexplorer`; the old `origin` = shakkeer-cloud is retired)  
+**Live site:** https://askexplorer.github.io/ai-proofreader/ (GitHub Pages, serves `master`)  
 **Branch:** master  
-**Current version:** v3.0.1
+**Current version:** v3.5.0
 
 ---
 
@@ -13,11 +14,14 @@ Single-file browser app for professional AI-powered proofreading. Powered by Ant
 
 | File | Purpose | Lines |
 |---|---|---|
-| `index.html` | Main app — all logic, UI, CSS in one file | ~3000 |
-| `share.html` | Review workflow — load a JSON report, reviewer marks decisions | ~1300 |
-| `review.html` | Older review page (not actively maintained) | ~1160 |
+| `index.html` | Main app — all logic, UI, CSS in one file (incl. creator-side sharing UI: Setup wizard, Share modal, Reviews tab) | ~4400 |
+| `share.html` | Reviewer page — opened from a share link, password-gated, Agree / Disagree / Edit per issue, autosave, Submit | ~620 |
+| `share-core.js` | `window.SR` — E2E crypto + Supabase RPC client shared by index.html and share.html | ~240 |
+| `supabase/setup.sql` | One-time DB setup for the user's own Supabase project (locked tables + SECURITY DEFINER RPCs) | ~250 |
+| `review.html` | Older review page (not actively maintained, do not touch) | ~1160 |
 
-**RULE: Only ever edit `index.html` unless explicitly asked to change another file.**
+**RULE: `index.html`, `share.html`, `share-core.js` and `supabase/setup.sql` are all in scope (the user explicitly allowed it). Leave `review.html` alone unless asked.**
+Keep the file hygiene rule: no curly quotes in JS code, no literal U+2028/U+2029/NUL (use `String.fromCharCode` / constants).
 
 ---
 
@@ -181,14 +185,38 @@ docInfo = {
 
 ---
 
-## share.html key facts
+## Review sharing (v3.5.0) — architecture and security model
 
-- Loads report from localStorage key `proof_last_report`
-- Uses Supabase for persisting shared reviews (key in localStorage: `proof_supabase_*`)
-- Reviewer can mark each error: Accept / Reject / Note
-- Exports: PDF, Word, CSV of review decisions
-- Bug fixes in current version: `_origReviewHTML` captured at init; `_syncBtns` queries correct selector; removed dead `row.className` line in `setDecision()`
+Flow: creator presses **Share for review** on a report -> issues are encrypted in the browser -> link + password sent to translator/proofreader (in two separate messages) -> reviewer opens `share.html?s=<id>#c=<base64url {u,k}>`, enters name + password, decides on each issue (Agree / Disagree / Edit + comment), autosaves, presses **Submit** -> creator sees a badge on the **Reviews** tab, opens feedback, exports an apply-list (Word landscape / CSV) for layout and ticks items off.
 
+- **Zero-knowledge:** password -> PBKDF2-SHA256 (600k iterations, `KDF_ITER`) -> 64 bytes = AES-GCM key (32 B) + `proof` (32 B hex). The server only ever stores `sha256(proof)` and ciphertext (payload is gzipped via CompressionStream first). The password never leaves the browser.
+- **Database:** user's own Supabase project. Tables have RLS on with no policies and all rights revoked from `anon`/`authenticated`; everything goes through SECURITY DEFINER RPCs (`share_create, share_info, share_open, share_save, share_list, share_manage`) that RETURN an error jsonb instead of raising, so failed-attempt counters persist.
+- **Brute-force limits:** reviewer link locks 15 min after 8 wrong passwords (also for the correct password while locked); creator secret (hash in `app_config.creator_hash`) locks 10 min after 20 wrong tries. Expiry <= 90 days, expired rows purged after 14 days.
+- **Creator passphrase:** typed in Setup step 2, embedded in the setup SQL by `SR.creatorSql()`, kept only in this browser's localStorage (`sr_creator`). Never send it anywhere else.
+- **Connection config** (Project URL + public anon/publishable key) travels inside the link fragment `#c=` (fragments are not sent to servers). Legacy JWT keys also get an `Authorization` header; `sb_publishable_` keys must not.
+- **Concurrency:** version-based optimistic locking in `share_save`; client merges (newest `at` per issue wins).
+- **localStorage keys (index.html):** `sr_sb_url, sr_sb_key, sr_creator, sr_shares, sr_verified, sr_s1_done, sr_applied_<shareId>`. `srReady()` needs URL+key+creator and `sr_verified==='1'` (set by Save & test connection).
+- **Payload schema:** `{v:1, kind:'proofread', title, language, pages, wordCount, createdBy, createdAt, note, issues:[{id,type,severity,page,loc,context,original,corrected,explanation,source:{label,text}}]}`. `loc` and `source` are reserved for translation-check issues ("Ch 33 - para 7", source-language text).
+- **Decisions schema:** `{v:1, reviewer, reviewers[], items:{id:{d:'agree'|'disagree'|'edit', t, c, at}}, updatedAt}`.
+- **Tested** against a PGlite (real Postgres) stand-in for Supabase: 40/40 SQL tests (anon blocked on direct table access, lockouts, expiry, conflicts, reopen/revoke) plus full browser E2E (wizard, share, reviewer, submit, feedback, exports, withdraw).
+
+### Known gotchas
+- Global `label {text-transform:uppercase}` in index.html leaks into new UI; use `.sr-field > label.sr-opt`-style overrides.
+- `.nav-badge[hidden]` needs an explicit `display:none` rule.
+- Navigating a tab to the identical URL does not reload; use `location.reload()` when testing.
+- Write tool turns `\uXXXX` escapes into literal characters (breaks regex literals for U+2028); use constants.
+
+### Still to build (agreed scope)
+Translation check: optional source-document upload (DOCX/RTF/IDML/TXT; the user's real source `.doc` is actually RTF), chapter-aligned compare for missing/added text, translation quality score (Critical 10 / Major 5 / Minor 1 / Query 0; score = 100 - 4 x penalty per 1000 words; Pass >= 90 and 0 Critical, Revise 75-89 or any Critical, Fail < 75), a "Translation check" report tab, and Word-vs-Word sharing to the translator before layout.
+
+---
+
+## share.html (reviewer page) key facts
+
+- Views: `#v-lock, #v-error, #v-review, #v-done`; overlays `#ov-welcome`, `#ov-submit`. Reads `s` (share id) from the query and config `c` from the hash.
+- Wrong/withdrawn/expired/deleted links all end in the same neutral "This link is no longer available" message (no info leak about which).
+- Filters (To review / Agree / Disagree / Edited / With comments / type / search), progress bar, keyboard shortcuts A / D / E / C / J / K, mobile layout, dark/light theme, RTL-safe context rendering.
+- Older `proof_last_report` / `proof_supabase_*` flow is gone; the page no longer reads the creator's localStorage.
 ---
 
 ## Commit conventions
