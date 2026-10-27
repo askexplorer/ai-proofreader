@@ -489,6 +489,7 @@
         <div class="report-title">Proofreading Report</div>
         <div class="report-meta" id="report-meta"></div>
         <div id="report-cost" style="display:none;font-size:11px;color:var(--muted);margin-top:3px;"></div>
+        <div id="report-coverage" style="display:none;font-size:11px;margin-top:5px;line-height:1.5"></div>
         <div class="triage-summary" id="triage-summary" style="display:none"></div>
       </div>
       <div class="score-wrap" id="score-wrap" style="display:none">
@@ -632,7 +633,7 @@
 <footer class="app-footer">
   <span>© 2026 Explorer Publishing &amp; Distribution LLC · All rights reserved</span>
   <span id="cost-footer" style="font-size:10px;color:var(--muted);opacity:.65"></span>
-  <span class="app-footer-version">v3.3.1</span>
+  <span class="app-footer-version">v3.4.0</span>
 </footer>
 
 <div class="toast" id="toast"></div>
@@ -986,13 +987,19 @@ async function extractText(file) {
 // IDML extraction — reads the InDesign source directly (no PDF artifacts)
 //
 // An .idml file is a ZIP containing:
-//   Stories/Story_*.xml   — actual text content in <Content> nodes
-//   Spreads/Spread_*.xml  — which TextFrame is on which page (refs a Story)
-//   designmap.xml         — top-level wiring
+//   designmap.xml         — lists the spreads IN DOCUMENT ORDER (this defines page numbers)
+//   Spreads/Spread_*.xml  — pages (<Page>) and the text frames placed on them
+//   Stories/Story_*.xml   — the actual text (<Content>) of every story
 //
-// We extract per-story text, then map each story to its first occurrence
-// in a spread to assign a page number. Stories never referenced from a
-// spread (master-page placeholders etc.) are skipped.
+// Rules that keep the proofread faithful to what is actually printed:
+//  • Page numbers follow designmap.xml order (NOT file-name order).
+//  • A story is proofread only if at least one of its frames sits ON a page, on a
+//    visible + printing layer. Pasteboard / hidden-layer / non-printing text is excluded.
+//  • Frame geometry is resolved through nested <Group> transforms.
+//  • A story threaded across several frames/pages has its paragraphs distributed over
+//    those frames (by frame area), so errors are attributed to the right page (±1).
+//  • Footnote / table-cell paragraphs nested inside another paragraph are read once.
+//  • Stories on a page are ordered by position (top→bottom, left→right; right→left for RTL).
 // ══════════════════════════════════════════════
 async function extractIDML(file) {
   if (typeof JSZip === 'undefined') {
@@ -1006,275 +1013,319 @@ async function extractIDML(file) {
   catch(e) { throw new Error('Not a valid IDML file (could not unzip).'); }
 
   const parser = new DOMParser();
-
-  // ── 1. Build storyId → pageNumber map by walking spreads ──
-  // Each Spread XML has <Page> elements with GeometricBounds, and TextFrames
-  // with ItemTransform + PathPointArray (anchors in object space). A frame
-  // is "on a page" if its world-space bounding box intersects any page rect.
-  // Frames whose ParentStory never appears on any page are flagged as
-  // pasteboard-only and (by default) excluded from proofreading.
-  const storyToPage = new Map();        // sid → page number (first on-page frame wins)
-  const storiesWithFrame = new Set();   // sid → has at least one frame anywhere
-  const spreadFiles = Object.keys(zip.files)
-    .filter(n => /^Spreads\/Spread_.*\.xml$/i.test(n))
-    .sort();
-
-  // Geometry helpers — both frames and pages are placed inside their parent
-  // Spread by an ItemTransform. The frame's path anchors are in frame-local
-  // coords; the page's GeometricBounds are in page-local coords. To compare
-  // them we transform BOTH up into spread coords (the spread's own transform
-  // cancels out since it applies to everything in the spread equally).
-  const parseFloats = (s) => (s||'').trim().split(/\s+/).map(Number).filter(n => !isNaN(n));
-  const applyTransform = (m, x, y) => {
-    const [a,b,c,d,tx,ty] = m;
-    return [a*x + c*y + tx, b*x + d*y + ty];
+  const parseXml = async (name) => {
+    const f = zip.file(name);
+    if (!f) return null;
+    try {
+      const d = parser.parseFromString(await f.async('string'), 'application/xml');
+      return d.getElementsByTagName('parsererror').length ? null : d;
+    } catch(_) { return null; }
   };
+
+  // ── 1. Spread order = page order. designmap.xml is the authority. ──
+  const designmap = await parseXml('designmap.xml');
+  const spreadFiles = [];
+  if (designmap) {
+    for (const el of designmap.getElementsByTagNameNS('*', 'Spread')) {
+      const src = el.getAttribute('src');
+      if (src && zip.file(src) && !spreadFiles.includes(src)) spreadFiles.push(src);
+    }
+  }
+  // Safety net: spread files not listed in designmap go last (no designmap → file-name order)
+  Object.keys(zip.files).filter(n => /^Spreads\/Spread_.*\.xml$/i.test(n)).sort()
+    .forEach(n => { if (!spreadFiles.includes(n)) spreadFiles.push(n); });
+
+  // Layers that are hidden or non-printing — text on them is not in the printed book
+  const hiddenLayers = new Set();
+  if (designmap) {
+    for (const l of designmap.getElementsByTagName('Layer')) {
+      if (l.getAttribute('Visible') === 'false' || l.getAttribute('Printable') === 'false')
+        hiddenLayers.add(l.getAttribute('Self'));
+    }
+  }
+
+  // ── Geometry helpers. Frames and pages are both placed in their Spread by an
+  // ItemTransform ("a b c d tx ty"); we compare them in SPREAD space. ──
+  const parseFloats = (s) => (s||'').trim().split(/\s+/).map(Number).filter(n => !isNaN(n));
+  const IDENT = [1,0,0,1,0,0];
+  const applyTransform = (m, x, y) => [m[0]*x + m[2]*y + m[4], m[1]*x + m[3]*y + m[5]];
+  // compose: child transform `c` applied first, then parent `p`
+  const mmul = (p, c) => [
+    p[0]*c[0] + p[2]*c[1],  p[1]*c[0] + p[3]*c[1],
+    p[0]*c[2] + p[2]*c[3],  p[1]*c[2] + p[3]*c[3],
+    p[0]*c[4] + p[2]*c[5] + p[4],  p[1]*c[4] + p[3]*c[5] + p[5],
+  ];
   const boxFromPoints = (pts) => {
     let minX=Infinity, maxX=-Infinity, minY=Infinity, maxY=-Infinity;
     for (const [x,y] of pts) {
       if (x < minX) minX = x; if (x > maxX) maxX = x;
       if (y < minY) minY = y; if (y > maxY) maxY = y;
     }
-    if (minX === Infinity) return null;
-    return { x1:minX, y1:minY, x2:maxX, y2:maxY };
+    return minX === Infinity ? null : { x1:minX, y1:minY, x2:maxX, y2:maxY };
   };
-  // Page rect in SPREAD space.
-  // GeometricBounds = "y1 x1 y2 x2" (page-local). Apply Page.ItemTransform.
+  // Page rect in spread space: GeometricBounds = "y1 x1 y2 x2" (page-local) + Page.ItemTransform
   const pageRectFromBounds = (pageEl) => {
     const v = parseFloats(pageEl.getAttribute('GeometricBounds') || '');
     if (v.length !== 4) return null;
     const m = parseFloats(pageEl.getAttribute('ItemTransform') || '1 0 0 1 0 0');
     if (m.length !== 6) return null;
     const [y1, x1, y2, x2] = v;
-    const corners = [[x1,y1],[x2,y1],[x2,y2],[x1,y2]].map(([x,y]) => applyTransform(m, x, y));
-    return boxFromPoints(corners);
+    return boxFromPoints([[x1,y1],[x2,y1],[x2,y2],[x1,y2]].map(([x,y]) => applyTransform(m, x, y)));
   };
-  // Frame rect in SPREAD space.
-  // ItemTransform = "a b c d tx ty"; PathPointType@Anchor = "x y" (frame-local).
-  const frameWorldBox = (frameEl) => {
-    const m = parseFloats(frameEl.getAttribute('ItemTransform') || '');
-    if (m.length !== 6) return null;
-    const pts = frameEl.getElementsByTagName('PathPointType');
-    if (pts.length === 0) return null;
-    const corners = [];
-    for (const p of pts) {
+  // Frame rect in spread space: path anchors (frame-local) → own transform → enclosing group transforms
+  const frameWorldBox = (frameEl, parentAcc) => {
+    const own = parseFloats(frameEl.getAttribute('ItemTransform') || '');
+    if (own.length !== 6) return null;
+    const m = mmul(parentAcc, own);
+    const pts = [];
+    for (const p of frameEl.getElementsByTagName('PathPointType')) {
       const av = parseFloats(p.getAttribute('Anchor') || '');
-      if (av.length !== 2) continue;
-      corners.push(applyTransform(m, av[0], av[1]));
+      if (av.length === 2) pts.push(applyTransform(m, av[0], av[1]));
     }
-    return boxFromPoints(corners);
+    return boxFromPoints(pts);
   };
-  const rectsIntersect = (a, b) =>
-    !(a.x2 < b.x1 || a.x1 > b.x2 || a.y2 < b.y1 || a.y1 > b.y2);
+  const rectsIntersect = (a, b) => !(a.x2 < b.x1 || a.x1 > b.x2 || a.y2 < b.y1 || a.y1 > b.y2);
+  // Visit every TextFrame under `node`, accumulating <Group> (and other container) transforms
+  const walkFrames = (node, acc, visit) => {
+    for (const ch of node.childNodes) {
+      if (ch.nodeType !== 1) continue;
+      const tag = ch.nodeName;
+      if (tag === 'Page') continue;
+      if (tag === 'TextFrame') { visit(ch, acc); continue; }
+      let next = acc;
+      if (tag !== 'Spread') {
+        const m = parseFloats(ch.getAttribute('ItemTransform') || '');
+        if (m.length === 6) next = mmul(acc, m);
+      }
+      walkFrames(ch, next, visit);
+    }
+  };
 
+  // ── 2. Walk spreads in page order: which frames are on a page, and which page ──
+  const frameInfo = [];            // visible, on-page text frames, in document order
+  const storyState = new Map();    // sid → { on, hidden }  (absent = story has no frame at all)
   let pageCounter = 0;
   for (const name of spreadFiles) {
-    const xml = await zip.file(name).async('string');
-    let doc;
-    try { doc = parser.parseFromString(xml, 'application/xml'); } catch(_) { continue; }
+    const doc = await parseXml(name);
+    if (!doc) continue;
     const spreadEl = doc.documentElement;
     const pages = spreadEl.getElementsByTagName('Page');
-
-    // Build the list of page rectangles in SPREAD space (in document order)
     const pageRects = [];
-    for (const p of pages) {
-      const r = pageRectFromBounds(p);
-      if (r) pageRects.push(r);
-    }
-    const numPages = Math.max(pages.length, 1);
+    for (const p of pages) { const r = pageRectFromBounds(p); if (r) pageRects.push(r); }
     const firstPageOfSpread = pageCounter + 1;
-    pageCounter += numPages;
+    pageCounter += Math.max(pages.length, 1);
 
-    // Walk every TextFrame in this spread (also handles nested ones via getElementsByTagName)
-    const frames = spreadEl.getElementsByTagName('TextFrame');
-    for (const f of frames) {
+    walkFrames(spreadEl, IDENT, (f, acc) => {
       const sid = f.getAttribute('ParentStory');
-      if (!sid) continue;
-      storiesWithFrame.add(sid);
+      if (!sid) return;
+      const st = storyState.get(sid) || { on:false, hidden:false };
+      storyState.set(sid, st);
 
-      // If page geometry missing for this spread, fall back to first-page assignment
-      if (pageRects.length === 0) {
-        if (!storyToPage.has(sid)) storyToPage.set(sid, firstPageOfSpread);
-        continue;
+      let pageNum = null, box = null;
+      if (!pageRects.length) {
+        pageNum = firstPageOfSpread;                       // no page geometry — be permissive
+      } else {
+        box = frameWorldBox(f, acc);
+        if (!box) pageNum = firstPageOfSpread;             // unparseable — be permissive
+        else for (let i = 0; i < pageRects.length; i++)
+          if (rectsIntersect(box, pageRects[i])) { pageNum = firstPageOfSpread + i; break; }
       }
+      if (pageNum === null) return;                        // pasteboard (off every page)
 
-      const box = frameWorldBox(f);
-      if (!box) {
-        // Geometry unparseable — be permissive: assume on-page, first page of spread
-        if (!storyToPage.has(sid)) storyToPage.set(sid, firstPageOfSpread);
-        continue;
-      }
+      const hiddenFrame = f.getAttribute('Visible') === 'false' ||
+                          f.getAttribute('Nonprinting') === 'true' ||
+                          hiddenLayers.has(f.getAttribute('ItemLayer'));
+      if (hiddenFrame) { st.hidden = true; return; }
 
-      // Find which page (if any) this frame sits on
-      let onPageNum = null;
-      for (let i = 0; i < pageRects.length; i++) {
-        if (rectsIntersect(box, pageRects[i])) { onPageNum = firstPageOfSpread + i; break; }
-      }
-      // If on a page: record (first on-page frame wins for this story).
-      // If off all pages (pasteboard): do NOT add — story stays out of storyToPage.
-      if (onPageNum && !storyToPage.has(sid)) storyToPage.set(sid, onPageNum);
-    }
+      st.on = true;
+      frameInfo.push({
+        sid, self: f.getAttribute('Self'),
+        prev: f.getAttribute('PreviousTextFrame'), next: f.getAttribute('NextTextFrame'),
+        page: pageNum,
+        y: box ? box.y1 : 0, x: box ? box.x1 : 0,
+        area: box ? Math.max((box.x2 - box.x1) * (box.y2 - box.y1), 1) : 1,
+      });
+    });
   }
+  const framesByStory = new Map();
+  for (const f of frameInfo) {
+    if (!framesByStory.has(f.sid)) framesByStory.set(f.sid, []);
+    framesByStory.get(f.sid).push(f);
+  }
+  // Order a story's frames along its text thread (PreviousTextFrame / NextTextFrame)
+  const orderFrames = (list) => {
+    const bySelf = new Map(list.map(f => [f.self, f]));
+    const out = [], seen = new Set();
+    for (const h of list.filter(f => !f.prev || f.prev === 'n' || !bySelf.has(f.prev))) {
+      let cur = h;
+      while (cur && !seen.has(cur.self)) { seen.add(cur.self); out.push(cur); cur = bySelf.get(cur.next); }
+    }
+    for (const f of list) if (!seen.has(f.self)) out.push(f);
+    return out;
+  };
 
-  // Stories that have a frame somewhere but never landed on a page = pasteboard-only.
-  const pasteboardStories = new Set(
-    [...storiesWithFrame].filter(sid => !storyToPage.has(sid))
-  );
-
-  // ── 2. Extract text from each Story ──
-  const storyFiles = Object.keys(zip.files)
-    .filter(n => /^Stories\/Story_.*\.xml$/i.test(n))
-    .sort();
-
+  // ── 3. Extract text from every Story and place it on pages ──
+  const storyFiles = Object.keys(zip.files).filter(n => /^Stories\/Story_.*\.xml$/i.test(n)).sort();
   if (storyFiles.length === 0) {
     throw new Error('No Stories/ XML found inside the IDML — file may be corrupt.');
   }
 
-  // Map: pageNumber → array of { text, script } story records
-  // script is 'en' | 'ar' | 'mixed' so bilingual mode can filter by language.
-  const pageBuckets = new Map();
-  const ARABIC_RE = /[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]/g;
+  const pieces = [];                                  // { page, y, x, sid, script, text }
+  const ARABIC_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g;
   const LATIN_RE  = /[A-Za-z]/g;
-  let totalChars = 0;
-  let totalEn = 0, totalAr = 0; // script-distribution totals for bilingual auto-detect
-
-  // Pasteboard-exclusion bookkeeping (default ON — pasteboard text is content
-  // outside any page area and almost always abandoned drafts the editor
-  // doesn't want flagged)
-  let pasteboardSkippedStories = 0;
-  let pasteboardSkippedChars   = 0;
+  const LINE_SEP = '\u2028', SOFT_HYPHEN = '\u00AD';   // forced line break / discretionary hyphen
+  let totalEn = 0, totalAr = 0;                       // script totals → bilingual auto-detect
+  let storiesUsed = 0, threadedStories = 0, charsUsed = 0;
+  let offPageStories = 0, offPageChars = 0, hiddenStories = 0, hiddenChars = 0;
 
   for (const name of storyFiles) {
     setProgressStage('extracting', `Reading IDML — ${name.split('/').pop()}…`);
-    const xml = await zip.file(name).async('string');
-    let doc;
-    try { doc = parser.parseFromString(xml, 'application/xml'); } catch(_) { continue; }
+    const doc = await parseXml(name);
+    if (!doc) continue;
 
-    // Story id is the <Story Self="..."> attribute (matches ParentStory in spreads)
     const storyEl = doc.getElementsByTagName('Story')[0];
     const storyId = storyEl ? storyEl.getAttribute('Self') : null;
-    const page = (storyId && storyToPage.get(storyId)) || 0; // 0 = unattached (master/pasteboard)
 
-    // Walk every ParagraphStyleRange; each is one paragraph (or list item)
-    const paras = doc.getElementsByTagName('ParagraphStyleRange');
+    // Every ParagraphStyleRange holds one or more paragraphs separated by <Br/>.
+    // A ParagraphStyleRange nested inside another (footnote, table cell) is skipped
+    // while reading its parent and read once on its own.
     const paraStrings = [];
-    for (const p of paras) {
-      // Concatenate all <Content> text nodes inside this paragraph,
-      // preserving CharacterStyleRange order. <Br/> = line break within a paragraph.
+    for (const p of doc.getElementsByTagName('ParagraphStyleRange')) {
       const parts = [];
-      // walk children depth-first to keep document order
       (function walk(node) {
         for (const child of node.childNodes) {
-          if (child.nodeType === 1) {
-            const tag = child.nodeName;
-            if (tag === 'Content') {
-              parts.push(child.textContent || '');
-            } else if (tag === 'Br') {
-              parts.push('\n');
-            } else {
-              walk(child);
-            }
-          }
+          if (child.nodeType !== 1) continue;
+          const tag = child.nodeName;
+          if (tag === 'Content') parts.push(child.textContent || '');
+          else if (tag === 'Br') parts.push('\u0000');                 // paragraph break
+          else if (tag === 'ParagraphStyleRange') continue;            // nested — read separately
+          else walk(child);
         }
       })(p);
-      const para = parts.join('').trim();
-      if (para) paraStrings.push(para);
+      for (const raw of parts.join('').split('\u0000')) {
+        let para = raw.split(LINE_SEP).join('\n').split(SOFT_HYPHEN).join('').trim();   // forced line break → newline; drop soft hyphens
+        try { para = para.normalize('NFC'); } catch(_) {}                         // Indic combining marks
+        if (para) paraStrings.push(para);
+      }
     }
-
     if (paraStrings.length === 0) continue;
     const storyText = paraStrings.join('\n\n');
 
-    // Skip stories whose only frames are on the pasteboard (off-page).
-    // Stories with NO frame at all (master-page templates, etc.) still pass
-    // through — those tend to be page numbers / headers and are usually fine.
-    if (storyId && pasteboardStories.has(storyId)) {
-      pasteboardSkippedStories++;
-      pasteboardSkippedChars += storyText.length;
+    // Frames exist but none is visible on a page → pasteboard / hidden layer: not in the printed book
+    const st = storyId ? storyState.get(storyId) : null;
+    if (st && !st.on) {
+      if (st.hidden) { hiddenStories++;  hiddenChars  += storyText.length; }
+      else           { offPageStories++; offPageChars += storyText.length; }
       continue;
     }
 
-    totalChars += storyText.length;
-
-    // Classify story by script content (used by bilingual mode to filter)
+    // Script of the whole story (bilingual mode filters by this)
     const arCount = (storyText.match(ARABIC_RE) || []).length;
     const enCount = (storyText.match(LATIN_RE)  || []).length;
     totalAr += arCount; totalEn += enCount;
-    let script = 'en';
-    if (arCount > 0 && enCount > 0) script = 'mixed';
-    else if (arCount > enCount)     script = 'ar';
-    else                            script = 'en';
+    const script = (arCount > 0 && enCount > 0) ? 'mixed' : (arCount > enCount ? 'ar' : 'en');
 
-    if (!pageBuckets.has(page)) pageBuckets.set(page, []);
-    pageBuckets.get(page).push({ text: storyText, script });
+    storiesUsed++; charsUsed += storyText.length;
+    const frames = st ? orderFrames(framesByStory.get(storyId) || []) : [];
+
+    if (frames.length === 0) {
+      // No frame info (master-page text, unplaced story) → kept, listed after the last page
+      pieces.push({ page: 0, y: 0, x: 0, sid: storyId, script, text: storyText });
+    } else if (frames.length === 1) {
+      pieces.push({ page: frames[0].page, y: frames[0].y, x: frames[0].x, sid: storyId, script, text: storyText });
+    } else {
+      // Threaded story: InDesign does not record which paragraph lands in which frame, so
+      // estimate it. Frames 1..n-1 are assumed full (equal text density per area); the last
+      // frame holds the remainder (assumed ~half full) → each paragraph goes to the frame
+      // that contains its midpoint. Accurate to about ±1 page.
+      threadedStories++;
+      const areas = frames.map(f => f.area);
+      const Aall = areas.reduce((a, b) => a + b, 0);
+      const Asub = Aall - areas[areas.length - 1];
+      const T = storyText.length;
+      const density = (T / Aall + T / Asub) / 2;
+      const bounds = [];
+      let cum = 0;
+      for (let i = 0; i < frames.length - 1; i++) { cum += areas[i] * density; bounds.push(cum); }
+
+      let pos = 0, cur = 0, group = [];
+      const flush = () => {
+        if (!group.length) return;
+        pieces.push({ page: frames[cur].page, y: frames[cur].y, x: frames[cur].x, sid: storyId, script, text: group.join('\n\n') });
+        group = [];
+      };
+      for (const para of paraStrings) {
+        const mid = pos + para.length / 2;
+        let fi = cur;
+        while (fi < frames.length - 1 && mid > bounds[fi]) fi++;
+        if (fi !== cur) { flush(); cur = fi; }
+        group.push(para);
+        pos += para.length + 2;
+      }
+      flush();
+    }
   }
 
-  // ── 3. Assemble per-page text array, in page order; page 0 = unattached, push to end ──
-  const sortedPages = [...pageBuckets.keys()].sort((a,b) => {
-    if (a === 0) return 1;
-    if (b === 0) return -1;
-    return a - b;
-  });
+  // ── 4. Assemble per-page text, in reading order ──
+  const allText = pieces.map(p => p.text).join('\n\n');
+  if (!allText.trim()) throw new Error('IDML contained no extractable text.');
+  let normalized = allText;
+  try { normalized = allText.normalize('NFC'); } catch(_) {}
+  const isRTLDoc = isRTLLang(detectLanguage(normalized));
 
-  // Helper: collect a per-page text array from pageBuckets, optionally filtering
-  // by script. `filter` is 'all' | 'en' | 'ar' — for 'en' and 'ar' we include
-  // matching-script stories AND mixed stories (each language sees the bilingual
-  // headings in its pass).
-  const maxPage = sortedPages.filter(p => p > 0).reduce((m,p) => Math.max(m,p), 0);
+  const bandOf = (p) => Math.floor(p.y / 30);          // 30pt rows: same-row pieces read left→right (right→left for RTL)
+  const pageKey = (p) => p.page === 0 ? Infinity : p.page;
+  pieces.sort((a, b) => (pageKey(a) - pageKey(b)) || (bandOf(a) - bandOf(b)) || (isRTLDoc ? b.x - a.x : a.x - b.x));
+
+  const pageBuckets = new Map();
+  for (const p of pieces) {
+    if (!pageBuckets.has(p.page)) pageBuckets.set(p.page, []);
+    pageBuckets.get(p.page).push(p);
+  }
+  const maxPage = [...pageBuckets.keys()].reduce((m, p) => Math.max(m, p), 0);
+
+  // collect('en'|'ar') keeps stories of that script AND bilingual (mixed) stories, so each
+  // language's pass sees the bilingual headings; collect('all') keeps everything.
   const collect = (filter) => {
-    const out = [];
     const keep = (s) => filter === 'all' || s.script === filter || s.script === 'mixed';
-    for (let i = 1; i <= maxPage; i++) {
-      const stories = (pageBuckets.get(i) || []).filter(keep);
-      out.push(stories.map(s => s.text).join('\n\n'));
-    }
+    const out = [];
+    for (let i = 1; i <= maxPage; i++) out.push((pageBuckets.get(i) || []).filter(keep).map(s => s.text).join('\n\n'));
     if (pageBuckets.has(0)) {
-      const stories = pageBuckets.get(0).filter(keep);
-      if (stories.length) out.push(stories.map(s => s.text).join('\n\n'));
+      const t = pageBuckets.get(0).filter(keep).map(s => s.text).join('\n\n');
+      if (t) out.push(t);
     }
     return out;
   };
-
   const pageTexts   = collect('all');
   const pageTextsEN = collect('en');
   const pageTextsAR = collect('ar');
 
-  const fullText = pageTexts.join('\n\n').trim();
-  if (!fullText) throw new Error('IDML contained no extractable text.');
-
-  // NFC normalize (cheap insurance for combining marks in Indic scripts)
-  let normalized = fullText;
-  try { normalized = fullText.normalize('NFC'); } catch(_) {}
-
   docInfo.pageTexts = pageTexts;
-  docInfo.isSpread = false;   // IDML pages are logical pages, not spreads
-  docInfo.scriptDir = isRTLLang(detectLanguage(normalized)) ? 'rtl' : 'ltr';
+  docInfo.isSpread = false;                            // IDML pages are logical pages, not spreads
+  docInfo.scriptDir = isRTLDoc ? 'rtl' : 'ltr';
 
-  // Stash the bilingual split — used by runBilingualProofread() when the user
-  // picks the "Bilingual (English + Arabic)" language option. Only attach
-  // when BOTH scripts have meaningful content (>200 chars each), otherwise
-  // it's a monolingual doc and bilingual mode wouldn't make sense.
-  if (totalEn > 200 && totalAr > 200) {
-    docInfo._bilingualSplit = {
-      en: { pageTexts: pageTextsEN, fullText: pageTextsEN.join('\n\n').trim() },
-      ar: { pageTexts: pageTextsAR, fullText: pageTextsAR.join('\n\n').trim() },
-      enChars: totalEn,
-      arChars: totalAr,
-    };
-  } else {
-    docInfo._bilingualSplit = null;
-  }
+  // Bilingual split — used by runBilingualProofread() ("Bilingual (English + Arabic)").
+  // Only when BOTH scripts have real content, otherwise it is a monolingual document.
+  docInfo._bilingualSplit = (totalEn > 200 && totalAr > 200) ? {
+    en: { pageTexts: pageTextsEN, fullText: pageTextsEN.join('\n\n').trim() },
+    ar: { pageTexts: pageTextsAR, fullText: pageTextsAR.join('\n\n').trim() },
+    enChars: totalEn, arChars: totalAr,
+  } : null;
 
-  populateDocInfo(normalized, maxPage || pageTexts.length, null, null, 'idml', null);
+  populateDocInfo(normalized, pageCounter || maxPage || pageTexts.length, null, null, 'idml', null);
 
-  const biNote = docInfo._bilingualSplit
-    ? ` · bilingual EN+AR detected (use Language: Bilingual to proofread both)`
+  docInfo._pasteboardSkipped = { stories: offPageStories + hiddenStories, chars: offPageChars + hiddenChars };
+  docInfo._extraction = {
+    source: 'idml', pages: pageCounter, stories: storyFiles.length, storiesUsed,
+    offPageStories, hiddenStories, threadedStories, chars: charsUsed,
+    pagesApprox: threadedStories > 0,
+  };
+
+  const biNote = docInfo._bilingualSplit ? ' · bilingual EN+AR detected (use Language: Bilingual to proofread both)' : '';
+  const exNote = (offPageStories + hiddenStories) > 0
+    ? ` · ${offPageStories + hiddenStories} off-page/hidden ${offPageStories + hiddenStories === 1 ? 'story' : 'stories'} (${(offPageChars + hiddenChars).toLocaleString()} chars) excluded`
     : '';
-  const pbNote = pasteboardSkippedStories > 0
-    ? ` · ${pasteboardSkippedStories} pasteboard ${pasteboardSkippedStories===1?'story':'stories'} (${pasteboardSkippedChars.toLocaleString()} chars) excluded`
-    : '';
-  docInfo._pasteboardSkipped = { stories: pasteboardSkippedStories, chars: pasteboardSkippedChars };
-
-  toast(`✨ IDML source extracted — ${maxPage || pageTexts.length} pages, no rendering artifacts${biNote}${pbNote}.`, 'success', 6000);
+  toast(`✨ IDML source extracted — ${pageCounter} pages · ${storiesUsed} stories · ${charsUsed.toLocaleString()} chars${biNote}${exNote}.`, 'success', 6000);
   return normalized;
 }
 
@@ -1649,10 +1700,12 @@ function renderProofChecks() {
 // ══════════════════════════════════════════════
 // Confirm modal
 // ══════════════════════════════════════════════
-function estimatePreflightCost(text, model, numChunks) {
+// Calibrated on real runs: input ≈ text/charsPerToken + system prompt per chunk; output ≈ one
+// ~200-token entry per error, ~2 errors per 1,000 words (deliberately a little pessimistic).
+function estimatePreflightCost(text, model, numChunks, lang) {
   const p = MODEL_PRICING[model] || MODEL_PRICING['claude-sonnet-4-6'];
-  const inputTok  = Math.round((text.length / 4) * numChunks + 600 * numChunks);
-  const outputTok = Math.round(Math.max(1500, text.length / 80) * numChunks);
+  const inputTok  = Math.round(text.length / charsPerToken(lang) + 1700 * numChunks);
+  const outputTok = Math.round(Math.max(1200 * numChunks, countWords(text) * 0.4));
   return (inputTok * p.in + outputTok * p.out) / 1_000_000;
 }
 
@@ -1667,9 +1720,10 @@ function showConfirmModal(file, pasteText, apiKey) {
   const words = docInfo.wordCount || countWords(text);
   const model = document.getElementById('model').value;
   const modelNames = { 'claude-sonnet-4-6':'Sonnet 4.6', 'claude-opus-4-7':'Opus 4.7', 'claude-haiku-4-5-20251001':'Haiku 4.5', 'gpt-4o':'GPT-4o', 'gpt-4o-mini':'GPT-4o mini' };
-  const numChunks = Math.ceil(pagedLen / CHUNK_SIZE) || 1;
+  const sizingLang = currentLangForSizing();
+  const numChunks = Math.ceil(pagedLen / chunkSizeFor(sizingLang)) || 1;
   const estTimeSec = estimateProofreadTime(numChunks);
-  const estCost = estimatePreflightCost(text, model, numChunks);
+  const estCost = estimatePreflightCost(text, model, numChunks, sizingLang);
   const checks = selectedChecks.size===0 ? 'All checks' : [...selectedChecks].join(', ');
   const fname = docInfo.filename || (file?.name) || 'Pasted text';
 
@@ -1803,7 +1857,8 @@ async function runBilingualProofread(file, apiKey) {
 
   const merged = {
     language: 'Bilingual (English + Arabic)',
-    word_count: (enReport?.word_count || 0) + (arReport?.word_count || 0),
+    // each pass reports the WHOLE document's client-side word count — add them and it doubles
+    word_count: Math.max(enReport?.word_count || 0, arReport?.word_count || 0),
     summary,
     errors: allErrors,
     _checks: enReport?._checks || arReport?._checks || null,
@@ -1812,7 +1867,17 @@ async function runBilingualProofread(file, apiKey) {
     _model: enReport?._model || arReport?._model || null,
     _cost:  (enReport?._cost || 0) + (arReport?._cost || 0),
     _partial: null,
-    _docInfo: enReport?._docInfo || arReport?._docInfo || {...docInfo},
+    _docInfo: enReport?._docInfo || arReport?._docInfo || liteDocInfo(docInfo),
+    _coverage: (() => {
+      const cs = [enReport?._coverage, arReport?._coverage].filter(Boolean);
+      if (!cs.length) return null;
+      return buildCoverage({
+        totalChunks: cs.reduce((a, c) => a + c.chunks, 0), completedChunks: cs.reduce((a, c) => a + c.chunksDone, 0),
+        splits: cs.reduce((a, c) => a + c.splits, 0), unchecked: cs.flatMap(c => c.unchecked),
+        pages: cs[0].pages, words: Math.max(...cs.map(c => c.words)), chars: cs.reduce((a, c) => a + c.chars, 0),
+        pagesApprox: cs.some(c => c.pagesApprox),
+      });
+    })(),
     _bilingual: {
       en: { errorCount: enReport?.errors?.length || 0, wordCount: enReport?.word_count || 0 },
       ar: { errorCount: arReport?.errors?.length || 0, wordCount: arReport?.word_count || 0 },
@@ -1861,6 +1926,189 @@ function splitIntoChunks(text, size) {
     pos = end;
   }
   return chunks.filter(c => c.length > 0);
+}
+
+// ══════════════════════════════════════════════
+// Script-aware sizing. Non-Latin scripts cost far more tokens per character, so their
+// chunks are smaller — this keeps tokens per chunk (and the number of errors one chunk can
+// produce, i.e. the output size) roughly constant across languages.
+// ══════════════════════════════════════════════
+function scriptClassOf(lang) {
+  const l = (lang || '').toLowerCase();
+  if (/bengali|hindi|devanagari|tamil|malayalam|telugu|kannada|gujarati|punjabi|marathi|thai|japanese|korean|chinese|mandarin/.test(l)) return 'dense';
+  if (/arabic|persian|farsi|urdu|hebrew|russian|mongolian|uzbek|ukrainian|bulgarian|serbian|kazakh|cyrillic|bilingual/.test(l)) return 'mid';
+  return 'latin';
+}
+function chunkSizeFor(lang)   { return { latin: CHUNK_SIZE, mid: 28000, dense: 18000 }[scriptClassOf(lang)]; }
+function charsPerToken(lang)  { return { latin: 3.0, mid: 1.8, dense: 1.2 }[scriptClassOf(lang)]; }
+// Language the user is about to proofread (dropdown choice, else the detected language)
+function currentLangForSizing() {
+  const sel = document.getElementById('language');
+  const v = sel ? sel.value : 'auto';
+  if (v === 'auto' || v === 'other') return docInfo.language || '';
+  return v;
+}
+function currentChunkSize() { return chunkSizeFor(currentLangForSizing()); }
+
+// ══════════════════════════════════════════════
+// Full-coverage chunk processing — goal: never silently lose part of the document.
+//  • Output truncated (stop_reason max_tokens / finish_reason length) → bisect the chunk and
+//    proofread each half, instead of re-sending a request that will truncate again.
+//  • Content-filter (policy) block → bisect to isolate the offending passage so the rest of
+//    the chunk is still checked; anything that cannot be checked is recorded in `skipped`
+//    and shown in the report.
+//  • JSON parse failure → retry up to 3×.
+// ══════════════════════════════════════════════
+const MAX_SPLIT_DEPTH = 3;
+function maxTokensFor(model) { return /haiku/.test(model) ? 8192 : 12000; }
+
+function splitChunkInHalf(text) {
+  const n = text.length;
+  if (n < 2000) return null;
+  const mid = Math.floor(n / 2), lo = Math.floor(n * 0.3), hi = Math.floor(n * 0.7);
+  let cut = -1;
+  const p1 = text.lastIndexOf('\n\n', mid);
+  if (p1 >= lo) cut = p1;
+  else { const p2 = text.indexOf('\n\n', mid); if (p2 !== -1 && p2 <= hi) cut = p2; }
+  if (cut === -1) {                                   // no paragraph break nearby → sentence end
+    const s = Math.max(text.lastIndexOf('. ', mid), text.lastIndexOf('! ', mid), text.lastIndexOf('? ', mid),
+                       text.lastIndexOf('。', mid), text.lastIndexOf('؟', mid));
+    if (s >= lo) cut = s + 1;
+  }
+  if (cut === -1) { const sp = text.lastIndexOf(' ', mid); cut = sp >= lo ? sp : mid; }
+  const a = text.slice(0, cut).trim();
+  let b = text.slice(cut).trim();
+  if (!a || !b) return null;
+  // keep page attribution: the second half must start under the right page marker
+  const marks = [...a.matchAll(/--- Page (\d+) ---/g)];
+  if (marks.length && !/^--- Page \d+ ---/.test(b)) b = `--- Page ${marks[marks.length - 1][1]} ---\n${b}`;
+  return [a, b];
+}
+
+// Last resort for an unsplittable, truncated response: keep every COMPLETE error object.
+function salvageErrors(raw) {
+  const out = [];
+  const i0 = raw.indexOf('"errors"');
+  if (i0 === -1) return out;
+  let i = raw.indexOf('[', i0);
+  if (i === -1) return out;
+  let depth = 0, inStr = false, esc = false, start = -1;
+  for (i = i + 1; i < raw.length; i++) {
+    const ch = raw[i];
+    if (esc) { esc = false; continue; }
+    if (inStr) { if (ch === '\\') esc = true; else if (ch === '"') inStr = false; continue; }
+    if (ch === '"') { inStr = true; continue; }
+    if (ch === '{') { if (depth === 0) start = i; depth++; }
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0 && start !== -1) { try { out.push(JSON.parse(raw.slice(start, i + 1))); } catch(_) {} start = -1; }
+    }
+  }
+  return out;
+}
+
+async function proofreadChunkText(chunkText, partLabel, ctx, depth = 0) {
+  const { model, isOpenAI, systemPrompt, apiKey, showUI, ci, total } = ctx;
+  const ui = (title, sub) => {
+    if (!showUI) return;
+    document.getElementById('loading-title').textContent = title;
+    document.getElementById('loading-sub').textContent = sub;
+  };
+  const blank = () => ({ errors: [], language: '', wordCount: 0, inTok: 0, outTok: 0, splits: 0, skipped: [], incomplete: [] });
+  const merge = (a, b) => ({
+    errors: [...a.errors, ...b.errors], language: a.language || b.language,
+    wordCount: a.wordCount + b.wordCount, inTok: a.inTok + b.inTok, outTok: a.outTok + b.outTok,
+    splits: a.splits + b.splits, skipped: [...a.skipped, ...b.skipped], incomplete: [...a.incomplete, ...b.incomplete],
+  });
+  // Proofread the two halves of this chunk separately; null when it cannot be split any further
+  const bisect = async (reason) => {
+    const halves = depth < MAX_SPLIT_DEPTH ? splitChunkInHalf(chunkText) : null;
+    if (!halves) return null;
+    ui(`Chunk ${ci} of ${total} — ${reason}`, 'Splitting the chunk in two so no text is skipped…');
+    let r1, r2;
+    try {
+      r1 = await proofreadChunkText(halves[0], `${partLabel} · a`, ctx, depth + 1);
+      r2 = await proofreadChunkText(halves[1], `${partLabel} · b`, ctx, depth + 1);
+    } catch(e) { e._noRetry = true; throw e; }
+    const m = merge(r1, r2); m.splits += 1;
+    return m;
+  };
+
+  let lastErr = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) {
+      ui(`Chunk ${ci} — retrying (attempt ${attempt + 1}/3)`, 'JSON parse failed — resending…');
+      await new Promise(r => setTimeout(r, 3000));
+    }
+    try {
+      const userMsg = `Proofread this text${partLabel ? ` (${partLabel})` : ''}:\n\n${chunkText}`;
+      const res = isOpenAI
+        ? await callOpenAI({
+            model, temperature: 0, response_format: { type: 'json_object' },
+            messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userMsg }]
+          }, apiKey, ci, total, showUI)
+        : await callApiWithRetry({
+            model, max_tokens: maxTokensFor(model),
+            system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
+            messages: [{ role: 'user', content: userMsg }]
+          }, apiKey, ci, total, showUI);
+      const data = await res.json();
+      const rawText = isOpenAI ? (data.choices?.[0]?.message?.content || '{}') : (data.content?.[0]?.text || '{}');
+      const inTok  = isOpenAI ? (data.usage?.prompt_tokens || 0)     : (data.usage?.input_tokens || 0);
+      const outTok = isOpenAI ? (data.usage?.completion_tokens || 0) : (data.usage?.output_tokens || 0);
+      console.debug('[Proofreader] chunk', ci, partLabel, '— raw:', rawText.slice(0, 200));
+
+      const truncated = isOpenAI ? data.choices?.[0]?.finish_reason === 'length' : data.stop_reason === 'max_tokens';
+      if (truncated) {
+        const split = await bisect('output limit reached');
+        if (split) { split.inTok += inTok; split.outTok += outTok; return split; }
+        return { ...blank(), errors: salvageErrors(rawText), inTok, outTok,
+                 incomplete: [{ pages: getChunkPageRange(chunkText), chars: chunkText.length, reason: 'output limit' }] };
+      }
+      const rep = parseClaudeJSON(rawText);
+      return { errors: rep.errors || [], language: rep.language || '', wordCount: rep.word_count || 0,
+               inTok, outTok, splits: 0, skipped: [], incomplete: [] };
+    } catch(e) {
+      if (e._noRetry) throw e;
+      lastErr = e;
+      const msg = e.message || '';
+      if (msg.startsWith('POLICY_ERROR:') || isPolicyError(msg)) {
+        const split = await bisect('content filter');
+        if (split) return split;
+        return { ...blank(), skipped: [{ pages: getChunkPageRange(chunkText), chars: chunkText.length, reason: 'content filter' }] };
+      }
+      if (/json|parse|incomplete/i.test(msg) && attempt < 2) continue;
+      throw e;
+    }
+  }
+  throw lastErr;
+}
+
+// docInfo without its heavy fields (page texts + bilingual split) — safe to embed in reports / localStorage
+function liteDocInfo(di) { return { ...di, pageTexts: [], _bilingualSplit: null }; }
+
+// One-line plain-text coverage statement for the PDF / Word exports
+function coverageText(cov) {
+  if (!cov) return '';
+  const bits = [];
+  if (cov.pages) bits.push(`${cov.pages} pages`);
+  if (cov.words) bits.push(`${cov.words.toLocaleString()} words`);
+  bits.push(`${cov.chunksDone}/${cov.chunks} chunks`);
+  return cov.complete
+    ? `Coverage: full - ${bits.join(', ')}`
+    : `Coverage: INCOMPLETE - ${bits.join(', ')}; ${cov.unchecked.length} passage(s) not checked`;
+}
+
+// Coverage summary stored on every report: proves what was (and was not) checked.
+function buildCoverage(c) {
+  const unchecked = c.unchecked || [];
+  return {
+    chunks: c.totalChunks, chunksDone: c.completedChunks, splits: c.splits || 0,
+    pages: c.pages || null, words: c.words || 0, chars: c.chars || 0,
+    unchecked,                                    // [{ pages, chars, reason, chunk }]
+    pagesApprox: !!c.pagesApprox,
+    complete: c.completedChunks >= c.totalChunks && unchecked.length === 0,
+  };
 }
 
 // ══════════════════════════════════════════════
@@ -2150,7 +2398,8 @@ Return ONLY valid JSON (no markdown, no extra text):
     ? docInfo.pageTexts.map((t,i)=>`--- Page ${i+1} ---\n${t}`).join('\n\n')
     : text;
 
-  const chunks = addChunkOverlap(splitIntoChunks(pagedText, CHUNK_SIZE), CHUNK_OVERLAP);
+  const chunkSize = chunkSizeFor(lang === 'auto' ? docInfo.language : resolvedLang);
+  const chunks = addChunkOverlap(splitIntoChunks(pagedText, chunkSize), CHUNK_OVERLAP);
 
   // Warn when Haiku is used on a large document — Haiku's output limit can cause
   // JSON truncation when a chunk produces many errors (common in long, error-heavy docs)
@@ -2163,10 +2412,18 @@ Return ONLY valid JSON (no markdown, no extra text):
   const summaryTotals = {};
   ALL_TYPES.forEach(t => summaryTotals[t] = 0);
   let completedChunks = 0, partialFromChunk = -1, lastChunkErr = null;
+  let splitCount = 0;
+  const uncheckedRanges = [];   // passages that could not be checked (content filter / output limit)
 
   // Snapshot docInfo NOW so the report meta survives navigation to a history
   // item (which overwrites the global docInfo) while this run is in progress.
-  const docInfoSnap = {...docInfo};
+  // (page texts + bilingual split are stripped — they are huge and never read back from a report)
+  const docInfoSnap = liteDocInfo(docInfo);
+  const coverageNow = () => buildCoverage({
+    totalChunks: chunks.length, completedChunks, splits: splitCount, unchecked: uncheckedRanges,
+    pages: docInfoSnap.pages, words: docInfoSnap.wordCount, chars: pagedText.length,
+    pagesApprox: !!(docInfoSnap._extraction && docInfoSnap._extraction.pagesApprox),
+  });
 
   // Mark job as in-progress so an interrupted run is detectable on next load
   try {
@@ -2212,145 +2469,98 @@ Return ONLY valid JSON (no markdown, no extra text):
           (30 + ((ci + 0.5) / chunks.length) * 60) + '%';
       }
 
-      // Inner retry loop — auto-retries up to 3× on JSON parse/truncation errors
-      // (No wait needed between parse retries — it's not a rate-limit issue)
+      // One chunk, with full-coverage handling: bisects on truncated output / content-filter
+      // blocks and records anything that genuinely could not be checked.
+      const ctx = { model, isOpenAI: isOpenAIModel, systemPrompt, apiKey, showUI: showOnDone, ci: ci + 1, total: chunks.length };
       let chunkDone = false;
-      for (let parseAttempt = 0; parseAttempt < 3 && !chunkDone; parseAttempt++) {
-        if (parseAttempt > 0 && showOnDone) {
-          document.getElementById('loading-title').textContent =
-            `Chunk ${ci+1} — retrying (attempt ${parseAttempt+1}/3)`;
-          document.getElementById('loading-sub').textContent = `JSON parse failed — resending to Claude…`;
-          await new Promise(r => setTimeout(r, 3000)); // brief pause before retry
+      try {
+        const r = await proofreadChunkText(chunks[ci], chunks.length > 1 ? `part ${ci + 1} of ${chunks.length}` : '', ctx);
+        if (!detectedLang && r.language) detectedLang = r.language;
+        totalWordCount += r.wordCount;
+        totalInputTok  += r.inTok;
+        totalOutputTok += r.outTok;
+        splitCount     += r.splits;
+        [...r.skipped, ...r.incomplete].forEach(u => uncheckedRanges.push({ ...u, chunk: ci + 1 }));
+        if (showOnDone && r.skipped.length)
+          toast(`Chunk ${ci + 1}: ${r.skipped.length} passage(s) blocked by the content filter and NOT checked — listed in the report.`, 'warn', 7000);
+
+        const idOffset = allErrors.length;
+        // Filter out self-contradicting errors (model flagged something but the explanation says no error)
+        const validErrors = (r.errors || []).filter(e => !isFalsePositive(e));
+        validErrors.forEach((e, idx) => {
+          e.id = idOffset + idx + 1;
+          // Fallback: if the model didn't return a page, try to find it client-side
+          if (!e.page && docInfo.pageTexts.length)
+            e.page = findPage(e.original) || findPage(e.context);
+          allErrors.push(e);
+          if (summaryTotals[e.type] !== undefined) summaryTotals[e.type]++;
+        });
+        completedChunks++;
+        chunkDone = true;
+
+        // Progressive save — preserve work after every chunk in case browser kills the tab
+        if (completedChunks < chunks.length) {
+          try {
+            const interimTotals = {};
+            ALL_TYPES.forEach(t => interimTotals[t] = 0);
+            allErrors.forEach(e => { if (interimTotals[e.type] !== undefined) interimTotals[e.type]++; });
+            const interimReport = {
+              language: detectedLang || docInfoSnap.language,
+              word_count: docInfoSnap.wordCount || totalWordCount,
+              summary: { total_errors: allErrors.length, ...interimTotals },
+              errors: [...allErrors],
+              _checks: selectedChecks.size > 0 ? [...selectedChecks] : null,
+              _inputTok: totalInputTok, _outputTok: totalOutputTok,
+              _model: model,
+              _cost: calcCost(model, totalInputTok, totalOutputTok),
+              _partial: { completed: completedChunks, total: chunks.length },
+              _coverage: coverageNow(),
+              _docInfo: docInfoSnap,
+            };
+            _retryState = { chunks, startChunkIdx: completedChunks, model, systemPrompt, chunkSize };
+            lastReport = interimReport;
+            saveLastReport(interimReport);
+          } catch(saveErr) { /* non-fatal */ }
         }
-        try {
-          // Adaptive max_tokens: more budget for larger/RTL chunks; Haiku has smaller context
-          const chunkWords = (chunks[ci].match(/\S+/g)||[]).length;
-          const adaptiveMaxTok = model === 'claude-haiku-4-5-20251001'
-            ? Math.min(4096, Math.max(1500, Math.round(chunkWords / 3)))
-            : Math.min(8000, Math.max(2000, Math.round(chunkWords / 2)));
 
-          const userMsg = `Proofread this text${chunks.length>1?` (part ${ci+1} of ${chunks.length})`:''}:\n\n${chunks[ci]}`;
-          const res = isOpenAIModel
-            ? await callOpenAI({
-                model, temperature: 0,
-                response_format: { type: 'json_object' },
-                messages: [
-                  { role: 'system', content: systemPrompt },
-                  { role: 'user',   content: userMsg }
-                ]
-              }, apiKey, ci+1, chunks.length, showOnDone)
-            : await callApiWithRetry({
-                model, max_tokens: adaptiveMaxTok,
-                system: [{ type:'text', text:systemPrompt, cache_control:{ type:'ephemeral' } }],
-                messages: [{ role:'user', content: userMsg }]
-              }, apiKey, ci+1, chunks.length, showOnDone);
+      } catch(chunkErr) {
+        const msg = chunkErr.message || '';
+        const isJsonErr = /json|parse|incomplete/i.test(msg);
 
-          const data = await res.json();
-          const rawText = isOpenAIModel
-            ? (data.choices?.[0]?.message?.content || '{}')
-            : (data.content?.[0]?.text || '{}');
-          console.debug('[Proofreader] chunk', ci+1, 'attempt', parseAttempt+1, '— raw:', rawText.slice(0, 200));
-          const chunk_report = parseClaudeJSON(rawText);
-
-          if (!detectedLang && chunk_report.language) detectedLang = chunk_report.language;
-          if (chunk_report.word_count) totalWordCount += chunk_report.word_count;
-          if (data.usage) {
-            totalInputTok  += isOpenAIModel ? (data.usage.prompt_tokens||0)     : (data.usage.input_tokens||0);
-            totalOutputTok += isOpenAIModel ? (data.usage.completion_tokens||0) : (data.usage.output_tokens||0);
+        // Out of retries or non-retriable error — record failure and show UI.
+        // partialFromChunk is 1-based (ci + 1) so it doubles as a "run was partial" flag.
+        lastChunkErr = chunkErr;
+        partialFromChunk = ci + 1;
+        if (showOnDone) {
+          if (isRateLimitError(msg)) {
+            showApiError('Rate limit reached',
+              `Rate limit hit on chunk ${ci+1} of ${chunks.length}.<br><br>`+
+              (completedChunks > 0
+                ? `A partial report for chunks 1–${completedChunks} has been generated below.<br><br>`
+                : ``)+
+              `<strong>Tips:</strong><br>`+
+              `• Wait 1–2 minutes and click <strong>Continue</strong> — the system already auto-retried 3 times<br>`+
+              `• Or switch to <strong>Haiku 4.5</strong> (lowest token usage)`
+            );
+          } else if (isJsonErr) {
+            showApiError(`Parsing error on chunk ${ci+1}`,
+              `The model returned a response that couldn't be parsed as JSON after 3 attempts.<br><br>`+
+              (completedChunks > 0
+                ? `A partial report for ${completedChunks} of ${chunks.length} chunks has been generated below. Use <strong>Continue</strong> to resume from chunk ${ci+1}.<br><br>`
+                : ``)+
+              `<strong>To fix:</strong> switch to <strong>Sonnet 4.6</strong> (most reliable JSON output) and click Continue.`
+            );
+          } else {
+            toast(`Chunk ${ci+1} error: ${msg}`, 'err');
           }
-
-          const idOffset = allErrors.length;
-          // Filter out self-contradicting errors (Claude flagged something but explanation says no error)
-          const validErrors = (chunk_report.errors||[]).filter(e => !isFalsePositive(e));
-          validErrors.forEach((e, idx) => {
-            e.id = idOffset + idx + 1;
-            // Fallback: if Claude didn't return page, try to find it client-side
-            if (!e.page && docInfo.pageTexts.length)
-              e.page = findPage(e.original) || findPage(e.context);
-            allErrors.push(e);
-            if (summaryTotals[e.type] !== undefined) summaryTotals[e.type]++;
-          });
-          completedChunks++;
-          chunkDone = true;
-
-          // Progressive save — preserve work after every chunk in case browser kills the tab
-          if (completedChunks < chunks.length) {
-            try {
-              const interimTotals = {};
-              ALL_TYPES.forEach(t => interimTotals[t] = 0);
-              allErrors.forEach(e => { if (interimTotals[e.type] !== undefined) interimTotals[e.type]++; });
-              const interimReport = {
-                language: detectedLang || docInfoSnap.language,
-                word_count: docInfoSnap.wordCount || totalWordCount,
-                summary: { total_errors: allErrors.length, ...interimTotals },
-                errors: [...allErrors],
-                _checks: selectedChecks.size > 0 ? [...selectedChecks] : null,
-                _inputTok: totalInputTok, _outputTok: totalOutputTok,
-                _model: model,
-                _cost: calcCost(model, totalInputTok, totalOutputTok),
-                _partial: { completed: completedChunks, total: chunks.length },
-                _docInfo: docInfoSnap,
-              };
-              _retryState = { chunks, startChunkIdx: completedChunks, model, systemPrompt };
-              lastReport = interimReport;
-              saveLastReport(interimReport);
-            } catch(saveErr) { /* non-fatal */ }
-          }
-
-        } catch(chunkErr) {
-          const msg = chunkErr.message||'';
-          const isJsonErr   = msg.toLowerCase().includes('json') || msg.toLowerCase().includes('parse') ||
-                              msg.toLowerCase().includes('incomplete');
-          const isPolicyErr = msg.startsWith('POLICY_ERROR:') || isPolicyError(msg);
-
-          // Policy errors: skip this chunk silently and continue — false positives on non-English text
-          if (isPolicyErr) {
-            if (showOnDone) toast(`Chunk ${ci+1} skipped — content safety filter (false positive on non-English text)`, 'warn');
-            chunkDone = true; // treat as "done" so we don't break the outer loop
-            completedChunks++;  // count it as completed (with 0 errors found)
-            break; // exit parseAttempt loop, move to next chunk
-          }
-
-          // Auto-retry parse errors silently (no modal yet)
-          if (isJsonErr && parseAttempt < 2) continue;
-
-          // Out of retries or non-retriable error — record failure and show UI
-          lastChunkErr = chunkErr;
-          partialFromChunk = ci + 1;
-          if (showOnDone) {
-            if (isRateLimitError(msg)) {
-              showApiError('Rate limit reached',
-                `Rate limit hit on chunk ${ci+1} of ${chunks.length} (30,000 tokens/min exceeded).<br><br>`+
-                (completedChunks > 0
-                  ? `A partial report for chunks 1–${completedChunks} has been generated below.<br><br>`
-                  : ``)+
-                `<strong>Tips:</strong><br>`+
-                `• Switch to <strong>Haiku 4.5</strong> (fastest, lowest token usage)<br>`+
-                `• Wait 1–2 minutes and retry — the system auto-retried 3 times before stopping`
-              );
-            } else if (isJsonErr) {
-              showApiError(`Parsing error on chunk ${ci+1}`,
-                `The model returned a response that couldn't be parsed as JSON after 3 attempts.<br><br>`+
-                (completedChunks > 0
-                  ? `A partial report for ${completedChunks} of ${chunks.length} chunks has been generated below. Use <strong>Continue</strong> to resume.<br><br>`
-                  : ``)+
-                `<strong>To fix:</strong><br>`+
-                `• Switch to <strong>Sonnet 4.6</strong> (most reliable JSON output)<br>`+
-                `• Or reduce document size — chunk may be producing too many errors for Haiku's output limit`
-              );
-            } else {
-              toast(`Chunk ${ci+1} error: ${msg}`, 'err');
-            }
-          }
-          break; // exit parseAttempt loop
         }
-      } // end parseAttempt loop
-      if (!chunkDone) break; // exit chunk (ci) loop
+      }
+      if (!chunkDone) break; // stop here — "Continue" resumes from this chunk
     }
 
     // Store retry context for the "Continue" button when partial
     if (partialFromChunk > 0) {
-      _retryState = {chunks, startChunkIdx: partialFromChunk, model, systemPrompt};
+      _retryState = {chunks, startChunkIdx: partialFromChunk - 1, model, systemPrompt, chunkSize};   // resume AT the failed chunk
     } else {
       _retryState = null;
     }
@@ -2374,6 +2584,7 @@ Return ONLY valid JSON (no markdown, no extra text):
         _model: model,
         _cost: calcCost(model, totalInputTok, totalOutputTok),
         _partial: partialFromChunk > 0 ? { completed: completedChunks, total: chunks.length } : null,
+        _coverage: coverageNow(),
         _docInfo: docInfoSnap,
       };
       lastReport = report;
@@ -2386,8 +2597,13 @@ Return ONLY valid JSON (no markdown, no extra text):
         if (showOnDone) {
           renderReport(report);
           showTab('report');
-          if (!partialFromChunk) {
-            toast(`Found ${report.summary.total_errors} issue${report.summary.total_errors!==1?'s':''}.`);
+          if (partialFromChunk < 0) {
+            const cov = report._coverage;
+            if (cov && !cov.complete) {
+              toast(`Found ${report.summary.total_errors} issue${report.summary.total_errors!==1?'s':''} — but ${cov.unchecked.length} passage(s) could NOT be checked. See the coverage note in the report.`, 'warn', 9000);
+            } else {
+              toast(`Found ${report.summary.total_errors} issue${report.summary.total_errors!==1?'s':''} — full document checked.`);
+            }
             sendCompletionNotification(report);
           }
         }
@@ -2506,6 +2722,34 @@ function renderReport(r) {
     costEl.style.display='none';
   }
 
+  // Coverage — proof that every part of the document was checked (or exactly what was not)
+  const covEl = document.getElementById('report-coverage');
+  const cov = r._coverage;
+  if (covEl && cov) {
+    const bits = [];
+    if (cov.pages) bits.push(`${cov.pages.toLocaleString()} pages`);
+    if (cov.words) bits.push(`${cov.words.toLocaleString()} words`);
+    bits.push(`${cov.chunksDone}/${cov.chunks} chunks`);
+    if (cov.splits) bits.push(`${cov.splits} auto-split`);
+    if (cov.complete) {
+      covEl.style.color = '#10b981';
+      covEl.textContent = `✅ Full coverage — ${bits.join(' · ')}` + (cov.pagesApprox ? ' · page numbers inside multi-page stories are estimated (±1 page)' : '');
+    } else {
+      const lines = [];
+      if (cov.chunksDone < cov.chunks) lines.push(`${cov.chunks - cov.chunksDone} of ${cov.chunks} chunks not run yet — click Continue`);
+      (cov.unchecked || []).forEach(u => lines.push(`${u.pages || 'A passage'} (${(u.chars || 0).toLocaleString()} chars) was NOT checked — ${u.reason}`));
+      covEl.style.color = '#f97316';
+      covEl.innerHTML = `⚠️ <strong>Not fully checked</strong> — ${esc(bits.join(' · '))}<br>${lines.map(esc).join('<br>')}`;
+    }
+    covEl.style.display = 'block';
+  } else if (covEl) {
+    covEl.style.display = 'none';
+  }
+  if (covEl && (r.summary?.total_errors || 0) === 0 && ((r._docInfo?.wordCount || r.word_count || 0) > 1500)) {
+    covEl.style.display = 'block';
+    covEl.innerHTML += `${covEl.innerHTML ? '<br>' : ''}<span style="color:#f97316">⚠️ 0 issues in a document this size is unusual — run a second pass with another model before relying on this result.</span>`;
+  }
+
   // Score
   const score=calculateScore(r);
   const [,grade,color,label]=getGrade(score);
@@ -2515,7 +2759,9 @@ function renderReport(r) {
   sc.style.borderColor=color; sc.style.color=color;
   document.getElementById('score-num').textContent=score;
   document.getElementById('score-grade').textContent=grade;
-  document.getElementById('score-label').textContent=label;
+  // A score is only meaningful if the whole document was checked
+  const partialRun = !!(r._coverage && !r._coverage.complete);
+  document.getElementById('score-label').textContent = partialRun ? 'Partial check' : label;
 
   // Checked summary
   const cs=document.getElementById('checked-summary');
@@ -2700,11 +2946,17 @@ function saveToHistory(report) {
     cost:report._cost||null,
     inputTok:report._inputTok||null,
     outputTok:report._outputTok||null,
-    docInfoSnap:{...di, pageTexts:[]}, // strip pageTexts — too large for localStorage
+    docInfoSnap: liteDocInfo(di), // strip page texts / bilingual split — too large for localStorage
   };
   history.unshift(entry);
   if (history.length>20) history.pop();
-  localStorage.setItem('proof_history',JSON.stringify(history));
+  // localStorage is ~5 MB per origin. A full-book report is large, so if the write is
+  // rejected drop the oldest entries until it fits — never let this abort a finished run.
+  while (history.length) {
+    try { localStorage.setItem('proof_history', JSON.stringify(history)); return; }
+    catch(e) { if (history.length === 1) break; history.pop(); }
+  }
+  console.warn('[Proofreader] History could not be saved (storage full) — the report itself is unaffected.');
 }
 
 function getHistory() {
@@ -2881,6 +3133,7 @@ async function downloadPDF() {
     const pdfCostParts=[];
     if (lastReport._cost) pdfCostParts.push(`AI cost: $${lastReport._cost.toFixed(4)}`);
     if (lastReport._model) pdfCostParts.push(`Model: ${modelDisplayName(lastReport._model)}`);
+    if (lastReport._coverage) pdfCostParts.push(coverageText(lastReport._coverage));
     if (pdfCostParts.length) { doc.setFontSize(7); gg(150); doc.text(pdfCostParts.join('   ·   '),ML,y+2); y+=3; }
     y+=4; ln(y); y+=5;
 
@@ -3037,6 +3290,7 @@ async function downloadWord() {
     const wordMetaParts2=[];
     if (r._cost) wordMetaParts2.push(`AI cost: $${r._cost.toFixed(4)}`);
     if (r._model) wordMetaParts2.push(`Model: ${modelDisplayName(r._model)}`);
+    if (r._coverage) wordMetaParts2.push(coverageText(r._coverage));
     const costLine=wordMetaParts2.length?[p(wordMetaParts2.join('   ·   '),{size:13,color:'94a3b8',after:120})]:[];
     const wordDoc=new Document({sections:[{
       properties:{page:{margin:{top:720,bottom:720,left:900,right:900}}},
@@ -3327,10 +3581,10 @@ function updateTriageSummary() {
 // ══════════════════════════════════════════════
 async function retryFailedChunks() {
   if (!_retryState || !lastReport) { toast('Nothing to continue.','warn'); return; }
-  const apiKey = localStorage.getItem('proof_api_key');
-  if (!apiKey) { toast('Set your API key in Setup first.','warn'); showTab('setup'); return; }
-
-  const {chunks, startChunkIdx, model, systemPrompt} = _retryState;
+  const {chunks, startChunkIdx, model, systemPrompt, chunkSize} = _retryState;
+  const isOpenAIModel = model.startsWith('gpt-');
+  const apiKey = localStorage.getItem(isOpenAIModel ? 'proof_openai_key' : 'proof_api_key');
+  if (!apiKey) { toast(`Set your ${isOpenAIModel ? 'OpenAI' : 'Anthropic'} API key in Setup first.`,'warn'); showTab('setup'); return; }
   // Switch to proof page so the user sees the loading progress bar
   showTab('proof');
   setLoading(true);
@@ -3341,8 +3595,10 @@ async function retryFailedChunks() {
   const newErrors = [...lastReport.errors];
   let newInputTok = lastReport._inputTok || 0;
   let newOutputTok = lastReport._outputTok || 0;
-  let newPartialStart = -1;
+  let newPartialStart = -1;       // 1-based (failed chunk + 1) — doubles as a "still partial" flag
   let completedNew = 0;
+  let newSplits = 0;
+  const newUnchecked = [...(lastReport._coverage?.unchecked || [])];
 
   try {
     for (let ci = startChunkIdx; ci < chunks.length; ci++) {
@@ -3362,54 +3618,31 @@ async function retryFailedChunks() {
       document.getElementById('loading-sub').textContent = `Sending to Claude… · ${newErrors.length} issues found`;
       document.getElementById('progress-bar').style.width = (30 + ((ci + 0.5) / chunks.length) * 60) + '%';
 
+      const ctx = { model, isOpenAI: isOpenAIModel, systemPrompt, apiKey, showUI: true, ci: ci + 1, total: chunks.length };
       let chunkDone = false;
-      for (let parseAttempt = 0; parseAttempt < 3 && !chunkDone; parseAttempt++) {
-        if (parseAttempt > 0) {
-          document.getElementById('loading-title').textContent = `Chunk ${ci+1} — retrying (attempt ${parseAttempt+1}/3)`;
-          document.getElementById('loading-sub').textContent = `JSON parse failed — resending to Claude…`;
-          await new Promise(r => setTimeout(r, 3000));
-        }
-        try {
-          const chunkWords2 = (chunks[ci].match(/\S+/g)||[]).length;
-          const adaptiveMaxTok2 = model === 'claude-haiku-4-5-20251001'
-            ? Math.min(4096, Math.max(1500, Math.round(chunkWords2 / 3)))
-            : Math.min(8000, Math.max(2000, Math.round(chunkWords2 / 2)));
+      try {
+        const r = await proofreadChunkText(chunks[ci], `part ${ci + 1} of ${chunks.length}`, ctx);
+        newInputTok += r.inTok; newOutputTok += r.outTok; newSplits += r.splits;
+        [...r.skipped, ...r.incomplete].forEach(u => newUnchecked.push({ ...u, chunk: ci + 1 }));
 
-          const res = await callApiWithRetry({
-            model, max_tokens:adaptiveMaxTok2,
-            system:[{type:'text', text:systemPrompt, cache_control:{type:'ephemeral'}}],
-            messages:[{role:'user', content:
-              `Proofread this text (part ${ci+1} of ${chunks.length}):\n\n${chunks[ci]}`}]
-          }, apiKey, ci+1, chunks.length, true);
-
-          const data = await res.json();
-          const chunk_report = parseClaudeJSON(data.content[0].text);
-          if (data.usage) { newInputTok += data.usage.input_tokens||0; newOutputTok += data.usage.output_tokens||0; }
-
-          const idOffset = newErrors.length;
-          const validErrors = (chunk_report.errors||[]).filter(e => !isFalsePositive(e));
-          validErrors.forEach((e, idx) => {
-            e.id = idOffset + idx + 1;
-            if (!e.page && docInfo.pageTexts.length)
-              e.page = findPage(e.original) || findPage(e.context);
-            newErrors.push(e);
-          });
-          completedNew++;
-          chunkDone = true;
-
-        } catch(chunkErr) {
-          const msg = chunkErr.message||'';
-          const isJsonErr = msg.toLowerCase().includes('json') || msg.toLowerCase().includes('parse') ||
-                            msg.toLowerCase().includes('incomplete');
-          if (isJsonErr && parseAttempt < 2) continue; // auto-retry parse errors
-          newPartialStart = ci + 1;
-          if (isRateLimitError(msg)) {
-            showApiError('Rate limit reached',
-              `Rate limit hit on chunk ${ci+1}.<br><br>Wait 1–2 minutes and click <strong>Continue</strong> again.`);
-          } else {
-            toast(`Chunk ${ci+1} error: ${msg}`, 'err');
-          }
-          break;
+        const idOffset = newErrors.length;
+        const validErrors = (r.errors || []).filter(e => !isFalsePositive(e));
+        validErrors.forEach((e, idx) => {
+          e.id = idOffset + idx + 1;
+          if (!e.page && docInfo.pageTexts.length)
+            e.page = findPage(e.original) || findPage(e.context);
+          newErrors.push(e);
+        });
+        completedNew++;
+        chunkDone = true;
+      } catch(chunkErr) {
+        const msg = chunkErr.message || '';
+        newPartialStart = ci + 1;
+        if (isRateLimitError(msg)) {
+          showApiError('Rate limit reached',
+            `Rate limit hit on chunk ${ci+1}.<br><br>Wait 1–2 minutes and click <strong>Continue</strong> again.`);
+        } else {
+          toast(`Chunk ${ci+1} error: ${msg}`, 'err');
         }
       }
       if (!chunkDone) break;
@@ -3427,6 +3660,7 @@ async function retryFailedChunks() {
     const prevCost = lastReport._cost || 0;
     const addedCost = calcCost(model, newInputTok - (lastReport._inputTok||0), newOutputTok - (lastReport._outputTok||0));
 
+    const oldCov = lastReport._coverage || {};
     const updatedReport = {
       ...lastReport,
       summary: finalTotals,
@@ -3434,10 +3668,15 @@ async function retryFailedChunks() {
       _inputTok: newInputTok, _outputTok: newOutputTok,
       _cost: prevCost + addedCost,
       _partial: newPartialStart > 0 ? {completed: totalCompleted, total: chunks.length} : null,
+      _coverage: buildCoverage({
+        totalChunks: chunks.length, completedChunks: totalCompleted,
+        splits: (oldCov.splits || 0) + newSplits, unchecked: newUnchecked,
+        pages: oldCov.pages, words: oldCov.words, chars: oldCov.chars, pagesApprox: oldCov.pagesApprox,
+      }),
     };
 
     lastReport = updatedReport;
-    _retryState = newPartialStart > 0 ? {..._retryState, startChunkIdx: newPartialStart} : null;
+    _retryState = newPartialStart > 0 ? {..._retryState, startChunkIdx: newPartialStart - 1} : null;   // resume AT the failed chunk
     errorTriageState = {};
     saveToHistory(updatedReport);
     saveLastReport(updatedReport);
@@ -3446,8 +3685,11 @@ async function retryFailedChunks() {
     renderReport(updatedReport);
     showTab('report'); // switch back to the report page
 
-    if (!newPartialStart) {
-      toast(`Complete! ${finalTotals.total_errors} issues found total.`);
+    if (newPartialStart < 0) {
+      toast(updatedReport._coverage.complete
+        ? `Complete! ${finalTotals.total_errors} issues found — full document checked.`
+        : `Finished — ${finalTotals.total_errors} issues found, but ${updatedReport._coverage.unchecked.length} passage(s) could NOT be checked (see coverage note).`,
+        updatedReport._coverage.complete ? undefined : 'warn', updatedReport._coverage.complete ? undefined : 9000);
       sendCompletionNotification(updatedReport);
     } else {
       toast(`Continued — ${finalTotals.total_errors} issues found so far. ${chunks.length - totalCompleted} chunk(s) remaining.`,'warn');
@@ -3469,13 +3711,14 @@ async function retryFailedChunks() {
 function saveLastReport(report) {
   try {
     // Strip pageTexts from di — stored separately to avoid blowing localStorage quota
-    const diLite = {...docInfo, pageTexts: []};
+    const diLite = liteDocInfo(docInfo);
     const payload = {report, di: diLite, ts: Date.now()};
     if (_retryState) {
       payload.retryInfo = {
         startChunkIdx: _retryState.startChunkIdx,
         model:         _retryState.model,
         systemPrompt:  _retryState.systemPrompt,
+        chunkSize:     _retryState.chunkSize || CHUNK_SIZE,
       };
     }
     localStorage.setItem('proof_last_report', JSON.stringify(payload));
@@ -3535,12 +3778,14 @@ function loadSavedReport() {
             ? pageTexts.map((t, i) => `--- Page ${i+1} ---\n${t}`).join('\n\n')
             : pageTexts[0] || '';
           if (pagedText) {
-            const chunks = addChunkOverlap(splitIntoChunks(pagedText, CHUNK_SIZE), CHUNK_OVERLAP);
+            const chunkSize = retryInfo.chunkSize || CHUNK_SIZE;
+            const chunks = addChunkOverlap(splitIntoChunks(pagedText, chunkSize), CHUNK_OVERLAP);
             _retryState = {
               chunks,
               startChunkIdx: retryInfo.startChunkIdx,
               model:         retryInfo.model,
               systemPrompt:  retryInfo.systemPrompt,
+              chunkSize,
             };
           }
         }
