@@ -1,0 +1,12 @@
+{
+  "name": "explorer-proofreader-tests",
+  "private": true,
+  "type": "module",
+  "description": "Offline tests: translation-check engine, RTF reader, and the Supabase account rules (PGlite = real Postgres in WASM).",
+  "scripts": {
+    "test:tc": "node tc-core.test.mjs && node tc-rtf.test.mjs",
+    "shim": "node supabase/pg_shim.mjs",
+    "test:supabase": "node supabase/accounts.test.mjs"
+  },
+  "devDependencies": { "@electric-sql/pglite": "^0.2.0" }
+}

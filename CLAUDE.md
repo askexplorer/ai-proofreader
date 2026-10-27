@@ -8,7 +8,7 @@ Single-file browser app for professional AI-powered proofreading. Powered by Ant
 **Live repo:** github.com/askexplorer/ai-proofreader (remote `askexplorer`; the old `origin` = shakkeer-cloud is retired)  
 **Live site:** https://askexplorer.github.io/ai-proofreader/ (GitHub Pages, serves `master`)  
 **Branch:** master  
-**Current version:** v4.0.0
+**Current version:** v4.1.0
 
 ---
 
@@ -18,6 +18,8 @@ Single-file browser app for professional AI-powered proofreading. Powered by Ant
 |---|---|---|
 | `index.html` | Main app — all logic, UI, CSS in one file (incl. team workspace UI: sign-in, Setup wizard, team members, Share modal, Reviews tab) | ~4700 |
 | `share.html` | Reviewer page — opened from a share link, password-gated, Agree / Disagree / Edit per issue, autosave, Submit | ~620 |
+| `tc-core.js` | `window.TC` - translation-check engine: RTF reader, paragraphs, chapters, alignment, windows, prompts, strict answer validation, rule checks, scoring (pure logic, no DOM/network, unit-tested) | ~900 |
+| `tests/` | Offline tests (engine, RTF/rubric, Supabase rules); see `tests/README.md` | |
 | `share-core.js` | `window.SR` — E2E crypto, Supabase Auth sign-in/refresh, RPC client; shared by index.html and share.html | ~330 |
 | `supabase/setup.sql` | DB setup for the Supabase project (locked tables + SECURITY DEFINER RPCs; idempotent, re-run to upgrade) | ~430 |
 | `review.html` | Older review page (not actively maintained, do not touch) | ~1160 |
@@ -223,8 +225,31 @@ Scratchpad (not in repo): a PGlite-based stand-in for Supabase (`pg_shim.mjs`: P
 - Browser-pane screenshots can lag one step behind; confirm state with DOM reads.
 - Upgrading a database: re-run `supabase/setup.sql` (idempotent; it drops pre-v4 passphrase functions/tables).
 
-### Still to build (agreed scope)
-Translation check: optional source-document upload (DOCX/RTF/IDML/TXT; the user's real source `.doc` is actually RTF), chapter-aligned compare for missing/added text, translation quality score (Critical 10 / Major 5 / Minor 1 / Query 0; score = 100 - 4 x penalty per 1000 words; Pass >= 90 and 0 Critical, Revise 75-89 or any Critical, Fail < 75), a "Translation check" report tab, and Word-vs-Word sharing to the translator before layout. Optional hardening later: a server-side proxy so the API key never reaches browsers.
+## Translation check (v4.1.0)
+
+**What it does:** compares a translation with its source document and reports omissions, additions, wrong meaning, wrong numbers/dates, terminology and untranslated text, with a score (fixed rubric) and a list the translator can answer through a review link. **The AI must account for every paragraph on both sides**; nothing may be silently skipped.
+
+**UI:** Proof page -> "Compare with a source document (optional)" card (drop the original; `.docx`, `.idml`, `.pdf`, `.txt`, or a `.doc` that is really RTF) -> **Check translation** (the translation is whatever is in the main box) -> confirm dialog (structure check, optional "only these chapters" for a cheap pilot, cost/time estimate, notes for the AI) -> **Translation** tab (score ring, chapter heat-map, coverage statement, filters, issues table, triage buttons, Continue after a stop/failure, exports CSV/Word/JSON, **Send to translator** = share link with `kind:'translation'`).
+
+**Pipeline (tc-core.js):**
+1. Read both into paragraphs (`rtfToText`, `parasFromText`, `parasFromPages` keeps IDML/PDF page numbers). Real binary `.doc` (OLE) is refused with a "Save as .docx" message.
+2. `detectSections`: chapter headings = numeric-only line + title line, "Chapter N"/localized keyword, or "N. Title"; the longest 1,2,3... chain is kept (stray page numbers ignored). `matchSections` pairs by number, else by order, else falls back to a length-aligned whole-document run. `repairGaps` recovers a mistyped heading number. A chapter present on one side only becomes a Critical Structure issue without a model call.
+3. `planWindows` -> one window per chapter (long chapters are cut at well-aligned points with Gale-Church length alignment `alignByLength`). `estimateRun` gives tokens/cost.
+4. Per window the model gets numbered `[S1].. [T1]..` paragraphs and must return a compact `alignment` (`"2|2,3"`, `"3|"` = omitted, `"|9"` = added) covering EVERY paragraph exactly once, plus `issues`. `parseAlignment`/`readAnswer` validate it: incomplete -> retry with a note, then halve the window (also on truncation / content-filter); quotes must exist verbatim in the text or the issue is downgraded to a zero-point Query; omission locations come from the alignment, not the model's guess.
+5. Every Omission/Addition claim gets a second look (`verifySystemPrompt`: is the content really absent anywhere in the other text?): false alarms are dropped, unsure ones become Query.
+6. Rule-based checks add: changed/large numbers (not in front matter, no ISBN/phone-like), near-identical (untranslated) text, length outliers (all Query = zero points). Safety valve: if most paragraphs of a window have no counterpart the window collapses into ONE Structure issue instead of dozens of bogus ones. Chapters whose translation/source length ratio is far from the book's usual get a Structure Query.
+7. Score: Critical 10 / Major 5 / Minor 1 / Query 0; `score = 100 - 4 x penalty per 1000 source words`; **Pass** >= 90 and no Critical, **Revise** 75-89 or any Critical, **Fail** < 75. False positives marked by the user leave the score. A chapter-limited run is labelled "Selected chapters only".
+8. `buildReport` returns issues (locations `Ch N pP`, `after Ch N pP` for insertions, page numbers from the translation), per-chapter table and a coverage ledger (`complete` only if every window is done and no paragraph is unverified).
+
+**Calls (index.html `tcCall`):** Anthropic or OpenAI model chosen on the Proof page; prompt caching on the system prompt; adaptive pacing (token budget per minute, halves after a 429 and waits `retry-after`, grows after successes); Stop button; resumable (`TC_RUN.state` survives errors; reload loses Continue but keeps the saved report: `proof_last_tc` 24 h + `proof_tc_history` last 6).
+
+**Reviewer page:** `share.html` shows the source passage and location; `insert:true` issues render as "In the translation: Nothing here / Add this"; apply-list exports show "(insert after) ..." and "(delete this text)".
+
+**Verified:** engine/rules/validation/stop-continue with a deliberately misbehaving fake model on a pseudo-translation with known defects (tests/tc-core.test.mjs); the REAL pair (English RTF 1,173 paragraphs vs Mongolian IDML 1,297 paragraphs / 306 pages) plans as 50 of 50 chapters matched, 54 windows, ~68 calls, ~$2 on Sonnet-class (~$0.5 Haiku), and every real window runs through the engine; full UI flow in the browser (confirm, run, stop, continue, 429 retry, bad key, filters, triage, exports, history, share to translator and back).
+**NOT verified:** the real model's judgement quality on real Mongolian text (no API key in the build environment). Recommend a pilot on chapters 33, 36, 42 (a few cents) and checking its flags by hand before trusting a full run. Known limits: terminology consistency is checked only inside a window (not across chapters); scanned PDFs have no OCR; PDF paragraph reconstruction is heuristic.
+
+### Ideas not built
+Cross-chapter term glossary check, mechanical pre-pass, re-verify diff mode, InDesign Find/Change script, per-client glossary, proxy so the API key never reaches browsers.
 
 ---
 

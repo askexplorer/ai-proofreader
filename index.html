@@ -13,6 +13,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/docx@7.8.2/build/index.js"></script>
   <script src="share-core.js"></script>
+  <script src="tc-core.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -320,6 +321,30 @@
     .btn-share:hover { background:var(--accent); color:#fff; }
     .nav-badge[hidden] { display:none; }
     #team-card[hidden], #sr-setup-card[hidden], #team-admin[hidden] { display:none; }
+    .sev-Major { color:#f97316; }
+    .source-card { border:1px solid var(--border); background:var(--surface); border-radius:12px; margin:14px 0; overflow:hidden; }
+    .sc-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:11px 14px; cursor:pointer; user-select:none; }
+    .sc-head:hover { background:var(--sf2); }
+    .sc-title { font-size:13px; font-weight:700; } .sc-opt { font-weight:400; color:var(--muted); }
+    .sc-state { font-size:11px; font-weight:700; color:var(--muted); } .sc-state.ok { color:#10b981; }
+    .sc-body { padding:4px 14px 14px; }
+    .sc-drop { border:2px dashed var(--border); border-radius:10px; padding:16px; text-align:center; font-size:13px; color:var(--muted); cursor:pointer; background:var(--sf2); }
+    .sc-drop.over, .sc-drop:hover { border-color:var(--accent); }
+    .sc-file { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:10px 12px; border:1px solid var(--border); border-radius:10px; background:var(--sf2); margin-top:8px; font-size:12.5px; }
+    .sc-file b { font-size:13px; } .sc-file .meta { color:var(--muted); flex:1; min-width:160px; }
+    .tc-banner { background:rgba(249,115,22,.1); border:1px solid rgba(249,115,22,.4); color:#f97316; border-radius:8px; padding:10px 14px; margin-bottom:14px; font-size:12.5px; line-height:1.6; }
+    .tc-chapters-wrap { margin:4px 0 14px; } .tc-chapters-head { font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin-bottom:6px; } .tc-chapters-head span { text-transform:none; letter-spacing:0; font-weight:400; }
+    .tc-chapters { display:flex; flex-wrap:wrap; gap:5px; }
+    .tc-ch { min-width:38px; padding:4px 7px; text-align:center; font-size:11px; font-weight:700; border-radius:7px; border:1.5px solid var(--border); background:var(--sf2); color:var(--muted); cursor:pointer; line-height:1.25; }
+    .tc-ch small { display:block; font-weight:500; font-size:9px; opacity:.85; }
+    .tc-ch.good { border-color:#10b981; color:#10b981; background:rgba(16,185,129,.08); } .tc-ch.warn { border-color:#f97316; color:#f97316; background:rgba(249,115,22,.08); } .tc-ch.bad { border-color:#ef4444; color:#ef4444; background:rgba(239,68,68,.1); }
+    .tc-ch.sel { outline:2px solid var(--accent); outline-offset:1px; } .tc-ch.todo { opacity:.5; border-style:dashed; }
+    .tc-table { width:100%; min-width:1080px; border-collapse:collapse; table-layout:fixed; } .tc-table th { text-align:left; font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); padding:8px 10px; border-bottom:1px solid var(--border); white-space:nowrap; }
+    .tc-table td { padding:9px 10px; border-bottom:1px solid var(--border); vertical-align:top; font-size:12.5px; line-height:1.55; }
+    .tc-table td.tc-where { white-space:nowrap; font-size:11.5px; color:var(--muted); } .tc-table td.tc-why { font-size:11.5px; color:var(--muted); min-width:170px; }
+    .tc-table td.tc-src, .tc-table td.tc-tgt, .tc-table td.tc-fix { word-break:break-word; overflow-wrap:anywhere; }
+    .tc-table mark.o { background:var(--mark-orig-bg); color:var(--mark-orig-fg); border-radius:3px; padding:0 3px; } .tc-table mark.c { background:var(--mark-corr-bg); color:var(--mark-corr-fg); border-radius:3px; padding:0 3px; font-weight:700; }
+    .tc-table .none { color:var(--muted); font-style:italic; } .tc-table tr.row-fixed td { opacity:.5; } .tc-table tr.row-false td { opacity:.4; text-decoration:line-through; }
     .tm-row { display:flex; align-items:center; gap:8px; justify-content:space-between; padding:7px 0; border-bottom:1px solid var(--border); flex-wrap:wrap; }
     .tm-who span { color:var(--muted); font-size:12px; margin-left:4px; }
     .tm-who em { color:var(--muted); font-size:12px; }
@@ -416,6 +441,7 @@
 <nav id="nav">
   <button class="active" onclick="showTab('proof')">Proof Document</button>
   <button onclick="showTab('report')">Report</button>
+  <button onclick="showTab('translation')">Translation</button>
   <button onclick="showTab('history')">History</button>
   <button onclick="showTab('reviews')">Reviews<span class="nav-badge" id="reviews-badge" hidden></span></button>
   <button onclick="showTab('setup')">Setup</button>
@@ -454,6 +480,28 @@
     placeholder="Paste your text here…&#10;&#10;Articles, emails, reports — paste anything to proofread."
     oninput="updateCharCount()"></textarea>
   <div class="char-counter" id="char-counter">0 words · 0 / 300,000 chars</div>
+
+  <div class="source-card" id="source-card">
+    <div class="sc-head" onclick="tcToggleSource()">
+      <span class="sc-title">🌐 Compare with a source document <span class="sc-opt">(optional)</span></span>
+      <span class="sc-state" id="tc-src-state">Not added</span>
+    </div>
+    <div class="sc-body" id="tc-src-body" hidden>
+      <p class="sr-hint" style="margin:0 0 10px">Is the document above a <strong>translation</strong>? Add the <strong>original</strong> here (for example the English manuscript or its InDesign file). The portal then checks the translation against it for missing or added text, wrong meaning, and wrong numbers or names, and gives it a translation score. The document above stays the translation.</p>
+      <div class="sc-drop" id="tc-drop" onclick="document.getElementById('tc-file').click()" ondrop="tcDropSource(event)" ondragover="event.preventDefault();this.classList.add('over')" ondragleave="this.classList.remove('over')">
+        <input type="file" id="tc-file" accept=".docx,.doc,.rtf,.idml,.pdf,.txt" onchange="tcPickSource(event)" style="display:none">
+        <b>Drop the source file here</b> or click to browse<br><small>Word (.docx, or a .doc that was saved as RTF), InDesign (.idml), PDF or plain text</small>
+      </div>
+      <div id="tc-src-info"></div>
+      <div class="row" style="margin-top:10px;align-items:center">
+        <label style="margin:0">Source language</label>
+        <select id="tc-src-lang" style="max-width:220px"></select>
+        <span style="flex:1"></span>
+        <button class="btn btn-primary" id="tc-run-btn" onclick="tcStart()" disabled>🌐 Check translation</button>
+      </div>
+      <div class="sr-hint" id="tc-run-hint" style="margin-top:6px"></div>
+    </div>
+  </div>
 
   <div class="instructions-wrap">
     <label for="ai-instructions">Additional instructions for AI <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">(optional)</span></label>
@@ -549,6 +597,7 @@
     <div>
       <div class="loading-title" id="loading-title">Analyzing document…</div>
       <div class="loading-sub" id="loading-sub">Preparing…</div>
+      <button class="btn btn-secondary btn-sm" id="loading-stop" style="display:none;margin-top:10px" onclick="tcStop()">Stop and show results so far</button>
     </div>
   </div>
 
@@ -666,6 +715,56 @@
 
 </div>
 
+<!-- ══════════ TRANSLATION PAGE ══════════ -->
+<div id="translation-page" class="page">
+  <div class="empty" id="tc-empty">
+    <div class="icon">🌐</div>
+    <h3>No translation check yet</h3>
+    <p>On the Proof page, put the translation in the main box, add the original under <strong>Compare with a source document</strong>, then press <strong>Check translation</strong>.</p>
+    <br>
+    <button class="btn btn-secondary" onclick="showTab('proof')">← Back to Proof</button>
+  </div>
+  <div id="tc-content" style="display:none">
+    <div id="tc-partial" class="tc-banner" hidden></div>
+    <div class="report-header">
+      <div class="report-header-left">
+        <div class="report-title">Translation Check</div>
+        <div class="report-meta" id="tc-meta"></div>
+        <div id="tc-cost" style="display:none;font-size:11px;color:var(--muted);margin-top:3px"></div>
+        <div id="tc-coverage" style="font-size:11px;margin-top:5px;line-height:1.5"></div>
+      </div>
+      <div class="score-wrap" id="tc-score-wrap">
+        <div class="score-circle" id="tc-score-circle"><div class="score-num" id="tc-score-num">-</div><div class="score-grade" id="tc-score-grade"></div></div>
+        <div class="score-label" id="tc-score-label"></div>
+      </div>
+      <div class="report-actions">
+        <button class="btn btn-secondary btn-sm" onclick="showTab('proof')">+ New check</button>
+        <button class="btn btn-share btn-sm" onclick="openShareModal(null,'translation')" title="Send the flagged issues to the translator with a password-protected link">Send to translator</button>
+        <div class="export-dropdown" id="tc-export-dropdown">
+          <button class="btn btn-primary btn-sm" onclick="tcToggleExport(event)">Export &#9662;</button>
+          <div class="export-menu" id="tc-export-menu">
+            <button onclick="tcExportCsv();tcCloseExport()">Download CSV</button>
+            <button onclick="tcExportWord();tcCloseExport()">Download Word (.docx)</button>
+            <button onclick="tcExportJson();tcCloseExport()">Export JSON</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="tc-chapters-wrap"><div class="tc-chapters-head">Chapters <span id="tc-chapters-hint">(click one to filter; colour shows its score)</span></div><div class="tc-chapters" id="tc-chapters"></div></div>
+    <div class="stats-grid" id="tc-stats"></div>
+    <div class="filter-bar" id="tc-filter-type"></div>
+    <div class="sev-filter-bar" id="tc-filter-sev"></div>
+    <div class="table-wrap">
+      <table class="tc-table">
+        <colgroup><col style="width:40px"><col style="width:112px"><col style="width:118px"><col><col><col style="width:170px"><col style="width:190px"><col style="width:66px"></colgroup>
+        <thead><tr><th>#</th><th>Where</th><th>Type</th><th>Source</th><th>Translation</th><th>Suggested fix</th><th>Why</th><th class="triage-th">Status</th></tr></thead>
+        <tbody id="tc-body"></tbody>
+      </table>
+    </div>
+    <div style="text-align:center;padding:12px 0 18px"><button class="btn btn-secondary" id="tc-more" style="display:none" onclick="tcShowMore()">Show more</button></div>
+  </div>
+</div>
+
 <!-- ══════════ REVIEWS PAGE ══════════ -->
 <div id="reviews-page" class="page">
   <div class="sr-head">
@@ -770,6 +869,7 @@
       Models: Claude Sonnet/Opus/Haiku (Anthropic) and GPT-4o / GPT-4o mini (OpenAI).
       Multi-language: Arabic, Hebrew, Persian (RTL), Bengali, Hindi, Tamil, Thai, Japanese, Korean and all major Latin-script languages.
       Exports: PDF, Word, corrected document, shareable HTML, JSON.
+      <strong>Translation check:</strong> add the original under &ldquo;Compare with a source document&rdquo; to check a translation for missing or added text, wrong meaning and wrong numbers, with a score and a list for the translator.
     </p>
   </div>
   <div class="card" id="cost-tracker-card">
@@ -800,6 +900,9 @@
 <div class="modal-overlay" id="team-modal">
   <div class="modal-box mid" id="team-box"></div>
 </div>
+<div class="modal-overlay" id="tc-modal">
+  <div class="modal-box mid" id="tc-box"></div>
+</div>
 <div class="modal-overlay" id="login-modal">
   <div class="modal-box" id="login-box"></div>
 </div>
@@ -807,7 +910,7 @@
 <footer class="app-footer">
   <span>© 2026 Explorer Publishing &amp; Distribution LLC · All rights reserved</span>
   <span id="cost-footer" style="font-size:10px;color:var(--muted);opacity:.65"></span>
-  <span class="app-footer-version">v4.0.0</span>
+  <span class="app-footer-version">v4.1.0</span>
 </footer>
 
 <div class="toast" id="toast"></div>
@@ -984,11 +1087,12 @@ function toggleTheme() {
 // Tab navigation
 // ══════════════════════════════════════════════
 function showTab(name) {
-  ['proof','report','history','reviews','setup'].forEach((t,i) => {
+  ['proof','report','translation','history','reviews','setup'].forEach((t,i) => {
     document.getElementById(t+'-page').classList.toggle('active', t===name);
     document.querySelectorAll('nav button')[i].classList.toggle('active', t===name);
   });
   if (name === 'history') renderHistory();
+  if (name === 'translation') tcRenderPage();
   if (name === 'setup')   { renderCostTracker(); renderShareSetup(); }
   if (name === 'reviews') { renderReviews(); srRefresh(false); }
 }
@@ -3146,9 +3250,9 @@ function clearHistory() {
 
 function renderHistory() {
   const list=document.getElementById('history-list');
-  const items=getHistory();
+  const items=getHistory(), tcHtml=tcHistoryHtml();
   if (!items.length) {
-    list.innerHTML=`<div class="empty"><div class="icon">📭</div><h3>No history yet</h3><p>Proofread documents will appear here.</p></div>`;
+    list.innerHTML=tcHtml||`<div class="empty"><div class="icon">📭</div><h3>No history yet</h3><p>Proofread documents will appear here.</p></div>`;
     return;
   }
   list.innerHTML='';
@@ -3171,6 +3275,7 @@ function renderHistory() {
       </div>`;
     list.appendChild(d);
   });
+  list.insertAdjacentHTML('beforeend', tcHtml);
 }
 
 function loadHistoryItem(id) {
@@ -3587,7 +3692,7 @@ function exportHTML() {
 // ══════════════════════════════════════════════
 function setLoading(on) {
   document.getElementById('loading').classList.toggle('show',on);
-  ['proof-btn','analyse-btn','demo-btn'].forEach(id=>{ const el=document.getElementById(id); if(el) el.disabled=on; });
+  ['proof-btn','analyse-btn','demo-btn','tc-run-btn'].forEach(id=>{ const el=document.getElementById(id); if(el) el.disabled=on; });
   if (on) { document.getElementById('loading-title').textContent='Analyzing document…'; }
 }
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
@@ -4264,17 +4369,22 @@ function srShareBox(step, inner) {
   $sr('share-box').innerHTML = '<div class="modal-title">Share for review</div><div class="sr-stepper">' +
     names.map((n, i) => '<div class="' + (i + 1 === step ? 'on' : i + 1 < step ? 'ok' : '') + '">' + (i + 1) + ' · ' + n + '</div>').join('') + '</div>' + inner;
 }
-function openShareModal(existing) {
+function openShareModal(existing, kind) {
   if (existing) { SRS = { meta: existing }; srShareStep3(existing); }
   else {
-    if (!lastReport || !(lastReport.errors || []).length) { toast('Open a report with issues first.', 'warn'); return; }
-    SRS = { pw: '', scope: null, title: '', note: '', days: 30 }; srShareStep1();
+    if (kind === 'translation') { if (!lastTC || !lastTC.issues.length) { toast('Run a translation check with issues first.', 'warn'); return; } }
+    else if (!lastReport || !(lastReport.errors || []).length) { toast('Open a report with issues first.', 'warn'); return; }
+    SRS = { pw: '', scope: null, title: '', note: '', days: 30, kind: kind === 'translation' ? 'translation' : 'proofread' }; srShareStep1();
   }
   $sr('share-modal').classList.add('open');
 }
 function closeShareModal() { $sr('share-modal').classList.remove('open'); SRS = null; }
 function srScrollSetup() { setTimeout(() => { const c = $sr('sr-setup-card'); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 80); }
 function srShareData() {
+  if (SRS && SRS.kind === 'translation') {
+    const r = lastTC, all = r.issues, open = all.filter((e) => !['false', 'fixed'].includes(tcState(e)));
+    return { r, di: { filename: 'Translation check: ' + r.target.name, pages: r.target.pages, wordCount: r.target.words, language: r.target.lang }, all, open };
+  }
   const r = lastReport, di = r._docInfo || docInfo;
   const all = r.errors || [], open = all.filter((e) => !['false', 'fixed'].includes(errorTriageState[e.id]));
   return { r, di, all, open };
@@ -4295,7 +4405,7 @@ function srShareStep1() {
     radio('all', 'All issues', all.length, 'Everything in this report.') + '</div>' +
     '<div class="sr-field"><label>Title shown to the reviewer</label><input class="sr-input" id="sr-title" value="' + esc(SRS.title) + '" maxlength="120" oninput="SRS.title=this.value"></div>' +
     '<div class="sr-field"><label>Note to the reviewer <span style="font-weight:500;text-transform:none;letter-spacing:0">(optional)</span></label><textarea class="sr-input" id="sr-note" style="min-height:84px" maxlength="1500" placeholder="e.g. Please check chapters 5 and 33 first. Deadline Friday." oninput="SRS.note=this.value">' + esc(SRS.note) + '</textarea></div>' +
-    '<p class="sr-hint">The reviewer sees only the short text around each issue, your suggested fix and the explanation, never the whole document. Everything is encrypted in your browser before it is uploaded.</p>' +
+    '<p class="sr-hint">' + (SRS.kind === 'translation' ? 'The translator sees each flagged passage in the translation next to the matching source passage, your suggested fix and the explanation, never the whole book. ' : 'The reviewer sees only the short text around each issue, your suggested fix and the explanation, never the whole document. ') + 'Everything is encrypted in your browser before it is uploaded.</p>' +
     '<div class="modal-actions"><button class="btn btn-secondary" onclick="closeShareModal()">Cancel</button><button class="btn btn-primary" onclick="srShareStep2()">Next →</button></div>');
 }
 function srMeter(pw) { const s = SR.strength(pw); return '<div class="sr-meter s' + s + '"><i></i><i></i><i></i></div><div class="sr-hint">' + ['Weak: use more characters.', 'OK. Longer is better.', 'Strong.'][s] + '</div>'; }
@@ -4318,10 +4428,10 @@ async function srCreateShare() {
   const { r, di, all, open } = srShareData();
   const src = SRS.scope === 'all' ? all : open;
   const payload = {
-    v: 1, kind: 'proofread', title: (SRS.title || '').trim() || di.filename || 'Document review',
-    language: r.language || di.language || '', pages: di.pages || null, wordCount: di.wordCount || null,
+    v: 1, kind: SRS.kind === 'translation' ? 'translation' : 'proofread', title: (SRS.title || '').trim() || di.filename || 'Document review',
+    language: (SRS.kind === 'translation' ? r.target.lang : r.language) || di.language || '', pages: di.pages || null, wordCount: di.wordCount || null,
     createdBy: srGet('proof_user_name') || (SRU && SRU.name) || '', createdAt: new Date().toISOString(), note: (SRS.note || '').trim(),
-    issues: src.map((e) => ({ id: e.id, type: e.type || '', severity: e.severity || '', page: e.page || null, loc: e._loc || undefined, context: e.context || '', original: e.original || '', corrected: e.corrected || '', explanation: e.explanation || '', source: e._source || undefined })),
+    issues: SRS.kind === 'translation' ? TC.toShareIssues(src, r.source.lang) : src.map((e) => ({ id: e.id, type: e.type || '', severity: e.severity || '', page: e.page || null, loc: e._loc || undefined, context: e.context || '', original: e.original || '', corrected: e.corrected || '', explanation: e.explanation || '', source: e._source || undefined })),
   };
   try {
     const cfg = srCfg();
@@ -4452,7 +4562,7 @@ function srRenderFeedback() {
   const names = (decisions && (decisions.reviewers || (decisions.reviewer ? [decisions.reviewer] : []))) || [];
   const chip = (k, label, n) => '<button class="chip' + (filter === k ? ' on' : '') + '" style="font-size:12px;padding:5px 12px" onclick="SRFB.filter=\'' + k + '\';srRenderFeedback()">' + label + ' <span style="opacity:.7">' + n + '</span></button>';
   const decPill = (d) => '<span class="sr-dec ' + d + '">' + ({ agree: 'Agreed', disagree: 'Disagreed', edit: 'Edited', none: 'No answer' })[d] + '</span>';
-  const ctxCell = (r) => { const i = r.i, p = i.context && i.original && i.context.indexOf(i.original) >= 0 ? [i.context.slice(0, i.context.indexOf(i.original)), i.context.slice(i.context.indexOf(i.original) + i.original.length)] : null; return p ? esc(p[0]) + '<mark class="o">' + esc(i.original) + '</mark>' + esc(p[1]) : '<mark class="o">' + esc(i.original) + '</mark>'; };
+  const ctxCell = (r) => { const i = r.i; if (i.insert) return '<span style="color:var(--muted)">(missing in the translation) after:</span> ' + esc((i.context || '').length > 140 ? '...' + i.context.slice(-140) : (i.context || '')); const p = i.context && i.original && i.context.indexOf(i.original) >= 0 ? [i.context.slice(0, i.context.indexOf(i.original)), i.context.slice(i.context.indexOf(i.original) + i.original.length)] : null; return p ? esc(p[0]) + '<mark class="o">' + esc(i.original) + '</mark>' + esc(p[1]) : '<mark class="o">' + esc(i.original) + '</mark>'; };
   $sr('fb-box').innerHTML =
     '<div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap"><div style="flex:1;min-width:240px"><div class="modal-title" style="margin:0">' + esc(m.title) + '</div>' +
     '<div class="sr-hint" style="margin-top:4px">' + (names.length ? 'Reviewer: <b>' + esc(names.join(', ')) + '</b> · ' : '') + SR_STATUS[SRFB.status] + (SRFB.submittedAt ? ' ' + srDate(SRFB.submittedAt, true) : '') + '</div></div>' +
@@ -4467,7 +4577,7 @@ function srRenderFeedback() {
       const i = r.i, ap = applied.has(String(i.id)), where = i.loc || (i.page ? 'p.' + i.page : '');
       return '<tr class="' + (ap ? 'applied' : '') + '"><td>' + (r.fin != null ? '<input type="checkbox" ' + (ap ? 'checked' : '') + ' onchange="srToggleApplied(\'' + m.id + '\',' + JSON.stringify(i.id) + ',this.checked)" title="' + esc(ap && srAppliedMap(m.id)[i.id] ? 'Applied by ' + srAppliedMap(m.id)[i.id].by : 'Applied in layout') + '">' : '') + '</td>' +
         '<td style="white-space:nowrap"><b>#' + esc(i.id) + '</b><br><span style="color:var(--muted)">' + esc(where) + '</span><br><span style="color:var(--muted);font-size:11px">' + esc(i.type || '') + '</span></td>' +
-        '<td dir="auto">' + ctxCell(r) + '<br>' + (r.fin != null ? '→ <mark class="c">' + esc(r.fin) + '</mark>' : '<span style="color:var(--muted)">→ keep as it is</span>') + '</td>' +
+        '<td dir="auto">' + ctxCell(r) + '<br>' + (r.fin === '' ? '<span style="color:var(--muted)">&rarr; delete this text</span>' : r.fin != null ? '→ <mark class="c">' + esc(r.fin) + '</mark>' : '<span style="color:var(--muted)">→ keep as it is</span>') + '</td>' +
         '<td>' + decPill(r.d) + '</td><td dir="auto">' + esc(r.it.c || '') + '</td></tr>';
     }).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:26px">Nothing in this view.</td></tr>') + '</tbody></table></div>' +
     '<div class="modal-actions" style="margin-top:14px">' + (SRFB.status === 'submitted' && srCanManage(m) ? '<button class="btn btn-secondary" onclick="srCloseFeedback();srManage(\'' + m.id + '\',\'reopen\')">Reopen for the reviewer</button>' : '') + '<button class="btn btn-primary" onclick="srCloseFeedback()">Done</button></div>';
@@ -4490,7 +4600,7 @@ function srExportRows(kind) {
     : ['#', 'Page', 'Location', 'Type', 'Severity', 'Current text', 'Suggested', 'Reviewer answer', 'Reviewer final text', 'Reviewer comment', 'Full sentence', 'Applied'];
   const dec = { agree: 'Agreed', disagree: 'Disagreed', edit: 'Edited', none: 'No answer' };
   const body = rows.map((r) => { const i = r.i; return kind === 'apply'
-    ? [i.id, i.page || '', i.loc || '', i.type || '', i.original || '', r.fin, r.it.c || '', i.context || '', applied.has(String(i.id)) ? 'Yes' : '']
+    ? [i.id, i.page || '', i.loc || '', i.type || '', i.insert ? '(insert after) ' + (i.context || '').slice(-80) : (i.original || ''), r.fin === '' ? '(delete this text)' : r.fin, r.it.c || '', i.context || '', applied.has(String(i.id)) ? 'Yes' : '']
     : [i.id, i.page || '', i.loc || '', i.type || '', i.severity || '', i.original || '', i.corrected || '', dec[r.d], r.fin == null ? '' : r.fin, r.it.c || '', i.context || '', applied.has(String(i.id)) ? 'Yes' : '']; });
   return { head, body, payload };
 }
@@ -4511,7 +4621,7 @@ async function srExportWord(kind) {
   const lb = { style: BorderStyle.SINGLE, size: 1, color: 'D0D7DE' }, brd = { top: lb, bottom: lb, left: lb, right: lb };
   const cell = (txt, w, o = {}) => new TableCell({ borders: brd, width: { size: w, type: WidthType.DXA }, shading: o.fill ? { fill: o.fill } : undefined,
     children: [new Paragraph({ children: [new TextRun({ text: String(txt == null ? '' : txt), bold: !!o.bold, color: o.color || '111111', size: o.size || 17, font })] })] });
-  const ctxCell = (r, w) => { const i = r.i; const p = i.context && i.original && i.context.indexOf(i.original) >= 0 ? i.context.indexOf(i.original) : -1;
+  const ctxCell = (r, w) => { const i = r.i; if (i.insert) return new TableCell({ borders: brd, width: { size: w, type: WidthType.DXA }, children: [new Paragraph({ children: [new TextRun({ text: '(insert after) ' + (i.context || '').slice(-100), color: '666666', size: 17, font })] })] }); const p = i.context && i.original && i.context.indexOf(i.original) >= 0 ? i.context.indexOf(i.original) : -1;
     const runs = p < 0 ? [new TextRun({ text: i.original || '', bold: true, color: 'B91C1C', size: 17, font })] : [
       new TextRun({ text: i.context.slice(0, p), color: '666666', size: 17, font }), new TextRun({ text: i.original, bold: true, color: 'B91C1C', size: 17, font }), new TextRun({ text: i.context.slice(p + i.original.length), color: '666666', size: 17, font })];
     return new TableCell({ borders: brd, width: { size: w, type: WidthType.DXA }, children: [new Paragraph({ children: runs })] }); };
@@ -4701,6 +4811,496 @@ async function srInit() {
 }
 
 // ══════════════════════════════════════════════
+// Translation check: compare a translation with its source document.
+// The logic (chapter pairing, alignment, prompts, answer validation, scoring) is in tc-core.js.
+// This part reads the files, calls the model, shows the results and hands issues to the translator.
+// ══════════════════════════════════════════════
+const TC_TYPE_COLORS = { Omission:'#ef4444', Addition:'#f97316', Mistranslation:'#a855f7', Number:'#3b82f6', Terminology:'#06b6d4', Untranslated:'#eab308', Structure:'#64748b' };
+const TC_SEV_COLORS = { Critical:'#ef4444', Major:'#f97316', Minor:'#94a3b8', Query:'#8b5cf6' };
+let TCS = null;            // the source document: { name, ext, kind, size, paras, words, chars, lang, pages, sections }
+let lastTC = null;         // the last translation-check report
+let TC_RUN = null;         // the run in progress / resumable: { plan, srcDoc, tgtDoc, state, model, stop, ... }
+let TC_PENDING = null;     // { tgt } while the confirm dialog is open
+const tcFilters = new Set(), tcSevFilter = new Set();
+let tcChapterFilter = null, tcShown = 120;
+
+// ── Source document ────────────────────────────────────────────────────
+function tcToggleSource() { const b = document.getElementById('tc-src-body'); b.hidden = !b.hidden; }
+function tcInitSourceCard() {
+  const sel = document.getElementById('tc-src-lang'); if (!sel) return;
+  sel.innerHTML = '<option value="auto">Auto-detect</option>' + [...document.getElementById('language').options]
+    .filter((o) => !['auto', 'other', 'bilingual-en-ar'].includes(o.value)).map((o) => '<option value="' + o.value + '">' + esc(o.textContent) + '</option>').join('');
+}
+function tcLangName(selId, detected) {
+  const sel = document.getElementById(selId), v = sel ? sel.value : 'auto';
+  if (!sel || v === 'auto' || v === 'other' || v === 'bilingual-en-ar') return detected || '';
+  return sel.options[sel.selectedIndex].textContent.replace(/\s*\(.*\)\s*$/, '').replace(/\s*\/\s*Farsi/i, '').trim();
+}
+async function tcPickSource(ev) { const f = ev.target.files[0]; ev.target.value = ''; if (f) await tcLoadSource(f); }
+async function tcDropSource(ev) { ev.preventDefault(); ev.currentTarget.classList.remove('over'); const f = ev.dataTransfer.files[0]; if (f) await tcLoadSource(f); }
+
+// Extract with the existing readers but without disturbing the translation's document info
+async function tcExtractIsolated(file) {
+  const keep = { di: docInfo, lx: lastExtractedText };
+  docInfo = { filename: file.name, ext: file.name.split('.').pop().toLowerCase(), fileSize: file.size, pages: null, pageTexts: [], wordCount: 0, charCount: 0, paraCount: 0, images: null, graphics: null, tables: null, language: '', isSpread: false, scriptDir: 'ltr' };
+  try {
+    const text = await extractText(file);
+    return { text, pageTexts: (docInfo.pageTexts || []).slice(), pages: docInfo.pages, language: docInfo.language };
+  } finally { docInfo = keep.di; lastExtractedText = keep.lx; }
+}
+async function tcLoadSource(file) {
+  setLoading(true);
+  document.getElementById('loading-title').textContent = 'Reading the source document...';
+  document.getElementById('loading-sub').textContent = file.name;
+  try {
+    const buf = new Uint8Array(await file.arrayBuffer());
+    const kind = TC.sniffFormat(buf), ext = file.name.split('.').pop().toLowerCase();
+    let paras, pageCount = null, raw = '';
+    if (kind === 'ole-doc') throw new Error('This is an old binary Word file (.doc). Open it in Word, choose Save As > Word Document (.docx), and add that file instead.');
+    if (kind === 'rtf') { raw = TC.rtfToText(new TextDecoder('latin1').decode(buf)); paras = TC.parasFromText(raw); }
+    else if (kind === 'zip' && ext === 'idml') { const r = await tcExtractIsolated(file); raw = r.text; paras = TC.parasFromPages(r.pageTexts.length ? r.pageTexts : [r.text]); pageCount = r.pages; }
+    else if (kind === 'zip') { const m = await mammoth.extractRawText({ arrayBuffer: buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) }); raw = m.value; paras = TC.parasFromText(raw); }
+    else if (kind === 'pdf') { const r = await tcExtractIsolated(file); raw = r.text; paras = TC.parasFromPages(r.pageTexts.length ? r.pageTexts : [r.text]); pageCount = r.pages; }
+    else { raw = new TextDecoder('utf-8').decode(buf); paras = TC.parasFromText(raw); }
+    if (!paras.length) throw new Error('No text could be read from this file.');
+    const st = TC.docStats(paras);
+    TCS = { name: file.name, ext, kind, size: file.size, paras, words: st.words, chars: st.chars, pages: pageCount,
+            lang: detectLanguage(paras.slice(0, 400).map((p) => p.text).join(' ').slice(0, 30000)), sections: TC.detectSections(paras) };
+    toast('Source read: ' + st.words.toLocaleString() + ' words in ' + paras.length.toLocaleString() + ' paragraphs.');
+  } catch (e) { toast(e.message, 'err', 9000); }
+  finally { setLoading(false); }
+  tcPaintSource();
+}
+function tcRemoveSource() { TCS = null; tcPaintSource(); }
+function tcPaintSource() {
+  const st = document.getElementById('tc-src-state'), info = document.getElementById('tc-src-info'), btn = document.getElementById('tc-run-btn'), hint = document.getElementById('tc-run-hint');
+  if (!st) return;
+  if (!TCS) { st.textContent = 'Not added'; st.className = 'sc-state'; info.innerHTML = ''; btn.disabled = true; hint.textContent = ''; return; }
+  st.textContent = '✓ ' + TCS.name; st.className = 'sc-state ok';
+  document.getElementById('tc-src-body').hidden = false;
+  const sec = TCS.sections, ch = sec.structured ? sec.sections.filter((s) => s.num > 0) : [];
+  const structure = sec.structured ? ch.length + ' chapters found' : 'no chapter headings found (will be lined up by length)';
+  info.innerHTML = '<div class="sc-file"><b>' + esc(TCS.name) + '</b><span class="meta">' + esc(TCS.lang || 'language not detected') + ' &middot; ' + TCS.words.toLocaleString() + ' words &middot; ' + TCS.paras.length.toLocaleString() + ' paragraphs' + (TCS.pages ? ' &middot; ' + TCS.pages + ' pages' : '') + ' &middot; ' + esc(structure) + '</span><button class="btn btn-secondary btn-sm" onclick="tcRemoveSource()">Remove</button></div>';
+  btn.disabled = false;
+  hint.textContent = 'The translation is whatever is in the main box above (an uploaded file or pasted text).';
+}
+
+// ── The translation (the document in the main box) ─────────────────────
+async function tcLoadTarget() {
+  const files = fileQueue.filter((q) => q.status === 'waiting'), paste = document.getElementById('paste-area').value.trim();
+  if (!files.length && !paste) { toast('Put the translation in the main box first (upload a file or paste the text).', 'warn'); return null; }
+  if (files.length > 1) toast('Several files are queued: the first one is used as the translation.', 'warn');
+  const file = files[0] ? files[0].file : null;
+  setLoading(true); document.getElementById('loading-title').textContent = 'Reading the translation...'; document.getElementById('loading-sub').textContent = file ? file.name : 'pasted text';
+  try {
+    if (file) {
+      docInfo = { filename: file.name, ext: file.name.split('.').pop().toLowerCase(), fileSize: file.size, pages: null, pageTexts: [], wordCount: 0, charCount: 0, paraCount: 0, images: null, graphics: null, tables: null, language: '', isSpread: false, scriptDir: 'ltr' };
+      lastExtractedText = await extractText(file);
+    } else {
+      lastExtractedText = paste;
+      docInfo = { filename: '', ext: '', fileSize: 0, pages: null, pageTexts: [], wordCount: 0, charCount: 0, paraCount: 0, images: null, graphics: null, tables: null, language: '', isSpread: false, scriptDir: 'ltr' };
+      populateDocInfo(paste, null, null, null, 'txt', null);
+    }
+  } catch (e) { toast('File error: ' + e.message, 'err'); setLoading(false); return null; }
+  setLoading(false);
+  const paged = docInfo.pageTexts && docInfo.pageTexts.length > 1;
+  const paras = paged ? TC.parasFromPages(docInfo.pageTexts) : TC.parasFromText(lastExtractedText);
+  if (!paras.length) { toast('No text found in the translation.', 'err'); return null; }
+  const st = TC.docStats(paras);
+  return { name: docInfo.filename || 'Pasted text', ext: docInfo.ext, paras, words: st.words, chars: st.chars, pages: paged ? docInfo.pages : null,
+           lang: tcLangName('language', docInfo.language) || docInfo.language || '' };
+}
+
+// ── Confirm dialog (structure, estimate, options) ──────────────────────
+function tcParseChapters(str) {
+  const out = new Set();
+  String(str || '').split(/[,;\s]+/).forEach((tok) => {
+    const m = /^(\d+)\s*-\s*(\d+)$/.exec(tok);
+    if (m) { for (let n = +m[1]; n <= +m[2] && n - +m[1] < 400; n++) out.add(n); }
+    else if (/^\d+$/.test(tok)) out.add(+tok);
+  });
+  return out.size ? [...out].sort((a, b) => a - b) : null;
+}
+function tcDocs(tgt) {
+  const srcLang = tcLangName('tc-src-lang', TCS.lang) || TCS.lang || 'the source language', tgtLang = tgt.lang || 'the translation language';
+  return { srcDoc: { paras: TCS.paras, lang: srcLang, words: TCS.words, chars: TCS.chars, name: TCS.name }, tgtDoc: { paras: tgt.paras, lang: tgtLang, words: tgt.words, chars: tgt.chars, name: tgt.name, pages: tgt.pages }, srcLang, tgtLang };
+}
+function tcStructureHtml(plan, d) {
+  const ok = (t) => '<div class="sr-check ok" style="margin-bottom:6px"><span>&#10003;</span><span>' + t + '</span></div>';
+  const warn = (t) => '<div class="sr-check bad" style="margin-bottom:6px"><span>!</span><span>' + t + '</span></div>';
+  const out = [];
+  const sn = plan.srcSections.sections.filter((s) => s.num > 0).length, tn = plan.tgtSections.sections.filter((s) => s.num > 0).length;
+  if (plan.how === 'number') out.push(ok('<b>' + sn + ' chapters in the source and ' + tn + ' in the translation</b>, matched by chapter number. Each chapter is checked on its own, so nothing can be skipped.'));
+  else if (plan.how === 'order') out.push(warn('<b>Chapters matched by order</b> because the numbers differ between the two documents. Please check the chapter list in the report.'));
+  else out.push(warn('<b>No matching chapter structure found.</b> The two documents will be lined up by length and checked in ' + plan.windows.length + ' parts. This works, but chapter numbers cannot be shown.'));
+  plan.structural.forEach((s) => out.push(warn(s.kind === 'missing-section' ? 'Chapter ' + s.pair.num + ' is in the source but <b>missing from the translation</b>.' : 'Chapter ' + s.pair.num + ' is <b>only in the translation</b>.')));
+  (plan.repairs || []).forEach((r) => out.push(warn('The ' + (r.side === 'tgt' ? 'translation' : 'source') + ' heading for chapter ' + r.num + ' reads &ldquo;' + r.found + '&rdquo;; it was matched anyway.')));
+  if (d.srcLang && d.tgtLang && d.srcLang.toLowerCase() === d.tgtLang.toLowerCase()) out.push(warn('Both documents look like <b>' + esc(d.srcLang) + '</b>. A translation check needs the original and the translated version. Is the source language set correctly?'));
+  const ratio = d.tgtDoc.words / Math.max(d.srcDoc.words, 1);
+  if (ratio < 0.35 || ratio > 3) out.push(warn('The translation is ' + (ratio < 1 ? 'much shorter' : 'much longer') + ' than the source (' + Math.round(ratio * 100) + '% of its words). Are the two documents the right way round?'));
+  return out.join('');
+}
+function tcRecalc() {
+  if (!TC_PENDING) return;
+  const d = TC_PENDING.d, only = tcParseChapters(document.getElementById('tc-only').value);
+  const plan = TC.planWindows(d.srcDoc, d.tgtDoc, { onlySections: only });
+  TC_PENDING.plan = plan; TC_PENDING.only = only;
+  const model = document.getElementById('model').value, est = TC.estimateRun(plan), cost = calcCost(model, est.inTok, est.outTok);
+  const mins = Math.max(est.calls * 14 / 60, est.inTok / 40000);
+  const usd = cost < 0.01 ? '$' + cost.toFixed(4) : '$' + cost.toFixed(2);
+  document.getElementById('tc-est').innerHTML = (plan.windows.length ? '<b>' + plan.windows.length + ' parts</b> to check &middot; about ' + est.calls + ' model calls &middot; roughly ' + est.inTok.toLocaleString() + ' tokens in, ' + est.outTok.toLocaleString() + ' out<br>Estimated cost with <b>' + esc(modelDisplayName(model)) + '</b>: <b>' + usd + '</b> &middot; time: ' + (mins < 1.5 ? 'about a minute' : 'about ' + Math.round(mins) + ' minutes') + '<br><span style="color:var(--muted)">Estimates only; long documents may take longer if your API key has a low rate limit (the portal slows down automatically).</span>' : '<span style="color:#f97316">No chapters match that list.</span>');
+  document.getElementById('tc-go').disabled = !plan.windows.length;
+}
+function tcShowConfirm(tgt) {
+  const d = tcDocs(tgt); TC_PENDING = { tgt, d, plan: null, only: null };
+  const plan = TC.planWindows(d.srcDoc, d.tgtDoc, {});
+  const line = (label, name, lang, words, paras, extra) => '<div style="display:flex;gap:10px;font-size:12.5px;margin-bottom:5px"><span style="width:84px;color:var(--muted);flex-shrink:0">' + label + '</span><span><b>' + esc(name) + '</b><br><span style="color:var(--muted)">' + esc(lang || 'language not detected') + ' &middot; ' + words.toLocaleString() + ' words &middot; ' + paras.toLocaleString() + ' paragraphs' + (extra || '') + '</span></span></div>';
+  document.getElementById('tc-box').innerHTML = '<div class="modal-title">Check translation</div>' +
+    line('Source', TCS.name, d.srcLang, TCS.words, TCS.paras.length, TCS.pages ? ' &middot; ' + TCS.pages + ' pages' : '') +
+    line('Translation', tgt.name, d.tgtLang, tgt.words, tgt.paras.length, tgt.pages ? ' &middot; ' + tgt.pages + ' pages' : '') +
+    '<div style="margin:12px 0 10px">' + tcStructureHtml(plan, d) + '</div>' +
+    '<div class="sr-field"><label>Only check these chapters <span style="font-weight:500;text-transform:none;letter-spacing:0">(optional, handy for a cheap trial)</span></label><input class="sr-input" id="tc-only" placeholder="all chapters  (or e.g. 33, 36, 42  or  30-35)" oninput="tcRecalc()" autocomplete="off"></div>' +
+    '<div class="sr-field"><label>Notes for the AI <span style="font-weight:500;text-transform:none;letter-spacing:0">(optional)</span></label><textarea class="sr-input" id="tc-notes" style="min-height:58px" placeholder="e.g. Keep &ldquo;Sheikh&rdquo; as it is. Dates follow the Gregorian calendar."></textarea></div>' +
+    '<div id="tc-est" class="sr-hint" style="font-size:12.5px;line-height:1.7;margin-top:2px"></div>' +
+    '<p class="sr-hint">Both texts are sent to ' + (document.getElementById('model').value.startsWith('gpt-') ? 'OpenAI' : 'Anthropic') + ' for analysis, exactly like proofreading. Every paragraph on both sides must be accounted for; anything that cannot be matched is reported, never skipped.</p>' +
+    '<div class="modal-actions"><button class="btn btn-secondary" onclick="tcCancelConfirm()">Cancel</button><button class="btn btn-primary" id="tc-go" onclick="tcConfirmStart()">Start check</button></div>';
+  document.getElementById('tc-modal').classList.add('open');
+  tcRecalc();
+}
+function tcCancelConfirm() { TC_PENDING = null; document.getElementById('tc-modal').classList.remove('open'); }
+async function tcStart() {
+  if (!TCS) { toast('Add the source document first.', 'warn'); return; }
+  const model = document.getElementById('model').value, openai = model.startsWith('gpt-');
+  if (!localStorage.getItem(openai ? 'proof_openai_key' : 'proof_api_key')) { toast('Set your ' + (openai ? 'OpenAI' : 'Anthropic') + ' API key in Setup first.', 'warn'); showTab('setup'); return; }
+  const tgt = await tcLoadTarget(); if (!tgt) return;
+  tcShowConfirm(tgt);
+}
+
+// ── Talking to the model ───────────────────────────────────────────────
+// Requests are paced to stay under the key's rate limit: the budget starts optimistic, drops after a
+// 429 (waiting as long as the server asks) and grows again after a run of successes.
+const TC_BUDGET = { tpm: 45000, ok: 0, log: [] };
+const tcTitle = (t) => { const e = document.getElementById('loading-title'); if (e) e.textContent = t; };
+const tcSub = (t) => { const e = document.getElementById('loading-sub'); if (e) e.textContent = t; };
+async function tcSleep(sec, R) { const end = Date.now() + sec * 1000; while (Date.now() < end) { if (R && R.stop) return; await new Promise((r) => setTimeout(r, 250)); } }
+async function tcPace(tokens, R) {
+  for (;;) {
+    const now = Date.now(); TC_BUDGET.log = TC_BUDGET.log.filter((x) => now - x.t < 60000);
+    const used = TC_BUDGET.log.reduce((a, x) => a + x.n, 0);
+    if (!TC_BUDGET.log.length || used + tokens <= TC_BUDGET.tpm) { TC_BUDGET.log.push({ t: now, n: tokens }); return; }
+    const wait = Math.max(1, Math.ceil((TC_BUDGET.log[0].t + 60000 - now) / 1000));
+    tcSub('Keeping under your rate limit: next request in ' + wait + 's');
+    await tcSleep(Math.min(wait, 4), R);
+    if (R && R.stop) return;
+  }
+}
+async function tcCall(system, user, meta) {
+  const R = TC_RUN, model = R.model, openai = model.startsWith('gpt-'), key = localStorage.getItem(openai ? 'proof_openai_key' : 'proof_api_key');
+  if (!key) throw new Error('No API key. Set it in Setup.');
+  const estTok = Math.ceil((system.length + user.length) / 2.4);
+  let lastErr = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    if (R.stop) { const e = new Error('Stopped'); e.stop = true; throw e; }
+    await tcPace(estTok, R);
+    if (R.stop) { const e = new Error('Stopped'); e.stop = true; throw e; }
+    let res;
+    try {
+      res = openai
+        ? await fetch('https://api.openai.com/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+            body: JSON.stringify({ model, temperature: 0, max_tokens: 8000, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] }) })
+        : await fetch('https://api.anthropic.com/v1/messages', { method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true', 'anthropic-beta': 'prompt-caching-2024-07-31' },
+            body: JSON.stringify({ model, max_tokens: Math.min(maxTokensFor(model), 8000), system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }], messages: [{ role: 'user', content: user }] }) });
+    } catch (e) { lastErr = new Error('Network error: ' + (e.message || e)); await tcSleep(6 * (attempt + 1), R); continue; }
+    if (res.ok) {
+      const data = await res.json();
+      TC_BUDGET.ok++; if (TC_BUDGET.ok % 6 === 0) TC_BUDGET.tpm = Math.min(Math.round(TC_BUDGET.tpm * 1.25), 800000);
+      if (openai) return { text: (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '', inTok: (data.usage && data.usage.prompt_tokens) || 0, outTok: (data.usage && data.usage.completion_tokens) || 0, truncated: !!(data.choices && data.choices[0] && data.choices[0].finish_reason === 'length') };
+      const u = data.usage || {};
+      return { text: (data.content && data.content[0] && data.content[0].text) || '', inTok: (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + Math.round((u.cache_read_input_tokens || 0) * 0.1), outTok: u.output_tokens || 0, truncated: data.stop_reason === 'max_tokens' };
+    }
+    const err = await res.json().catch(() => ({})); const msg = (err.error && err.error.message) || ('API error ' + res.status);
+    if (isPolicyError(msg)) { const e = new Error('POLICY_ERROR: ' + msg); e.policy = true; throw e; }
+    if (res.status === 429 || res.status === 529 || res.status === 503 || isRateLimitError(msg)) {
+      TC_BUDGET.tpm = Math.max(8000, Math.round(TC_BUDGET.tpm * 0.6)); TC_BUDGET.ok = 0;
+      const ra = parseFloat(res.headers.get('retry-after')), wait = ra > 0 ? Math.ceil(ra) + 2 : 62;
+      tcTitle('Rate limited, waiting');
+      for (let s = wait; s > 0 && !R.stop; s--) { tcSub('Retrying in ' + s + 's (attempt ' + (attempt + 2) + ' of 5)...'); await tcSleep(1, R); }
+      lastErr = new Error(msg); continue;
+    }
+    throw new Error(msg);
+  }
+  throw lastErr || new Error('The model did not answer.');
+}
+
+// ── Running a check ────────────────────────────────────────────────────
+async function tcConfirmStart() {
+  const P = TC_PENDING; if (!P || !P.plan || !P.plan.windows.length) return;
+  const model = document.getElementById('model').value, notes = (document.getElementById('tc-notes').value || '').trim();
+  const gl = getGlossary(); const extra = [notes, gl.length ? 'Terms and names that must stay exactly as written in the translation (never flag them): ' + gl.join(', ') : ''].filter(Boolean).join('\n');
+  TC_BUDGET.tpm = window.TC_TEST_TPM || 45000; TC_BUDGET.ok = 0; TC_BUDGET.log = [];
+  TC_RUN = { plan: P.plan, srcDoc: P.d.srcDoc, tgtDoc: P.d.tgtDoc, tgtName: P.tgt.name, srcName: TCS.name, srcLang: P.d.srcLang, tgtLang: P.d.tgtLang, model, extra, only: P.only, stop: false, error: null, tracked: 0,
+             state: { done: {}, results: [], inTok: 0, outTok: 0, calls: 0, splits: 0, verifyCalls: 0 }, startedAt: Date.now() };
+  tcCancelConfirm();
+  await tcExecute();
+}
+async function tcExecute() {
+  const R = TC_RUN; if (!R) return;
+  R.stop = false; R.error = null;
+  setLoading(true); document.getElementById('loading-stop').style.display = 'inline-block'; document.getElementById('loading-stop').textContent = 'Stop and show results so far';
+  const t0 = Date.now(), doneAtStart = Object.keys(R.state.done).length;
+  const ctx = {
+    callModel: tcCall, srcLang: R.srcLang, tgtLang: R.tgtLang, extra: R.extra, shouldStop: () => R.stop,
+    onProgress: (p) => {
+      const n = Object.keys(R.state.done).length - doneAtStart, per = n > 0 ? (Date.now() - t0) / n : 0, left = per ? Math.round(per * (p.total - p.index) / 1000) : 0;
+      tcTitle('Checking ' + p.win.label + '  (' + (p.index + 1) + ' of ' + p.total + ')');
+      tcSub(p.issues + ' issue' + (p.issues === 1 ? '' : 's') + ' so far' + (left ? ' · about ' + fmtTime(left) + ' left' : '') + ' · sending to ' + modelDisplayName(R.model) + '...');
+      document.getElementById('progress-bar').style.width = (8 + 88 * p.index / Math.max(p.total, 1)) + '%';
+    },
+  };
+  try { await TC.checkWindows(R.plan, R.srcDoc, R.tgtDoc, ctx, R.state); }
+  catch (e) { if (!(e && e.stop)) R.error = e; }
+  finally { document.getElementById('loading-stop').style.display = 'none'; setLoading(false); }
+  tcFinalize();
+}
+function tcStop() { if (TC_RUN) { TC_RUN.stop = true; document.getElementById('loading-stop').textContent = 'Stopping...'; } }
+async function tcContinue() { if (TC_RUN && !TC_RUN.state.finished) { showTab('proof'); await tcExecute(); } else toast('Nothing to continue. Run the check again to complete it.', 'warn'); }
+
+function tcFinalize() {
+  const R = TC_RUN; if (!R.state.results.length && !Object.keys(R.state.done).length) {
+    if (R.error) tcShowError(R.error);
+    toast(R.error ? 'The check could not start: ' + (R.error.message || 'error') : 'Stopped before anything was checked.', 'err'); return;
+  }
+  const rep = TC.buildReport(R.plan, R.srcDoc, R.tgtDoc, R.state, {});
+  const cost = calcCost(R.model, R.state.inTok, R.state.outTok); trackCost(cost - R.tracked); R.tracked = cost;
+  const triage = lastTC && lastTC.triage ? lastTC.triage : {};
+  Object.assign(rep, {
+    source: { name: R.srcName, lang: R.srcLang, words: R.srcDoc.words, paras: R.srcDoc.paras.length }, target: { name: R.tgtName, lang: R.tgtLang, words: R.tgtDoc.words, paras: R.tgtDoc.paras.length, pages: R.tgtDoc.pages || null },
+    model: R.model, cost, inTok: R.state.inTok, outTok: R.state.outTok, only: R.only || null, triage, finished: !!R.state.finished,
+    stopped: !!R.state.stopped, error: R.error ? String(R.error.message || R.error) : '',
+  });
+  lastTC = rep; tcSave(rep);
+  tcRenderPage(); showTab('translation');
+  if (R.error) tcShowError(R.error);
+  else if (R.state.stopped) toast('Stopped. ' + rep.coverage.windowsDone + ' of ' + rep.coverage.windows + ' parts checked so far.', 'warn', 7000);
+  else toast('Translation check finished: ' + rep.issues.length + ' issue' + (rep.issues.length === 1 ? '' : 's') + ', score ' + rep.score.value + ' (' + rep.score.verdict + ').');
+}
+function tcShowError(e) {
+  const msg = (e && e.message) || String(e);
+  if (/credit|billing|402/i.test(msg)) showApiError('No API credits', 'Your API key has run out of credits.<br><br>Add credits in your provider console, then press <strong>Continue</strong> on the Translation tab.');
+  else if (/invalid.*(api|key)|authentication|401/i.test(msg)) showApiError('Invalid API key', 'The API key was rejected. Check it in Setup.');
+  else showApiError('The translation check stopped', 'The run stopped with this message:<br><br><em>' + esc(msg) + '</em><br><br>' + (TC_RUN && !TC_RUN.state.finished ? 'The parts already checked are kept. Press <strong>Continue</strong> on the Translation tab to resume.' : ''));
+}
+
+// ── Saving ─────────────────────────────────────────────────────────────
+const tcKey = (x) => [x.chapter, x.type, x.srcLoc, x.tgtLoc, (x.srcText || x.tgtText || x.why || '').slice(0, 40)].join('|');
+function tcCompact(rep) {
+  const c = JSON.parse(JSON.stringify(rep));
+  c.issues.forEach((x) => { x.srcContext = (x.srcContext || '').slice(0, 450); x.tgtContext = (x.tgtContext || '').slice(0, 300); });
+  return c;
+}
+function tcSave(rep) {
+  try { localStorage.setItem('proof_last_tc', JSON.stringify({ at: Date.now(), rep: tcCompact(rep) })); } catch (e) { try { localStorage.removeItem('proof_last_tc'); } catch (_) {} }
+  try {
+    const hist = JSON.parse(localStorage.getItem('proof_tc_history') || '[]'), id = rep.createdAt;
+    const entry = { id, date: rep.createdAt, name: rep.target.name, src: rep.source.name, only: rep.only || null, lang: rep.target.lang, words: rep.target.words, issues: rep.issues.length, score: rep.score.value, verdict: rep.score.verdict, model: rep.model, cost: rep.cost, rep: tcCompact(rep) };
+    const i = hist.findIndex((h) => h.name === entry.name && h.src === entry.src && Date.now() - new Date(h.date).getTime() < 6 * 3600 * 1000);
+    if (i >= 0) hist.splice(i, 1);
+    hist.unshift(entry);
+    while (hist.length > 6) hist.pop();
+    for (let n = 0; n < 6; n++) { try { localStorage.setItem('proof_tc_history', JSON.stringify(hist)); break; } catch (e) { if (hist.length > 1) hist.pop(); else break; } }
+  } catch (_) {}
+}
+function tcLoadSaved() {
+  try {
+    const o = JSON.parse(localStorage.getItem('proof_last_tc') || 'null');
+    if (o && o.rep && Date.now() - o.at < 24 * 3600 * 1000) { lastTC = o.rep; }
+  } catch (_) {}
+}
+function tcOpenHistory(id) {
+  try {
+    const e = JSON.parse(localStorage.getItem('proof_tc_history') || '[]').find((h) => h.id === id);
+    if (e) { lastTC = e.rep; TC_RUN = null; tcRenderPage(); showTab('translation'); }
+  } catch (_) {}
+}
+
+// ── Showing the result ─────────────────────────────────────────────────
+const tcState = (x) => (lastTC && lastTC.triage && lastTC.triage[tcKey(x)]) || '';
+function tcRenderPage() {
+  const has = !!lastTC;
+  document.getElementById('tc-empty').style.display = has ? 'none' : '';
+  document.getElementById('tc-content').style.display = has ? 'block' : 'none';
+  if (has) tcRender();
+}
+function tcHl(ctx, quote, cls, max) {
+  ctx = ctx || ''; quote = quote || '';
+  if (!ctx) return quote ? '<mark class="' + cls + '">' + esc(quote) + '</mark>' : '<span class="none">-</span>';
+  let i = quote ? ctx.indexOf(quote) : -1, pre = '', post = '';
+  if (max && ctx.length > max) {                                     // a focused excerpt around the problem, not the whole paragraph
+    const start = Math.max(0, (i >= 0 ? i : 0) - Math.round(max * 0.3)), end = Math.min(ctx.length, start + max);
+    pre = start > 0 ? '...' : ''; post = end < ctx.length ? '...' : ''; ctx = ctx.slice(start, end); i = quote ? ctx.indexOf(quote) : -1;
+  }
+  if (i < 0) return pre + esc(ctx) + post;
+  return pre + esc(ctx.slice(0, i)) + '<mark class="' + cls + '">' + esc(quote) + '</mark>' + esc(ctx.slice(i + quote.length)) + post;
+}
+function tcActive(rep) { return rep.issues.filter((x) => tcState(x) !== 'false'); }
+function tcCoverageHtml(rep) {
+  const c = rep.coverage, G = (n) => n.toLocaleString();
+  const parts = [G(c.srcParas) + ' source and ' + G(c.tgtParas) + ' translation paragraphs'];
+  if (c.complete) {
+    const extra = [];
+    if (c.omitted) extra.push(G(c.omitted) + ' source paragraph' + (c.omitted === 1 ? ' has' : 's have') + ' no counterpart');
+    if (c.added) extra.push(G(c.added) + ' translation paragraph' + (c.added === 1 ? ' has' : 's have') + ' no counterpart');
+    return '<span style="color:#10b981">&#9989; <b>Full coverage.</b> Every one of the ' + parts[0] + ' was matched and checked (' + G(c.oneToOne) + ' one-to-one, ' + G(c.grouped) + ' merged or split).</span>' +
+      (extra.length ? '<br><span style="color:var(--muted)">' + extra.join('; ') + ' (see the issues below).</span>' : '') +
+      (c.dropped ? '<br><span style="color:var(--muted)">' + c.dropped + ' possible issue' + (c.dropped === 1 ? ' was' : 's were') + ' double-checked and dropped as false alarms.</span>' : '');
+  }
+  const lines = [];
+  if (c.windowsDone < c.windows) lines.push((c.windows - c.windowsDone) + ' of ' + c.windows + ' parts have not been checked yet');
+  c.unverified.forEach((u) => lines.push(esc(u.label) + ': ' + u.s.length + ' source and ' + u.t.length + ' translation paragraph(s) could not be matched by the model'));
+  return '<span style="color:#f97316">&#9888;&#65039; <b>Not fully checked.</b> ' + parts[0] + ' in scope. ' + lines.join('; ') + '.</span>';
+}
+function tcRender() {
+  const rep = lastTC; if (!rep) return;
+  const d = new Date(rep.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  document.getElementById('tc-meta').textContent = d + ' · Source: ' + rep.source.name + ' (' + (rep.source.lang || '?') + ', ' + rep.source.words.toLocaleString() + ' words) → Translation: ' + rep.target.name + ' (' + (rep.target.lang || '?') + ', ' + rep.target.words.toLocaleString() + ' words' + (rep.target.pages ? ', ' + rep.target.pages + ' pages' : '') + ')' + (rep.only ? ' · chapters ' + rep.only.join(', ') + ' only' : '');
+  const ce = document.getElementById('tc-cost');
+  if (rep.cost != null) { ce.style.display = 'block'; ce.textContent = 'AI cost: $' + (rep.cost < 0.01 ? rep.cost.toFixed(4) : rep.cost.toFixed(3)) + ' · ' + (rep.inTok || 0).toLocaleString() + ' in + ' + (rep.outTok || 0).toLocaleString() + ' out tokens · ' + modelDisplayName(rep.model); } else ce.style.display = 'none';
+  document.getElementById('tc-coverage').innerHTML = tcCoverageHtml(rep);
+  const ban = document.getElementById('tc-partial');
+  if (!rep.coverage.complete) {
+    ban.hidden = false;
+    ban.innerHTML = '<b>Partial result.</b> ' + (rep.error ? 'The run stopped: ' + esc(rep.error) + '. ' : rep.stopped ? 'The run was stopped. ' : '') + 'The score and issues below cover only the parts checked so far. ' +
+      (TC_RUN && !TC_RUN.state.finished ? '<button class="btn btn-secondary btn-sm" style="margin-left:8px" onclick="tcContinue()">Continue</button>' : 'Run the check again to complete it.');
+  } else ban.hidden = true;
+  // score (false positives do not count)
+  const sc = TC.scoreOf(tcActive(rep), rep.scoredWords), col = sc.verdict === 'Pass' ? '#10b981' : sc.verdict === 'Revise' ? '#f97316' : '#ef4444';
+  const circ = document.getElementById('tc-score-circle'); circ.style.borderColor = col; circ.style.color = col;
+  document.getElementById('tc-score-num').textContent = sc.value; document.getElementById('tc-score-grade').textContent = sc.verdict.toUpperCase();
+  document.getElementById('tc-score-label').textContent = !rep.coverage.complete ? 'Partial check' : rep.only ? 'Selected chapters only' : 'Translation score';
+  // chapters
+  const chips = rep.sections.map((s) => {
+    const act = s.done ? TC.scoreOf(rep.issues.filter((x) => x.chapter === s.num && tcState(x) !== 'false'), s.srcWords || s.tgtWords) : null;
+    const cls = !s.done ? 'todo' : act.verdict === 'Pass' ? 'good' : act.verdict === 'Revise' ? 'warn' : 'bad';
+    const tip = (s.label + (s.title ? ': ' + s.title : '')) + (s.done ? ' · score ' + act.value + ' · ' + act.counts.Critical + ' critical, ' + act.counts.Major + ' major, ' + act.counts.Minor + ' minor, ' + act.counts.Query + ' query' : ' · not checked yet');
+    return '<div class="tc-ch ' + cls + (tcChapterFilter === s.num ? ' sel' : '') + '" title="' + esc(tip) + '" onclick="tcPickChapter(' + s.num + ')">' + (s.num === 0 ? 'Front' : s.label === 'Whole document' ? 'All' : s.num) + '<small>' + (s.done ? act.value : '-') + '</small></div>';
+  });
+  document.getElementById('tc-chapters').innerHTML = chips.join('');
+  // stats
+  const act = tcActive(rep), grid = document.getElementById('tc-stats'); grid.innerHTML = '';
+  addStatCard(grid, act.length, 'Total issues', 'var(--accent)');
+  ['Critical', 'Major', 'Minor', 'Query'].forEach((sv) => addStatCard(grid, act.filter((x) => x.severity === sv).length, sv, TC_SEV_COLORS[sv]));
+  TC.TYPES.forEach((t) => { const n = act.filter((x) => x.type === t).length; if (n) addStatCard(grid, n, t, TC_TYPE_COLORS[t]); });
+  // filters
+  const tb = document.getElementById('tc-filter-type'), sb = document.getElementById('tc-filter-sev');
+  const types = TC.TYPES.filter((t) => rep.issues.some((x) => x.type === t)), sevs = ['Critical', 'Major', 'Minor', 'Query'].filter((s) => rep.issues.some((x) => x.severity === s));
+  tb.innerHTML = ''; sb.innerHTML = '';
+  const mk = (lbl, on, color, cls, fn) => { const b = document.createElement('button'); b.className = cls + (on ? ' on' : ''); b.textContent = lbl; if (on) b.style.background = color; b.onclick = fn; return b; };
+  if (types.length > 1) {
+    tb.style.display = 'flex'; tb.appendChild(mk('All', tcFilters.size === 0, 'var(--accent)', 'filter-btn', () => { tcFilters.clear(); tcShown = 120; tcRender(); }));
+    types.forEach((t) => tb.appendChild(mk(t, tcFilters.has(t), TC_TYPE_COLORS[t], 'filter-btn', () => { tcFilters.has(t) ? tcFilters.delete(t) : tcFilters.add(t); tcShown = 120; tcRender(); })));
+  } else tb.style.display = 'none';
+  if (sevs.length > 1) {
+    sb.style.display = 'flex'; const l = document.createElement('span'); l.className = 'sev-filter-label'; l.textContent = 'Severity:'; sb.appendChild(l);
+    sb.appendChild(mk('All', tcSevFilter.size === 0, '#64748b', 'sev-btn', () => { tcSevFilter.clear(); tcShown = 120; tcRender(); }));
+    sevs.forEach((s) => sb.appendChild(mk(s, tcSevFilter.has(s), TC_SEV_COLORS[s], 'sev-btn', () => { tcSevFilter.has(s) ? tcSevFilter.delete(s) : tcSevFilter.add(s); tcShown = 120; tcRender(); })));
+  } else sb.style.display = 'none';
+  if (tcChapterFilter !== null) { const c = mk('Chapter ' + (tcChapterFilter || 'front') + '  ×', true, 'var(--accent)', 'sev-btn', () => { tcChapterFilter = null; tcRender(); }); sb.style.display = 'flex'; sb.appendChild(c); }
+  tcRenderRows();
+}
+function tcFiltered() {
+  return lastTC.issues.filter((x) => (!tcFilters.size || tcFilters.has(x.type)) && (!tcSevFilter.size || tcSevFilter.has(x.severity)) && (tcChapterFilter === null || x.chapter === tcChapterFilter));
+}
+function tcRenderRows() {
+  const list = tcFiltered(), body = document.getElementById('tc-body'), shown = list.slice(0, tcShown);
+  if (!list.length) { body.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:28px;color:var(--muted)">' + (lastTC.issues.length ? 'No issues match these filters.' : '&#127881; No translation issues were found.') + '</td></tr>'; document.getElementById('tc-more').style.display = 'none'; return; }
+  body.innerHTML = shown.map((x) => {
+    const c = TC_TYPE_COLORS[x.type] || '#94a3b8', st = tcState(x), by = x.origin === 'rule' ? 'automatic check' : x.verified === 'confirmed' ? 'AI, double-checked' : 'AI';
+    const where = '<b>' + esc(x.tgtLoc || '-') + '</b>' + (x.srcLoc ? '<br>source: ' + esc(x.srcLoc) : '') + (x.page ? '<br>p.' + x.page : '');
+    const tgt = x.insert && x.type === 'Omission'
+      ? '<span class="none">Missing here</span>' + (x.tgtContext ? '<div style="color:var(--muted);font-size:11px;margin-top:3px" dir="auto">after: ' + esc(x.tgtContext.length > 140 ? '...' + x.tgtContext.slice(-140) : x.tgtContext) + '</div>' : '')
+      : tcHl(x.tgtContext, x.tgtText, 'o', 260);
+    const fix = x.fix ? '<mark class="c">' + esc(x.fix) + '</mark>' : '<span class="none">-</span>';
+    return '<tr class="' + (st === 'fixed' ? 'row-fixed' : st === 'false' ? 'row-false' : '') + '"><td style="color:var(--muted);font-weight:700;font-size:11px">' + x.id + '</td>' +
+      '<td class="tc-where">' + where + '</td>' +
+      '<td><span class="badge" style="background:' + c + '22;color:' + c + ';border:1px solid ' + c + '44">' + esc(x.type) + '</span> <span class="sev-badge sev-' + esc(x.severity) + '">' + esc(x.severity) + '</span><div style="font-size:10px;color:var(--muted);margin-top:3px">' + by + '</div></td>' +
+      '<td class="tc-src" dir="auto" title="' + esc(x.srcContext) + '">' + tcHl(x.srcContext, x.srcText, 'o', 260) + '</td><td class="tc-tgt" dir="auto" title="' + esc(x.tgtContext) + '">' + tgt + '</td><td class="tc-fix" dir="auto">' + fix + '</td>' +
+      '<td class="tc-why">' + esc(x.why) + (x.note && x.verified === 'unsure' ? '<br><i>' + esc(x.note) + '</i>' : '') + '</td>' +
+      '<td class="triage-cell" style="white-space:nowrap"><button class="triage-btn' + (st === 'fixed' ? ' t-fixed' : '') + '" onclick="tcTriage(' + x.id + ',\'fixed\')" title="Mark as fixed">&#10003;</button><button class="triage-btn' + (st === 'false' ? ' t-false' : '') + '" onclick="tcTriage(' + x.id + ',\'false\')" title="Mark as false positive (leaves the score)">&#10007;</button></td></tr>';
+  }).join('');
+  const more = document.getElementById('tc-more'); more.style.display = list.length > shown.length ? '' : 'none'; more.textContent = 'Show ' + Math.min(120, list.length - shown.length) + ' more (' + (list.length - shown.length) + ' left)';
+}
+function tcShowMore() { tcShown += 120; tcRenderRows(); }
+function tcPickChapter(n) { tcChapterFilter = tcChapterFilter === n ? null : n; tcShown = 120; tcRender(); }
+function tcTriage(id, st) {
+  const x = lastTC.issues.find((q) => q.id === id); if (!x) return;
+  lastTC.triage = lastTC.triage || {}; const k = tcKey(x);
+  if (lastTC.triage[k] === st) delete lastTC.triage[k]; else lastTC.triage[k] = st;
+  tcSave(lastTC); tcRender();
+}
+
+// ── Exports ────────────────────────────────────────────────────────────
+function tcToggleExport(e) { e.stopPropagation(); document.getElementById('tc-export-menu').classList.toggle('open'); }
+function tcCloseExport() { document.getElementById('tc-export-menu').classList.remove('open'); }
+document.addEventListener('click', () => tcCloseExport());
+const tcFileBase = () => srSafe((lastTC && lastTC.target && lastTC.target.name) || 'translation') + '-translation-check';
+function tcExportCsv() {
+  if (!lastTC) return;
+  const rows = TC.toCsvRows(tcActive(lastTC));
+  const csv = String.fromCharCode(0xFEFF) + [TC.CSV_HEAD].concat(rows).map((r) => r.map((v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"').join(',')).join('\r\n');
+  dlBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), tcFileBase() + '.csv'); toast('CSV downloaded');
+}
+function tcExportJson() { if (!lastTC) return; dlBlob(new Blob([JSON.stringify(lastTC, null, 2)], { type: 'application/json' }), tcFileBase() + '.json'); toast('JSON downloaded'); }
+async function tcExportWord() {
+  if (!lastTC) return;
+  if (typeof docx === 'undefined') { toast('Word library not loaded. Reload the page.', 'err'); return; }
+  const { Document, Paragraph, Table, TableRow, TableCell, TextRun, WidthType, BorderStyle, Packer, PageOrientation } = docx;
+  const rep = lastTC, issues = tcActive(rep), sc = TC.scoreOf(issues, rep.scoredWords);
+  const fS = getExportFont(rep.source.lang), fT = getExportFont(rep.target.lang), rtl = isRTLLang(rep.target.lang);
+  const lb = { style: BorderStyle.SINGLE, size: 1, color: 'D0D7DE' }, brd = { top: lb, bottom: lb, left: lb, right: lb };
+  const W = [500, 1300, 1100, 3200, 3200, 2600, 2400];
+  const run = (t, o) => new TextRun(Object.assign({ text: String(t == null ? '' : t), size: 16, font: fS }, o || {}));
+  const cell = (children, w, fill) => new TableCell({ borders: brd, width: { size: w, type: WidthType.DXA }, shading: fill ? { fill } : undefined, children });
+  const para = (runs, o) => new Paragraph(Object.assign({ children: runs }, o || {}));
+  const hl = (ctx, quote, color, font, rtlRun) => {
+    const o = { font, color: '666666', rightToLeft: rtlRun }; if (!ctx) return [run(quote || '-', { font, bold: true, color, rightToLeft: rtlRun })];
+    const i = quote ? ctx.indexOf(quote) : -1; if (i < 0) return [run(ctx, o)];
+    return [run(ctx.slice(0, i), o), run(quote, { font, bold: true, color, rightToLeft: rtlRun }), run(ctx.slice(i + quote.length), o)];
+  };
+  const head = new TableRow({ tableHeader: true, children: ['#', 'Where', 'Type', 'Source', 'Translation', 'Suggested fix', 'Why'].map((h, i) => cell([para([run(h, { bold: true, size: 15 })])], W[i], 'F1F5F9')) });
+  const rows = issues.map((x) => new TableRow({ children: [
+    cell([para([run(x.id)])], W[0]),
+    cell([para([run(x.tgtLoc || '-', { bold: true })]), para([run(x.srcLoc ? 'source: ' + x.srcLoc : '', { color: '666666' })]), para([run(x.page ? 'p.' + x.page : '', { color: '666666' })])], W[1]),
+    cell([para([run(x.type, { bold: true })]), para([run(x.severity, { color: x.severity === 'Critical' ? 'B91C1C' : x.severity === 'Major' ? 'C2410C' : '555555' })])], W[2]),
+    cell([para(hl(x.srcContext, x.srcText, 'B91C1C', fS, false))], W[3]),
+    cell([para(x.insert && x.type === 'Omission' ? [run('(missing here) after: ' + (x.tgtContext || '').slice(-120), { font: fT, color: '666666', rightToLeft: rtl })] : hl(x.tgtContext, x.tgtText, 'B91C1C', fT, rtl), rtl ? { bidirectional: true } : {})], W[4]),
+    cell([para([run(x.fix || '-', { font: fT, bold: true, color: '047857', rightToLeft: rtl })], rtl ? { bidirectional: true } : {})], W[5]),
+    cell([para([run(x.why)])], W[6]),
+  ] }));
+  const cnt = sc.counts;
+  const doc = new Document({ sections: [{ properties: { page: { size: { orientation: PageOrientation.LANDSCAPE } } }, children: [
+    para([run('Translation check', { bold: true, size: 34 })], { spacing: { after: 80 } }),
+    para([run(rep.target.name + '  vs  ' + rep.source.name + '  ·  ' + new Date(rep.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }), { color: '666666', size: 18 })], { spacing: { after: 120 } }),
+    para([run('Score ' + sc.value + ' / 100 · ' + sc.verdict + ' · ' + cnt.Critical + ' critical, ' + cnt.Major + ' major, ' + cnt.Minor + ' minor, ' + cnt.Query + ' to query', { bold: true, size: 20 })], { spacing: { after: 80 } }),
+    para([run('Coverage: ' + (rep.coverage.complete ? 'full' : 'PARTIAL') + ' · ' + rep.coverage.srcParas.toLocaleString() + ' source and ' + rep.coverage.tgtParas.toLocaleString() + ' translation paragraphs. Please check each row against the original and correct the translation where needed.', { size: 17, color: '444444' })], { spacing: { after: 200 } }),
+    new Table({ rows: [head].concat(rows), width: { size: W.reduce((a, b) => a + b, 0), type: WidthType.DXA } }),
+  ] }] });
+  dlBlob(await Packer.toBlob(doc), tcFileBase() + '.docx'); toast('Word report downloaded');
+}
+
+// ── History list ───────────────────────────────────────────────────────
+function tcHistoryHtml() {
+  let hist = []; try { hist = JSON.parse(localStorage.getItem('proof_tc_history') || '[]'); } catch (_) {}
+  if (!hist.length) return '';
+  return '<div style="margin:18px 0 8px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Translation checks</div>' + hist.map((h) => {
+    const col = h.verdict === 'Pass' ? '#10b981' : h.verdict === 'Revise' ? '#f97316' : '#ef4444';
+    const date = new Date(h.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return '<div class="history-entry"><div class="hist-score" style="border-color:' + col + ';color:' + col + '"><div class="hs-num">' + h.score + '</div><div class="hs-grade">' + esc(h.verdict.toUpperCase()) + '</div></div><div class="hist-info"><div class="hist-file" title="' + esc(h.name) + '">&#127760; ' + esc(h.name) + ' <span style="color:var(--muted);font-weight:400">vs ' + esc(h.src) + '</span></div><div class="hist-meta">' + date + ' · ' + esc(h.lang || '') + ' · ' + (h.words || 0).toLocaleString() + ' words · ' + h.issues + ' issues' + (h.only ? ' · chapters ' + h.only.join(', ') + ' only' : '') + (h.model ? ' · ' + esc(modelDisplayName(h.model)) : '') + (h.cost != null ? ' · $' + (h.cost < 0.01 ? h.cost.toFixed(4) : h.cost.toFixed(2)) : '') + '</div></div><div class="hist-actions"><button class="btn btn-secondary btn-sm" onclick="tcOpenHistory(\'' + h.id + '\')">View</button></div></div>';
+  }).join('');
+}
+function tcInit() { tcInitSourceCard(); tcPaintSource(); tcLoadSaved(); }
+
+// ══════════════════════════════════════════════
 // Init
 // ══════════════════════════════════════════════
 (function init() {
@@ -4708,6 +5308,7 @@ async function srInit() {
   if (k) document.getElementById('api-key-input').value=k;
   const ok=localStorage.getItem('proof_openai_key');
   if (ok) document.getElementById('openai-key-input').value=ok;
+  tcInit();
   TEAM_JOINING = teamBoot();
   if (!k && !ok && !TEAM_JOINING && !srCfg()) setTimeout(()=>showTab('setup'),200);
   const t=localStorage.getItem('proof_theme')||'dark';
