@@ -911,7 +911,7 @@
 <footer class="app-footer">
   <span>© 2026 Explorer Publishing &amp; Distribution LLC · All rights reserved</span>
   <span id="cost-footer" style="font-size:10px;color:var(--muted);opacity:.65"></span>
-  <span class="app-footer-version">v4.1.1</span>
+  <span class="app-footer-version">v4.1.2</span>
 </footer>
 
 <div class="toast" id="toast"></div>
@@ -992,32 +992,83 @@ function modelDisplayName(id) {
 }
 
 // ══════════════════════════════════════════════
-// Robust JSON parser (handles extra text before/after JSON — e.g. Haiku model)
+// Robust JSON reader for model replies.
+// Models sometimes copy a quoted phrase into a value without escaping the quote marks, put a raw
+// line break inside a value, add a trailing comma, or wrap the JSON in prose / a code fence.
+// parseClaudeJSON reads those replies anyway; only a reply that is really not JSON (a sentence,
+// a refusal, a cut-off) throws, and the error carries the reply text in `err.raw` for the dialog.
 // ══════════════════════════════════════════════
-function parseClaudeJSON(text) {
-  // Strip markdown code fences if present
-  let s = text.replace(/^```json?\s*/i,'').replace(/\s*```$/i,'').trim();
-  // Fast path: direct parse
-  try { return JSON.parse(s); } catch(_) {}
-  // Bracket-matching: find the outermost { … } and parse just that
-  const start = s.indexOf('{');
-  if (start === -1) throw new Error('No JSON object found in model response');
-  let depth = 0, inStr = false, esc = false;
-  for (let i = start; i < s.length; i++) {
-    if (esc) { esc = false; continue; }
-    if (s[i] === '\\' && inStr) { esc = true; continue; }
-    if (s[i] === '"') { inStr = !inStr; continue; }
+const JSON_FIX_NOTE = '\n\nNOTE: your previous reply could not be read as JSON. Reply with ONE valid JSON object and nothing else. Escape every double quote inside a text value as \\" and never put a line break inside a text value.';
+
+// Fix the usual slips inside a JSON-looking string; strings that were already valid are unchanged.
+function repairJSON(s) {
+  const nextNonSpace = (i) => { while (i < s.length && /\s/.test(s[i])) i++; return i; };
+  // is the quote at index i the real end of a string (next token is structure), or a quote inside the text?
+  const closesString = (i) => {
+    const j = nextNonSpace(i + 1), n = s[j];
+    if (n === undefined || n === '}' || n === ']' || n === ':') return true;
+    if (n === ',') { const k = nextNonSpace(j + 1); return k >= s.length || /^(["{\[}\]]|-?\d|true\b|false\b|null\b)/.test(s.slice(k, k + 6)); }
+    return false;
+  };
+  let out = '', inStr = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
     if (!inStr) {
-      if (s[i] === '{') depth++;
-      else if (s[i] === '}') {
-        if (--depth === 0) {
-          try { return JSON.parse(s.slice(start, i + 1)); }
-          catch(e) { throw new Error('JSON parse failed: ' + e.message); }
-        }
-      }
+      if (c === ',') { const n = s[nextNonSpace(i + 1)]; if (n === '}' || n === ']') continue; }   // trailing comma
+      out += c;
+      if (c === '"') inStr = true;
+      continue;
     }
+    if (c === '\\') {
+      const n = s[i + 1];
+      if (n !== undefined && '"\\/bfnrt'.includes(n)) { out += c + n; i++; }
+      else if (n === 'u' && /^[0-9a-fA-F]{4}$/.test(s.slice(i + 2, i + 6))) { out += s.slice(i, i + 6); i += 5; }
+      else out += '\\\\';                                                                             // stray backslash
+      continue;
+    }
+    if (c === '"') { if (closesString(i)) { out += c; inStr = false; } else out += '\\"'; continue; }
+    if (c === '\n') out += '\\n';
+    else if (c === '\r') out += '\\r';
+    else if (c === '\t') out += '\\t';
+    else if (c < ' ') out += '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0');
+    else out += c;
   }
-  throw new Error('Incomplete JSON in model response (response may have been truncated)');
+  return out;
+}
+
+// The first complete { ... } in s (s starts at its opening brace), or null if it never closes.
+function sliceJSONObject(s) {
+  let depth = 0, inStr = false, esc = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (esc) { esc = false; continue; }
+    if (inStr) { if (c === '\\') esc = true; else if (c === '"') inStr = false; continue; }
+    if (c === '"') { inStr = true; continue; }
+    if (c === '{') depth++;
+    else if (c === '}' && --depth === 0) return s.slice(0, i + 1);
+  }
+  return null;
+}
+
+function parseClaudeJSON(text) {
+  const raw = String(text == null ? '' : text);
+  const fail = (why) => { const e = new Error('JSON parse failed: ' + why); e.raw = raw; return e; };
+  let s = raw.trim();
+  const fenced = s.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);        // a fenced block anywhere in the reply
+  s = fenced ? fenced[1].trim() : s.replace(/^```(?:json)?\s*/i, '').trim();
+  try { return JSON.parse(s); } catch (_) {}
+  const start = s.indexOf('{');
+  if (start === -1) throw fail('the reply has no JSON in it');
+  const body = s.slice(start);
+  let firstErr = null, complete = false;
+  for (const cand of [body, repairJSON(body)]) {
+    const obj = sliceJSONObject(cand);
+    if (!obj) continue;
+    complete = true;
+    try { return JSON.parse(obj); } catch (e) { firstErr = firstErr || e; }
+  }
+  throw fail(complete ? (firstErr && firstErr.message) || 'the reply is not valid JSON'
+                      : 'incomplete JSON (the reply was cut off before it ended)');
 }
 
 // ══════════════════════════════════════════════
@@ -2314,14 +2365,14 @@ async function proofreadChunkText(chunkText, partLabel, ctx, depth = 0) {
     return m;
   };
 
-  let lastErr = null;
+  let lastErr = null, fixNote = '';
   for (let attempt = 0; attempt < 3; attempt++) {
     if (attempt > 0) {
-      ui(`Chunk ${ci} — retrying (attempt ${attempt + 1}/3)`, 'JSON parse failed — resending…');
+      ui(`Chunk ${ci} — retrying (attempt ${attempt + 1}/3)`, 'The reply could not be read — asking again with a format reminder…');
       await new Promise(r => setTimeout(r, 3000));
     }
     try {
-      const userMsg = `Proofread this text${partLabel ? ` (${partLabel})` : ''}:\n\n${chunkText}`;
+      const userMsg = `Proofread this text${partLabel ? ` (${partLabel})` : ''}:\n\n${chunkText}${fixNote}`;
       const res = isOpenAI
         ? await callOpenAI({
             model, temperature: 0, response_format: { type: 'json_object' },
@@ -2338,6 +2389,9 @@ async function proofreadChunkText(chunkText, partLabel, ctx, depth = 0) {
       const outTok = isOpenAI ? (data.usage?.completion_tokens || 0) : (data.usage?.output_tokens || 0);
       console.debug('[Proofreader] chunk', ci, partLabel, '— raw:', rawText.slice(0, 200));
 
+      // the model declined this passage (HTTP 200, no answer): treat like a content-filter block
+      if (isOpenAI ? data.choices?.[0]?.finish_reason === 'content_filter' : data.stop_reason === 'refusal')
+        throw new Error('POLICY_ERROR: the model declined to answer this passage');
       const truncated = isOpenAI ? data.choices?.[0]?.finish_reason === 'length' : data.stop_reason === 'max_tokens';
       if (truncated) {
         const split = await bisect('output limit reached');
@@ -2357,10 +2411,22 @@ async function proofreadChunkText(chunkText, partLabel, ctx, depth = 0) {
         if (split) return split;
         return { ...blank(), skipped: [{ pages: getChunkPageRange(chunkText), chars: chunkText.length, reason: 'content filter' }] };
       }
-      if (/json|parse|incomplete/i.test(msg) && attempt < 2) continue;
+      if (/json|parse|incomplete/i.test(msg)) {
+        if (attempt < 2) { fixNote = JSON_FIX_NOTE; continue; }
+        break;                                           // three unreadable replies: handled below
+      }
+      e.model = model;
       throw e;
     }
   }
+  // Three unreadable replies in a row. A smaller piece usually gets a readable answer; otherwise keep every
+  // complete error the reply did contain and record the rest as unchecked. Never fall silent.
+  const split = await bisect('reply not readable');
+  if (split) return split;
+  const kept = salvageErrors(repairJSON(String((lastErr && lastErr.raw) || '')));
+  if (kept.length)
+    return { ...blank(), errors: kept, incomplete: [{ pages: getChunkPageRange(chunkText), chars: chunkText.length, reason: 'the model reply could not be read' }] };
+  if (lastErr) lastErr.model = model;
   throw lastErr;
 }
 
@@ -2858,12 +2924,11 @@ Return ONLY valid JSON (no markdown, no extra text):
               `• Or switch to <strong>Haiku 4.5</strong> (lowest token usage)`
             );
           } else if (isJsonErr) {
-            showApiError(`Parsing error on chunk ${ci+1}`,
-              `The model returned a response that couldn't be parsed as JSON after 3 attempts.<br><br>`+
+            showApiError(`Could not read the reply on chunk ${ci+1}`,
               (completedChunks > 0
                 ? `A partial report for ${completedChunks} of ${chunks.length} chunks has been generated below. Use <strong>Continue</strong> to resume from chunk ${ci+1}.<br><br>`
                 : ``)+
-              `<strong>To fix:</strong> switch to <strong>Sonnet 4.6</strong> (most reliable JSON output) and click Continue.`
+              jsonErrHelpHtml(chunkErr)
             );
           } else {
             toast(`Chunk ${ci+1} error: ${msg}`, 'err');
@@ -2943,7 +3008,7 @@ Return ONLY valid JSON (no markdown, no extra text):
                               msg.toLowerCase().includes('incomplete');
           const isPolicyErr = msg.startsWith('POLICY_ERROR:') || isPolicyError(msg);
           const isNetErr = isNetworkError(msg);
-          const docName = docInfo.filename || 'this document';
+          const docName = docInfo.filename || 'pasted text';
           const wc = docInfo.wordCount ? `${docInfo.wordCount.toLocaleString()}-word ` : '';
           showApiError(
             `Proofread failed — no results saved`,
@@ -2956,10 +3021,7 @@ Return ONLY valid JSON (no markdown, no extra text):
                 `• Switch to <strong>Sonnet 4.6</strong> — has a more accurate safety classifier<br>`+
                 `• Or try re-running — the filter is not always consistent`
               : isJsonErr
-              ? `<strong>Cause:</strong> The model returned JSON that couldn't be parsed after 3 attempts. This usually means each chunk produced too many errors for the model's output limit.<br><br>`+
-                `<strong>Fix:</strong><br>`+
-                `• Switch to <strong>Sonnet 4.6</strong> — much more reliable JSON output for large, error-heavy documents<br>`+
-                `• Or split the document into smaller parts and proofread each separately`
+              ? jsonErrHelpHtml(err)
               : `<strong>Error:</strong> ${esc(msg)}<br><br>`+
                 `<strong>Tip:</strong> Try again, or switch to Sonnet 4.6 for more reliable results on large documents`)
           );
@@ -3762,6 +3824,18 @@ function toast(msg,type,ms) {
 }
 // ── Connection problems ───────────────────────────────────────────────
 const isNetworkError = (msg) => /^NETWORK:|failed to fetch|networkerror|load failed|network request failed|network error/i.test(msg || '');
+function jsonErrHelpHtml(err) {
+  const raw = String((err && err.raw) || '').trim();
+  const shown = raw ? esc(raw.length > 500 ? raw.slice(0, 500) + '...' : raw) : '(the reply was empty)';
+  const why = esc(String((err && err.message) || '').replace(/^JSON parse failed:\s*/i, ''));
+  const name = (err && err.model) ? modelDisplayName(err.model) : 'The model';
+  const alt = (err && /haiku|mini/i.test(err.model || '')) ? 'a larger model such as <strong>Sonnet 4.6</strong> or <strong>GPT-4o</strong>' : '<strong>GPT-4o</strong> (it is forced to answer in JSON) or another Claude model';
+  return `<strong>Cause:</strong> ${esc(name)} answered, but its reply was not in a form the portal could read, even after the portal repaired it and asked again with a format reminder. The connection and the key are fine, and this is not about how many errors it found.<br><br>`+
+    `<strong>Try:</strong><br>`+
+    `&bull; Press Proofread again (a second answer is often fine)<br>`+
+    `&bull; Or switch the model to ${alt}<br><br>`+
+    `<details><summary style="cursor:pointer">Technical detail</summary><div style="margin-top:6px;font-size:12px;opacity:.85">${why}<pre style="white-space:pre-wrap;word-break:break-word;margin:6px 0 0;max-height:160px;overflow:auto;text-align:left">${shown}</pre></div></details>`;
+}
 function netErrorHelpHtml(msg) {
   const who = /openai/i.test(msg) ? 'OpenAI' : 'Anthropic', host = who === 'OpenAI' ? 'api.openai.com' : 'api.anthropic.com';
   return '<strong>Your browser could not reach ' + who + '</strong> (' + host + '). The request got no answer at all, so this is a <strong>connection problem</strong>, not a problem with your document, your API key or the model.<br><br>' +

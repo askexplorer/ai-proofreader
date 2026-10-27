@@ -6,6 +6,7 @@ Nothing here ships to users; it only protects the code from regressions.
 |---|---|
 | `node tests/tc-core.test.mjs` | Translation-check engine on a generated sample book with known defects (omission, addition, changed number, untranslated text, missing and extra chapter, mistyped chapter number) and a fake model that misbehaves on purpose (bad JSON, incomplete answers, truncation, invented quotes, false omission claims). Also stop and continue. |
 | `node tests/tc-rtf.test.mjs` | RTF reader, paragraph and chapter detection, the scoring rubric. |
+| `node tests/proof-json.test.mjs` | The proofreading reply reader cut out of `index.html`: unescaped quotes, raw line breaks, trailing commas, fences and prose around the JSON, cut-off and non-JSON replies, salvage, and that 3,000 random valid replies are never altered by the repair step. |
 | `supabase/` | The team workspace database rules, run on a real Postgres (PGlite) with a stand-in for Supabase Auth. |
 
 The first two need only Node 18+. For the Supabase tests:
