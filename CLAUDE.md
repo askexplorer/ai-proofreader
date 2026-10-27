@@ -8,7 +8,7 @@ Single-file browser app for professional AI-powered proofreading. Powered by Ant
 **Live repo:** github.com/askexplorer/ai-proofreader (remote `askexplorer`; the old `origin` = shakkeer-cloud is retired)  
 **Live site:** https://askexplorer.github.io/ai-proofreader/ (GitHub Pages, serves `master`)  
 **Branch:** master  
-**Current version:** v4.1.3
+**Current version:** v4.1.4
 
 ---
 
@@ -232,7 +232,7 @@ Scratchpad (not in repo): a PGlite-based stand-in for Supabase (`pg_shim.mjs`: P
 
 **What it does:** compares a translation with its source document and reports omissions, additions, wrong meaning, wrong numbers/dates, terminology and untranslated text, with a score (fixed rubric) and a list the translator can answer through a review link. **The AI must account for every paragraph on both sides**; nothing may be silently skipped.
 
-**UI:** Proof page -> "Compare with a source document (optional)" card (drop the original; `.docx`, `.idml`, `.pdf`, `.txt`, or a `.doc` that is really RTF) -> **Check translation** (the translation is whatever is in the main box) -> confirm dialog (structure check, optional "only these chapters" for a cheap pilot, cost/time estimate, notes for the AI) -> **Translation** tab (score ring, chapter heat-map, coverage statement, filters, issues table, triage buttons, Continue after a stop/failure, exports CSV/Word/JSON, **Send to translator** = share link with `kind:'translation'`).
+**UI (v4.1.4):** the Proof page opens with a two-way choice, **Proofread a document** | **Check a translation** (`setProofMode`, remembered in `localStorage.proof_mode`, `#proof-page[data-mode]` + `.only-proof` / `.only-tc` show only the steps of the chosen mode). Translation mode = 1 add the translation (main upload/paste box), 2 add the original (the `.docx`, `.idml`, `.pdf`, `.txt`, or a `.doc` that is really RTF), 3 settings; ONE primary button (`#proof-btn`, `runPrimary()` -> `tcStart()` in this mode). Earlier the translation check was a small optional card with its own button, and users pressed the big Proofread button, got a normal proofreading report and found the Translation tab empty -> confirm dialog (structure check, optional "only these chapters" for a cheap pilot, cost/time estimate, notes for the AI) -> **Translation** tab (score ring, chapter heat-map, coverage statement, filters, issues table, triage buttons, Continue after a stop/failure, exports CSV/Word/JSON, **Send to translator** = share link with `kind:'translation'`).
 
 **Pipeline (tc-core.js):**
 1. Read both into paragraphs (`rtfToText`, `parasFromText`, `parasFromPages` keeps IDML/PDF page numbers). Real binary `.doc` (OLE) is refused with a "Save as .docx" message.

@@ -322,6 +322,18 @@
     .nav-badge[hidden] { display:none; }
     #team-card[hidden], #sr-setup-card[hidden], #team-admin[hidden] { display:none; }
     .sev-Major { color:#f97316; }
+    .mode-switch { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:0 0 6px; }
+    .mode-opt { display:flex; gap:12px; align-items:flex-start; text-align:left; padding:13px 15px; border:2px solid var(--border); background:var(--surface); color:var(--text); border-radius:12px; cursor:pointer; font:inherit; text-transform:none; letter-spacing:0; }
+    .mode-opt:hover { border-color:var(--accent); }
+    .mode-opt.active { border-color:var(--accent); background:var(--sf2); box-shadow:0 0 0 3px rgba(99,102,241,.2); }
+    .mode-opt .mo-ico { font-size:22px; line-height:1.2; flex-shrink:0; }
+    .mode-opt b { display:block; font-size:14px; }
+    .mode-opt small { display:block; margin-top:3px; font-size:12px; color:var(--muted); line-height:1.45; font-weight:400; }
+    .step-label { display:flex; align-items:center; gap:9px; margin:20px 0 9px; font-size:13px; font-weight:700; }
+    .step-label small { font-weight:400; color:var(--muted); font-size:12px; }
+    .step-num { width:22px; height:22px; border-radius:50%; background:var(--accent); color:#fff; font-size:12px; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
+    #proof-page[data-mode="proof"] .only-tc, #proof-page[data-mode="translation"] .only-proof { display:none !important; }
+    @media (max-width:640px) { .mode-switch { grid-template-columns:1fr; } }
     .source-card { border:1px solid var(--border); background:var(--surface); border-radius:12px; margin:14px 0; overflow:hidden; }
     .sc-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:11px 14px; cursor:pointer; user-select:none; }
     .sc-head:hover { background:var(--sf2); }
@@ -448,25 +460,36 @@
 </nav>
 
 <!-- ══════════ PROOF PAGE ══════════ -->
-<div id="proof-page" class="page active">
+<div id="proof-page" class="page active" data-mode="proof">
+
+  <div class="mode-switch" id="mode-switch" role="tablist" aria-label="What do you want to do?">
+    <button class="mode-opt active" data-mode="proof" role="tab" onclick="setProofMode('proof')">
+      <span class="mo-ico">&#10022;</span><span><b>Proofread a document</b><small>Find spelling, grammar, punctuation and style problems in one document.</small></span>
+    </button>
+    <button class="mode-opt" data-mode="translation" role="tab" onclick="setProofMode('translation')">
+      <span class="mo-ico">&#127760;</span><span><b>Check a translation</b><small>Compare a translation with its original: missing or added text, wrong meaning, wrong numbers.</small></span>
+    </button>
+  </div>
+
+  <div class="step-label"><span class="step-num">1</span><span class="only-proof">Add the document to proofread</span><span class="only-tc">Add the translation <small>(the document that will be checked)</small></span></div>
 
   <div class="upload-zone" id="upload-zone"
        onclick="document.getElementById('file-input').click()"
        ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
     <input type="file" id="file-input" accept=".pdf,.docx,.doc,.txt,.idml" multiple onchange="handleFileInput(event)">
     <div class="icon">📄</div>
-    <h3>Drop your document here</h3>
-    <small>PDF, Word (.docx), InDesign (.idml), plain text · Multiple files supported</small>
+    <h3><span class="only-proof">Drop your document here</span><span class="only-tc">Drop the translation here</span></h3>
+    <small><span class="only-proof">PDF, Word (.docx), InDesign (.idml), plain text · Multiple files supported</span><span class="only-tc">PDF, Word (.docx), InDesign (.idml) or plain text · one file</span></small>
     <div class="hint">Click to browse</div>
   </div>
 
   <div class="file-queue" id="file-queue"></div>
 
-  <button class="btn btn-secondary analyse-standalone" id="analyse-btn" onclick="analyseDocument()">
+  <button class="btn btn-secondary analyse-standalone only-proof" id="analyse-btn" onclick="analyseDocument()">
     📊 Analyse Document
   </button>
 
-  <div class="analyse-panel" id="analyse-panel">
+  <div class="analyse-panel only-proof" id="analyse-panel">
     <div class="analyse-panel-header">
       <h4>📊 Document Analysis</h4>
       <button onclick="closeAnalyse()">×</button>
@@ -481,42 +504,43 @@
     oninput="updateCharCount()"></textarea>
   <div class="char-counter" id="char-counter">0 words · 0 / 300,000 chars</div>
 
-  <div class="source-card" id="source-card">
-    <div class="sc-head" onclick="tcToggleSource()">
-      <span class="sc-title">🌐 Compare with a source document <span class="sc-opt">(optional)</span></span>
-      <span class="sc-state" id="tc-src-state">Not added</span>
+  <div class="step-label only-tc"><span class="step-num">2</span>Add the original <small>(the document it was translated from)</small></div>
+  <div class="source-card only-tc" id="source-card">
+    <div class="sc-head" style="cursor:default">
+      <span class="sc-title">&#127760; Original (source) document</span>
+      <span class="sc-state" id="tc-src-state">Not added yet</span>
     </div>
-    <div class="sc-body" id="tc-src-body" hidden>
-      <p class="sr-hint" style="margin:0 0 10px">Is the document above a <strong>translation</strong>? Add the <strong>original</strong> here (for example the English manuscript or its InDesign file). The portal then checks the translation against it for missing or added text, wrong meaning, and wrong numbers or names, and gives it a translation score. The document above stays the translation.</p>
+    <div class="sc-body" id="tc-src-body">
+      <p class="sr-hint" style="margin:0 0 10px">For example the English manuscript or its InDesign file. The portal compares the translation from step 1 against it and reports missing or added text, wrong meaning, and wrong numbers or names, with a translation score.</p>
       <div class="sc-drop" id="tc-drop" onclick="document.getElementById('tc-file').click()" ondrop="tcDropSource(event)" ondragover="event.preventDefault();this.classList.add('over')" ondragleave="this.classList.remove('over')">
         <input type="file" id="tc-file" accept=".docx,.doc,.rtf,.idml,.pdf,.txt" onchange="tcPickSource(event)" style="display:none">
-        <b>Drop the source file here</b> or click to browse<br><small>Word (.docx, or a .doc that was saved as RTF), InDesign (.idml), PDF or plain text</small>
+        <b>Drop the original here</b> or click to browse<br><small>Word (.docx, or a .doc that was saved as RTF), InDesign (.idml), PDF or plain text</small>
       </div>
       <div id="tc-src-info"></div>
       <div class="row" style="margin-top:10px;align-items:center">
-        <label style="margin:0">Source language</label>
+        <label style="margin:0">Language of the original</label>
         <select id="tc-src-lang" style="max-width:220px"></select>
-        <span style="flex:1"></span>
-        <button class="btn btn-primary" id="tc-run-btn" onclick="tcStart()" disabled>🌐 Check translation</button>
       </div>
       <div class="sr-hint" id="tc-run-hint" style="margin-top:6px"></div>
     </div>
   </div>
 
-  <div class="instructions-wrap">
+  <div class="step-label"><span class="step-num"><span class="only-proof">2</span><span class="only-tc">3</span></span>Settings</div>
+
+  <div class="instructions-wrap only-proof">
     <label for="ai-instructions">Additional instructions for AI <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">(optional)</span></label>
     <textarea id="ai-instructions" rows="2"
       placeholder="e.g. Preserve British English · Ignore technical jargon · Focus on formal tone · This is a legal document"></textarea>
   </div>
 
-  <div class="check-selector">
+  <div class="check-selector only-proof">
     <label>Checks to run</label>
     <div class="check-chips" id="check-chips"></div>
   </div>
 
   <div class="options-row">
     <div class="field">
-      <label>Language</label>
+      <label><span class="only-proof">Language</span><span class="only-tc">Language of the translation</span></label>
       <select id="language" onchange="toggleOtherLang(this.value)">
         <option value="auto" selected>Auto-detect</option>
         <option value="bilingual-en-ar">Bilingual — English + Arabic (IDML)</option>
@@ -587,8 +611,8 @@
     </div>
     <div style="flex:1;min-width:0"></div>
     <div style="display:flex;gap:7px;align-items:center;flex-shrink:0">
-      <button class="btn btn-secondary" id="demo-btn" onclick="runDemo()">🧪 Demo</button>
-      <button class="btn btn-primary btn-lg" id="proof-btn" onclick="runProofread()">✦ Proofread</button>
+      <button class="btn btn-secondary only-proof" id="demo-btn" onclick="runDemo()">🧪 Demo</button>
+      <button class="btn btn-primary btn-lg" id="proof-btn" onclick="runPrimary()">✦ Proofread</button>
     </div>
   </div>
 
@@ -720,9 +744,10 @@
   <div class="empty" id="tc-empty">
     <div class="icon">🌐</div>
     <h3>No translation check yet</h3>
-    <p>On the Proof page, put the translation in the main box, add the original under <strong>Compare with a source document</strong>, then press <strong>Check translation</strong>.</p>
+    <p>This page shows the result of a <strong>translation check</strong>. The normal <strong>Proofread</strong> button does not fill it.</p>
+    <p>To run one: choose <strong>Check a translation</strong> on the first page, add the translation (step 1) and its original (step 2), then press <strong>Check translation</strong>.</p>
     <br>
-    <button class="btn btn-secondary" onclick="showTab('proof')">← Back to Proof</button>
+    <button class="btn btn-primary" onclick="setProofMode('translation');showTab('proof')">Start a translation check</button>
   </div>
   <div id="tc-content" style="display:none">
     <div id="tc-partial" class="tc-banner" hidden></div>
@@ -738,7 +763,7 @@
         <div class="score-label" id="tc-score-label"></div>
       </div>
       <div class="report-actions">
-        <button class="btn btn-secondary btn-sm" onclick="showTab('proof')">+ New check</button>
+        <button class="btn btn-secondary btn-sm" onclick="setProofMode('translation');showTab('proof')">+ New check</button>
         <button class="btn btn-share btn-sm" onclick="openShareModal(null,'translation')" title="Send the flagged issues to the translator with a password-protected link">Send to translator</button>
         <div class="export-dropdown" id="tc-export-dropdown">
           <button class="btn btn-primary btn-sm" onclick="tcToggleExport(event)">Export &#9662;</button>
@@ -911,7 +936,7 @@
 <footer class="app-footer">
   <span>© 2026 Explorer Publishing &amp; Distribution LLC · All rights reserved</span>
   <span id="cost-footer" style="font-size:10px;color:var(--muted);opacity:.65"></span>
-  <span class="app-footer-version">v4.1.3</span>
+  <span class="app-footer-version">v4.1.4</span>
 </footer>
 
 <div class="toast" id="toast"></div>
@@ -1138,6 +1163,26 @@ function toggleTheme() {
 // ══════════════════════════════════════════════
 // Tab navigation
 // ══════════════════════════════════════════════
+// ── Proof page mode: proofread one document, or check a translation against its original ──
+let proofMode = 'proof';
+function paintProofBtn() {
+  const b = document.getElementById('proof-btn'); if (!b) return;
+  b.textContent = proofMode === 'translation' ? '\u{1F310} Check translation'
+    : (typeof fileQueue !== 'undefined' && fileQueue.length > 1 ? `✦ Proofread ${fileQueue.length} Files` : '✦ Proofread');
+}
+function setProofMode(m) {
+  proofMode = m === 'translation' ? 'translation' : 'proof';
+  const pg = document.getElementById('proof-page'); if (pg) pg.dataset.mode = proofMode;
+  document.querySelectorAll('#mode-switch .mode-opt').forEach((b) => { const on = b.dataset.mode === proofMode; b.classList.toggle('active', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); });
+  const ta = document.getElementById('paste-area');
+  if (ta) ta.placeholder = proofMode === 'translation'
+    ? 'Or paste the translation here...'
+    : 'Paste your text here…\n\nArticles, emails, reports — paste anything to proofread.';
+  paintProofBtn();
+  try { localStorage.setItem('proof_mode', proofMode); } catch (_) {}
+}
+function runPrimary() { return proofMode === 'translation' ? tcStart() : runProofread(); }
+
 function showTab(name) {
   ['proof','report','translation','history','reviews','setup'].forEach((t,i) => {
     document.getElementById(t+'-page').classList.toggle('active', t===name);
@@ -1200,8 +1245,7 @@ function renderFileQueue() {
       ${item.status==='waiting'?`<button class="fc-rm" onclick="removeFile(${i})">×</button>`:''}`;
     el.appendChild(d);
   });
-  document.getElementById('proof-btn').textContent =
-    fileQueue.length > 1 ? `✦ Proofread ${fileQueue.length} Files` : '✦ Proofread';
+  paintProofBtn();
 }
 
 // ══════════════════════════════════════════════
@@ -5073,16 +5117,15 @@ async function tcLoadSource(file) {
 }
 function tcRemoveSource() { TCS = null; tcPaintSource(); }
 function tcPaintSource() {
-  const st = document.getElementById('tc-src-state'), info = document.getElementById('tc-src-info'), btn = document.getElementById('tc-run-btn'), hint = document.getElementById('tc-run-hint');
+  const st = document.getElementById('tc-src-state'), info = document.getElementById('tc-src-info'), hint = document.getElementById('tc-run-hint');
   if (!st) return;
-  if (!TCS) { st.textContent = 'Not added'; st.className = 'sc-state'; info.innerHTML = ''; btn.disabled = true; hint.textContent = ''; return; }
+  if (!TCS) { st.textContent = 'Not added yet'; st.className = 'sc-state'; info.innerHTML = ''; hint.textContent = ''; return; }
   st.textContent = '✓ ' + TCS.name; st.className = 'sc-state ok';
   document.getElementById('tc-src-body').hidden = false;
   const sec = TCS.sections, ch = sec.structured ? sec.sections.filter((s) => s.num > 0) : [];
   const structure = sec.structured ? ch.length + ' chapters found' : 'no chapter headings found (will be lined up by length)';
   info.innerHTML = '<div class="sc-file"><b>' + esc(TCS.name) + '</b><span class="meta">' + esc(TCS.lang || 'language not detected') + ' &middot; ' + TCS.words.toLocaleString() + ' words &middot; ' + TCS.paras.length.toLocaleString() + ' paragraphs' + (TCS.pages ? ' &middot; ' + TCS.pages + ' pages' : '') + ' &middot; ' + esc(structure) + '</span><button class="btn btn-secondary btn-sm" onclick="tcRemoveSource()">Remove</button></div>';
-  btn.disabled = false;
-  hint.textContent = 'The translation is whatever is in the main box above (an uploaded file or pasted text).';
+  hint.textContent = 'Original added. Press Check translation at the bottom once the translation is in step 1.';
 }
 
 // ── The translation (the document in the main box) ─────────────────────
@@ -5169,7 +5212,11 @@ function tcShowConfirm(tgt) {
 }
 function tcCancelConfirm() { TC_PENDING = null; document.getElementById('tc-modal').classList.remove('open'); }
 async function tcStart() {
-  if (!TCS) { toast('Add the source document first.', 'warn'); return; }
+  if (!TCS) {
+    toast('Step 2 is missing: add the original (source) document first.', 'warn', 6000);
+    const d = document.getElementById('tc-drop'); if (d) { d.scrollIntoView({ behavior: 'smooth', block: 'center' }); d.classList.add('over'); setTimeout(() => d.classList.remove('over'), 1800); }
+    return;
+  }
   const model = document.getElementById('model').value, openai = model.startsWith('gpt-');
   if (!localStorage.getItem(openai ? 'proof_openai_key' : 'proof_api_key')) { toast('Set your ' + (openai ? 'OpenAI' : 'Anthropic') + ' API key in Setup first.', 'warn'); showTab('setup'); return; }
   const tgt = await tcLoadTarget(); if (!tgt) return;
@@ -5503,7 +5550,7 @@ function tcHistoryHtml() {
     return '<div class="history-entry"><div class="hist-score" style="border-color:' + col + ';color:' + col + '"><div class="hs-num">' + h.score + '</div><div class="hs-grade">' + esc(h.verdict.toUpperCase()) + '</div></div><div class="hist-info"><div class="hist-file" title="' + esc(h.name) + '">&#127760; ' + esc(h.name) + ' <span style="color:var(--muted);font-weight:400">vs ' + esc(h.src) + '</span></div><div class="hist-meta">' + date + ' · ' + esc(h.lang || '') + ' · ' + (h.words || 0).toLocaleString() + ' words · ' + h.issues + ' issues' + (h.only ? ' · chapters ' + h.only.join(', ') + ' only' : '') + (h.model ? ' · ' + esc(modelDisplayName(h.model)) : '') + (h.cost != null ? ' · $' + (h.cost < 0.01 ? h.cost.toFixed(4) : h.cost.toFixed(2)) : '') + '</div></div><div class="hist-actions"><button class="btn btn-secondary btn-sm" onclick="tcOpenHistory(\'' + h.id + '\')">View</button></div></div>';
   }).join('');
 }
-function tcInit() { tcInitSourceCard(); tcPaintSource(); tcLoadSaved(); }
+function tcInit() { tcInitSourceCard(); tcPaintSource(); tcLoadSaved(); let m = 'proof'; try { m = localStorage.getItem('proof_mode') || 'proof'; } catch (_) {} setProofMode(m); }
 
 // ══════════════════════════════════════════════
 // Init
