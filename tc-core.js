@@ -437,13 +437,14 @@
   // ======================================================================
   // 7. Prompts
   // ======================================================================
-  const TYPES = ['Omission', 'Addition', 'Mistranslation', 'Number', 'Terminology', 'Untranslated', 'Structure'];
-  const SEVERITIES = ['Critical', 'Major', 'Minor', 'Query'];
-  const SEV_WEIGHT = { Critical: 10, Major: 5, Minor: 1, Query: 0 };
+  const TYPES = ['Omission', 'Addition', 'Mistranslation', 'Number', 'Terminology', 'Untranslated', 'Structure', 'Wording'];
+  const SEVERITIES = ['Critical', 'Major', 'Minor', 'Query', 'Note'];
+  const SEV_WEIGHT = { Critical: 10, Major: 5, Minor: 1, Query: 0, Note: 0 };            // a Note is an acceptable rewording: shown quietly, never scored
   const TYPE_ALIAS = { omission: 'Omission', omitted: 'Omission', missing: 'Omission', addition: 'Addition', added: 'Addition', insertion: 'Addition',
     mistranslation: 'Mistranslation', mistranslated: 'Mistranslation', meaning: 'Mistranslation', accuracy: 'Mistranslation', 'wrong translation': 'Mistranslation',
     number: 'Number', numbers: 'Number', numeric: 'Number', date: 'Number', 'number/date': 'Number', terminology: 'Terminology', term: 'Terminology', name: 'Terminology', 'proper noun': 'Terminology',
-    untranslated: 'Untranslated', structure: 'Structure', consistency: 'Terminology' };
+    untranslated: 'Untranslated', structure: 'Structure', consistency: 'Terminology',
+    wording: 'Wording', variation: 'Wording', rewording: 'Wording', 'acceptable rewording': 'Wording', 'minor wording variation': 'Wording' };
 
   function systemPrompt(o) {
     const sl = o.srcLang || 'the source language', tl = o.tgtLang || 'the translation language';
@@ -462,15 +463,17 @@ You receive numbered paragraphs: [S1], [S2] ... are the source; [T1], [T2] ... a
    - Number: a number, date, time, quantity, unit or currency differs from the source.
    - Terminology: a key term, title or proper name is translated wrongly or inconsistently inside this text.
    - Untranslated: text that should be translated was left in the source language.
-   Severity: Critical = a whole sentence or more is missing or added, the meaning is reversed, or a number, date or name that matters is wrong. Major = the meaning is clearly changed or part of a sentence is missing or added, or a key term is wrong. Minor = small loss of nuance or a slightly inaccurate word that does not change the message. Query = you suspect a problem but are not sure (about 70 percent). Prefer Query to guessing.
+   - Wording: the translation words something differently but says the same thing in substance (an acceptable rewording). Always use severity "Note" for it. Give at most 3 of the clearest examples in your answer; they are not counted as problems.
+   Severity: Critical = a whole sentence or more is missing or added, the meaning is reversed, or a number, date or name that matters is wrong. Major = the meaning clearly changes: who acts or is affected, the direction of a duty or relationship, what is asserted, a role or authority (advising versus deciding), a negation, or a key term is wrong. A defensible but different rendering of a word is NOT Major. Minor = small loss of nuance or a slightly inaccurate word that does not change the message. Query = you suspect a problem but are not sure (about 70 percent), or the translation can be read in an unintended way. Prefer Query to guessing. Note = acceptable rewording (type Wording).
 
-DO NOT report: spelling, grammar or punctuation of the translation (a separate proofreading handles that), style or word-order choices, idioms that are correctly rendered, reasonable transliteration of names, added explanations that are harmless, differences caused only by layout, hyphenation, headings or page furniture. The translation may be a typeset book: running headers, page numbers, and pull-quotes that repeat a sentence from the body are layout, not additions (pair a repeated sentence with the text it repeats, or list it as "|n" without reporting an issue). Do not invent problems. If everything is fine return an empty "issues" list.
+DO NOT report: spelling, grammar or punctuation of the translation (a separate proofreading handles that), style or word-order choices, idioms that are correctly rendered, reasonable transliteration of names, added explanations that are harmless, differences caused only by layout, hyphenation, headings or page furniture. The translation may be a typeset book: running headers, page numbers, and pull-quotes that repeat a sentence from the body are layout, not additions (pair a repeated sentence with the text it repeats, or list it as "|n" without reporting an issue). Do not invent problems. If everything is fine return an empty "issues" list. Only report a problem if your suggested fix is clearly better than the translation; if you cannot improve on it, it is not a problem (at most a Wording note). Never write paragraph labels such as S12 or T12 inside "why", "fix" or "target"; point to a place with a short quote instead.
+If one word-choice problem repeats in several places, report it ONCE (the clearest example) and also give "term_s" (the source word or phrase, at most 5 words, exactly as written in the source) and "term_t" (the translation's word or phrase, at most 6 words, exactly as written in the translation); the portal then finds the other places by itself. Leave term_s and term_t empty for one-off problems.
 
-For every issue give: "type", "severity", "s" (source paragraph numbers), "t" (translation paragraph numbers; for an omission use the translation paragraph the missing text belongs after, or [] if unknown), "source" (the exact source words, verbatim, at most 30 words), "target" (the exact translation words, verbatim from the [T#] text, at most 30 words; use "" for an omission), "fix" (the corrected or missing text written in ${tl}; keep it short; "" if you cannot), and "why" (one plain English sentence that starts with the problem).
+For every issue give: "type", "severity", "s" (source paragraph numbers), "t" (translation paragraph numbers; for an omission use the translation paragraph the missing text belongs after, or [] if unknown), "source" (the exact source words, verbatim, at most 30 words), "target" (the exact translation words, verbatim from the [T#] text, at most 30 words; use "" for an omission), "fix" (the corrected or missing text written in ${tl}; keep it short; "" if you cannot), and "why" (one plain English sentence that starts with the problem), plus "term_s" and "term_t" (see above, or "").
 Quote exactly: copy "source" and "target" character for character from the text you were given.
 
 Return ONLY valid JSON, no markdown:
-{"alignment":["1|1","2|2,3","3|"],"issues":[{"type":"Omission","severity":"Critical","s":[3],"t":[2],"source":"...","target":"","fix":"...","why":"..."}]}${o.extra ? '\n\nAdditional instructions from the editor:\n' + o.extra : ''}`;
+{"alignment":["1|1","2|2,3","3|"],"issues":[{"type":"Omission","severity":"Critical","s":[3],"t":[2],"source":"...","target":"","fix":"...","why":"...","term_s":"","term_t":""}]}${o.extra ? '\n\nAdditional instructions from the editor:\n' + o.extra : ''}`;
   }
   function userPrompt(win, o) {
     const sl = o.srcLang || 'source', tl = o.tgtLang || 'translation';
@@ -489,6 +492,23 @@ Return ONLY valid JSON: {"verdicts":[{"id":1,"verdict":"confirmed|false_alarm|un
     const fmt = (arr, tag) => arr.map((p, k) => '[' + tag + (k + 1) + '] ' + p.text).join('\n');
     return `${win.label}\n\nFULL SOURCE:\n${fmt(win.src, 'S')}\n\nFULL TRANSLATION:\n${fmt(win.tgt, 'T')}\n\nCLAIMS TO CHECK:\n` +
       items.map((it) => it.n + '. ' + it.type.toUpperCase() + ' - ' + (it.type === 'Omission' ? 'source ' + it.refs + ' has no counterpart: "' + it.text + '"' : 'translation ' + it.refs + ' has no counterpart: "' + it.text + '"')).join('\n');
+  }
+
+  // The "second look at meaning": the paragraphs are already paired; the model must judge EVERY pair.
+  function meaningSystemPrompt(o) {
+    const sl = o.srcLang || 'the source language', tl = o.tgtLang || 'the translation language';
+    return `You are a senior ${sl} to ${tl} translation editor giving a SECOND OPINION on a published translation. The paragraphs have already been paired. For EVERY numbered pair decide whether the translation says the same thing as the source.
+
+Look closely for these meaning shifts: who acts and who is affected (subject and object swapped, or an actor added or removed); the direction of a duty, trust or relationship (towards or from); advising turned into deciding, or any change in role or authority; a qualifier lost, added or changed (only, often, some, federal, all, never); tense, mood or degree of certainty (may, will, must); a negation lost or added; a word with a different sense, or a narrower or wider scope (for example a legal term that covers fewer people); a reference such as "them", "its" or "among them" that the translation resolves differently or leaves open; a metaphor replaced by a plain word; numbers, dates and names.
+
+Do NOT report spelling, grammar, punctuation, style, or acceptable rewording that keeps the meaning. If you list an acceptable rewording at all, use type "Wording" and severity "Note" (at most 3 per answer). Only report a problem if your suggested fix is clearly better than the translation.
+
+Answer with "same": the pairs that say the same thing, as a compact list such as "1-4,6,9-12", and "differs": one object for every pair that does NOT. EVERY pair number must appear exactly once, either in "same" or in "differs". For each differing pair give: "p" (the pair number), "type" (Mistranslation, Terminology, Number, Untranslated or Wording), "severity" (Major = the meaning clearly changes; Minor = small loss of nuance; Query = you suspect a problem or the translation could be misread; Note = acceptable rewording), "source" and "target" (the exact words, copied character for character, at most 30 words each), "fix" (the better wording in ${tl}, or ""), "why" (one plain English sentence that starts with the problem; never write pair labels such as P3 in it), and "term_s" and "term_t" (only when the same word-choice problem repeats: the source word or phrase, at most 5 words, and the translation's phrase, at most 6 words, exactly as written; otherwise "").
+
+Return ONLY valid JSON: {"same":"1-4,6","differs":[{"p":5,"type":"Mistranslation","severity":"Minor","source":"...","target":"...","fix":"...","why":"...","term_s":"","term_t":""}]}${o.extra ? '\n\nAdditional instructions from the editor:\n' + o.extra : ''}`;
+  }
+  function meaningUserPrompt(pairs, win) {
+    return `${win.label}\n\nPAIRS (${pairs.length}):\n` + pairs.map((p) => '[P' + p.p + ']\nSOURCE: ' + p.sText + '\nTRANSLATION: ' + p.tText).join('\n\n');
   }
 
   // ======================================================================
@@ -559,28 +579,68 @@ Return ONLY valid JSON: {"verdicts":[{"id":1,"verdict":"confirmed|false_alarm|un
     }
     return lastT;
   }
+  // A repeated word-choice problem: the model names the words (term_s / term_t); kept only when both really occur in the text.
+  function readTerms(it, sHay, tHay) {
+    const a = clean(it && it.term_s), b = clean(it && it.term_t);
+    if (a.length < 3 || b.length < 3 || a.length > 60 || b.length > 80) return null;
+    const fa = findQuote(sHay, a), fb = findQuote(tHay, b);
+    return fa && fb ? { termS: fa, termT: fb } : null;
+  }
+  // an explanation that says "acceptable" about its own finding is not a finding
+  const SELF_OK = /^\s*(?:acceptable|fine|correct|ok(?:ay)?|no (?:real )?(?:problem|issue|error))\b|\b(?:acceptable here|acceptable (?:rendering|translation|choice|wording|variation)|not (?:really )?an? (?:error|problem|issue|mistake)|no (?:real )?(?:problem|issue|error) here)\b/i;
+
   // Turn the model's JSON into canonical issues for one window.
   function readAnswer(win, ans) {
     const nS = win.src.length, nT = win.tgt.length;
     const al = parseAlignment(ans && ans.alignment, nS, nT);
-    const issues = [];
+    const issues = []; let notes = 0;
     (ans && Array.isArray(ans.issues) ? ans.issues : []).forEach((it) => {
       if (!it || typeof it !== 'object') return;
-      const type = canonType(it.type), sev = canonSeverity(it.severity);
+      let type = canonType(it.type), sev = canonSeverity(it.severity);
+      if (type === 'Wording' || sev === 'Note') { type = 'Wording'; sev = 'Note'; if (++notes > 3) return; }
       const s = asIdx(it.s, nS), t = asIdx(it.t, nT);
       let sText = clean(it.source), tText = clean(it.target);
       const sPara = s.map((k) => win.src[k - 1]), tPara = t.map((k) => win.tgt[k - 1]);
+      const sHay = sPara.length ? sPara.map((p) => p.text).join(' ') : win.src.map((p) => p.text).join(' ');
+      const tHay = tPara.length ? tPara.map((p) => p.text).join(' ') : win.tgt.map((p) => p.text).join(' ');
       // quotes must really exist in the paragraphs they claim to come from
       let sOk = true, tOk = true;
-      if (sText) { const hay = sPara.length ? sPara.map((p) => p.text).join(' ') : win.src.map((p) => p.text).join(' '); const f = findQuote(hay, sText); if (f) sText = f; else sOk = false; }
-      if (tText) { const hay = tPara.length ? tPara.map((p) => p.text).join(' ') : win.tgt.map((p) => p.text).join(' '); const f = findQuote(hay, tText); if (f) tText = f; else tOk = false; }
+      if (sText) { const f = findQuote(sHay, sText); if (f) sText = f; else sOk = false; }
+      if (tText) { const f = findQuote(tHay, tText); if (f) tText = f; else tOk = false; }
       if (type !== 'Omission' && !s.length && !t.length) return;                              // cannot be located: ignore
       let why = clean(it.why), sevOut = sev;
-      if (!sOk || !tOk) { sevOut = 'Query'; why = (why ? why + ' ' : '') + '(The quoted words could not be found verbatim in the text, so please check this one by hand.)'; }
+      if (!sOk || !tOk) { if (sevOut !== 'Note') sevOut = 'Query'; why = (why ? why + ' ' : '') + '(The quoted words could not be found verbatim in the text, so please check this one by hand.)'; }
+      if (sevOut !== 'Note' && (type === 'Mistranslation' || type === 'Terminology') && SELF_OK.test(why)) { type = 'Wording'; sevOut = 'Note'; }
       if (type === 'Omission' && s.length) { const a = anchorBefore(al.groups, s[0]); t.length = 0; if (a > 0) t.push(a); }   // where it belongs comes from the alignment, not from the model's guess
-      issues.push({ type, severity: sevOut, s, t, sText, tText, sOk, tOk, fix: clean(it.fix), why, origin: 'ai' });
+      const terms = readTerms(it, sHay, tHay);
+      issues.push({ type, severity: sevOut, s, t, sText, tText, sOk, tOk, fix: clean(it.fix), why, origin: 'ai', termS: terms ? terms.termS : '', termT: terms ? terms.termT : '' });
     });
     return { alignment: al, issues };
+  }
+
+  // The second look's answer for a list of pairs [{ p, s:[], t:[], sText, tText }] -> { missing:[pair numbers not judged], raws }
+  function readMeaning(pairs, ans) {
+    const n = pairs.length, seen = new Set(), raws = []; let notes = 0;
+    parseSide(ans && ans.same, n).forEach((x) => seen.add(x));
+    (ans && Array.isArray(ans.differs) ? ans.differs : []).forEach((it) => {
+      if (!it || typeof it !== 'object') return;
+      const p = parseInt(it.p, 10), pr = pairs[p - 1]; if (!pr) return;
+      seen.add(p);
+      let type = canonType(it.type), sev = canonSeverity(it.severity);
+      if (type === 'Omission' || type === 'Addition' || type === 'Structure') type = 'Mistranslation';          // pairing is the first check's job
+      if (type === 'Wording' || sev === 'Note') { type = 'Wording'; sev = 'Note'; if (++notes > 3) return; }
+      if (sev === 'Critical') sev = 'Major';                                                                     // only a whole missing sentence is Critical, and that is found elsewhere
+      let sText = clean(it.source), tText = clean(it.target), sOk = true, tOk = true;
+      if (sText) { const f = findQuote(pr.sText, sText); if (f) sText = f; else sOk = false; }
+      if (tText) { const f = findQuote(pr.tText, tText); if (f) tText = f; else tOk = false; }
+      let why = clean(it.why);
+      if (!sOk || !tOk) { if (sev !== 'Note') sev = 'Query'; why = (why ? why + ' ' : '') + '(The quoted words could not be found verbatim in the text, so please check this one by hand.)'; }
+      if (sev !== 'Note' && (type === 'Mistranslation' || type === 'Terminology') && SELF_OK.test(why)) { type = 'Wording'; sev = 'Note'; }
+      const terms = readTerms(it, pr.sText, pr.tText);
+      raws.push({ type, severity: sev, s: pr.s.slice(), t: pr.t.slice(), sText, tText, sOk, tOk, fix: clean(it.fix), why, origin: 'ai2', termS: terms ? terms.termS : '', termT: terms ? terms.termT : '' });
+    });
+    const missing = []; for (let p = 1; p <= n; p++) if (!seen.has(p)) missing.push(p);
+    return { missing, raws };
   }
 
   // ======================================================================
@@ -588,6 +648,9 @@ Return ONLY valid JSON: {"verdicts":[{"id":1,"verdict":"confirmed|false_alarm|un
   // ======================================================================
   function numbersIn(text) {
     let t = String(text || '').replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660)).replace(/[\u06f0-\u06f9]/g, (d) => String(d.charCodeAt(0) - 0x06f0));
+    // "800.000", "1.000", "2.500": a dot between groups of exactly three digits is a thousands separator (German and many others);
+    // "0.125" stays a decimal. Both sides are read the same way, so "2.500" (de) and "2,500" (en) are the same number.
+    t = t.replace(/(^|[^\d.,])(\d{1,3})((?:\.\d{3})+)(?!\d)/g, (m, pre, a, rest) => (a === '0' ? m : pre + a + rest.replace(/\./g, '')));
     t = t.replace(/(\d)[,\u00a0\u202f '](?=\d{3}(?!\d))/g, '$1').replace(/(\d),(\d{1,2})(?!\d)/g, '$1.$2');
     const set = new Set(); (t.match(/\d+(?:\.\d+)?/g) || []).forEach((x) => { if (x.length >= 2 || x.indexOf('.') >= 0) set.add(String(parseFloat(x))); });
     return set;
@@ -646,7 +709,7 @@ Return ONLY valid JSON: {"verdicts":[{"id":1,"verdict":"confirmed|false_alarm|un
   //     Pass: score >= 90 and no Critical. Revise: 75-89, or any Critical. Fail: below 75.
   // ======================================================================
   function scoreOf(issues, words) {
-    const counts = { Critical: 0, Major: 0, Minor: 0, Query: 0 };
+    const counts = { Critical: 0, Major: 0, Minor: 0, Query: 0, Note: 0 };
     let penalty = 0;
     issues.forEach((i) => { if (counts[i.severity] !== undefined) { counts[i.severity]++; penalty += SEV_WEIGHT[i.severity]; } });
     const per1000 = words > 0 ? penalty / (words / 1000) : 0;
@@ -657,8 +720,8 @@ Return ONLY valid JSON: {"verdicts":[{"id":1,"verdict":"confirmed|false_alarm|un
 
   Object.assign(global.TC, {
     alignByLength, windowsForPair, planWindows, tokensOf, scriptClass,
-    TYPES, SEVERITIES, SEV_WEIGHT, systemPrompt, userPrompt, verifySystemPrompt, verifyUserPrompt,
-    parseAlignment, readAnswer, findQuote, canonType, canonSeverity, numbersIn, jaccard, ruleChecks, scoreOf, labelPara, clip,
+    TYPES, SEVERITIES, SEV_WEIGHT, systemPrompt, userPrompt, verifySystemPrompt, verifyUserPrompt, meaningSystemPrompt, meaningUserPrompt,
+    parseAlignment, readAnswer, readMeaning, findQuote, canonType, canonSeverity, numbersIn, jaccard, ruleChecks, scoreOf, labelPara, clip,
   });
 
   // ======================================================================
@@ -675,15 +738,36 @@ Return ONLY valid JSON: {"verdicts":[{"id":1,"verdict":"confirmed|false_alarm|un
 
   function estimateRun(plan, o) {
     o = o || {};
-    let inTok = 0, outTok = 0, calls = 0;
+    let inTok = 0, outTok = 0, calls = 0, sCalls = 0, sIn = 0, sOut = 0;
     const sys = 1900;                                               // system prompt (cached after the first call)
     plan.windows.forEach((w) => {
       if (!w.src.length || !w.tgt.length) return;
       const n = w.src.length + w.tgt.length;
       calls++; inTok += w.estTokens + 60 + (calls === 1 ? sys : 0); outTok += 150 + 9 * n + 170 * Math.max(1, Math.round(w.src.length / 8));
       calls += 0.25; inTok += 0.25 * (w.estTokens + sys); outTok += 0.25 * 220;                 // verification of omissions / additions
+      if (o.second) {                                                                           // second look at meaning: the same text again, a short answer
+        const k = Math.max(1, Math.ceil(Math.max(w.src.length, w.tgt.length) / 40));
+        sCalls += k; sIn += w.estTokens + 90 * k + (sCalls === k ? 1100 : 0); sOut += 90 * k + 70 * Math.max(1, Math.round(w.src.length / 10));
+      }
     });
-    return { windows: plan.windows.length, calls: Math.ceil(calls), inTok: Math.round(inTok), outTok: Math.round(outTok) };
+    return { windows: plan.windows.length, calls: Math.ceil(calls), inTok: Math.round(inTok), outTok: Math.round(outTok),
+             second: o.second ? { calls: sCalls, inTok: Math.round(sIn), outTok: Math.round(sOut) } : null };
+  }
+
+  // Fold the second look's findings into the first check's list: the same problem seen twice is one problem
+  // (and more certain); something only the second look saw is added.
+  const sharesPara = (a, b) => a.s.some((v) => b.s.indexOf(v) >= 0) || a.t.some((v) => b.t.indexOf(v) >= 0);
+  function mergeSecond(list, extra) {
+    const tok = (x) => tokensOfText((x.sText || '') + ' ' + (x.tText || ''));
+    extra.forEach((x) => {
+      const hit = list.find((y) => y.type !== 'Omission' && y.type !== 'Addition' && (y.origin !== 'rule' || y.type === x.type) && sharesPara(y, x) &&
+        (!(x.sText || x.tText) || !(y.sText || y.tText) || jaccard(tok(y), tok(x)) >= 0.25));
+      if (hit) {
+        hit.second = 'agrees';
+        if (hit.severity === 'Query' && hit.sOk !== false && hit.tOk !== false && x.severity !== 'Query' && x.severity !== 'Note') hit.severity = 'Minor';   // two independent looks agree
+        if (!hit.termS && x.termS) { hit.termS = x.termS; hit.termT = x.termT; }
+      } else list.push(x);
+    });
   }
 
   function halve(win, srcDoc, tgtDoc, o) {
@@ -711,9 +795,18 @@ Return ONLY valid JSON: {"verdicts":[{"id":1,"verdict":"confirmed|false_alarm|un
     return l.length > 2 ? l[0] + '-' + l[l.length - 1].replace('\u00b6', '') : l.join(', ');
   };
 
+  const chapLabel = (win) => (win.num > 0 ? 'Ch ' + win.num : (win.label === 'Whole document' ? '' : 'Front'));
+  // window-local labels such as "S22" or "T11" that the model sometimes writes in its explanation -> real paragraph numbers
+  function relabel(text, win) {
+    return String(text || '').replace(/\b([ST])(\d{1,3})\b/g, (m, k, n) => {
+      const list = k === 'S' ? win.src : win.tgt, p = list[+n - 1]; if (!p) return m;
+      return (k === 'S' ? 'source ' : 'translation ') + labelPara(p, k === 'S' ? win.srcBase : win.tgtBase);
+    });
+  }
+
   // Final issue objects (locations, excerpts) from one window's raw issues
   function finishIssues(win, raws, o) {
-    const chap = win.num > 0 ? 'Ch ' + win.num : (win.label === 'Whole document' ? '' : 'Front');
+    const chap = chapLabel(win);
     return raws.map((r) => {
       const sP = r.s.map((k) => win.src[k - 1]).filter(Boolean), tP = r.t.map((k) => win.tgt[k - 1]).filter(Boolean);
       const insert = r.type === 'Omission' || (!tP.length && !r.tText);
@@ -726,10 +819,91 @@ Return ONLY valid JSON: {"verdicts":[{"id":1,"verdict":"confirmed|false_alarm|un
         srcLoc: sRange ? pre + sRange : (chap || ''), tgtLoc: tRange ? (insert && r.type === 'Omission' ? 'after ' : '') + pre + tRange : (insert && r.type === 'Omission' ? 'near start of ' + (chap || 'text') : (chap || '')), page,
         srcText: r.sText || '', srcContext: sP.length ? clip(sP.map((p) => p.text).join(' '), 600) : '',
         tgtText: r.tText || '', tgtContext: tP.length ? clip(tP.map((p) => p.text).join(' '), 400) : '',
-        fix: r.fix || '', why: r.why || '', insert: !!insert, quoteOk: r.sOk !== false && r.tOk !== false,
-        verified: r.verified || null, note: r.note || '', sIdx: sP.map((p) => p.i), tIdx: tP.map((p) => p.i),
+        fix: r.fix || '', why: relabel(r.why, win), insert: !!insert, quoteOk: r.sOk !== false && r.tOk !== false,
+        verified: r.verified || null, note: relabel(r.note, win), sIdx: sP.map((p) => p.i), tIdx: tP.map((p) => p.i),
+        second: r.second || null, termS: r.termS || '', termT: r.termT || '',
       };
     });
+  }
+
+  // ----------------------------------------------------------------------
+  // Tidying the list: one problem is reported once, wherever it shows up
+  // ----------------------------------------------------------------------
+  const SEV_RANK = { Critical: 4, Major: 3, Minor: 2, Query: 1, Note: 0 };
+  const topSev = (a, b) => ((SEV_RANK[a] || 0) >= (SEV_RANK[b] || 0) ? a : b);
+  const escRe = (x) => String(x).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const locOf = (x) => ({ srcLoc: x.srcLoc || '', tgtLoc: x.tgtLoc || '', page: x.page || null, sIdx: x.sIdx || [], tIdx: x.tIdx || [] });
+  function mergeInto(lead, others, drop) {
+    lead.also = lead.also || [];
+    others.forEach((x) => {
+      drop.add(x); lead.also.push(locOf(x)); (x.also || []).forEach((a) => lead.also.push(a));
+      lead.severity = topSev(lead.severity, x.severity);
+      if (!lead.termS && x.termS) { lead.termS = x.termS; lead.termT = x.termT; }
+      if (x.second === 'agrees') lead.second = 'agrees';
+    });
+  }
+  // issues: finished issues in window order. Returns the tidied list (the same objects, some merged, some removed).
+  function refineIssues(issues, plan, state) {
+    const drop = new Set(); let list = issues.slice();
+    // (a) a missing sentence and the "addition" sitting where it should be (a repeat in its place) are one problem seen from both sides
+    list.filter((x) => x.type === 'Omission' && x.origin === 'ai' && x.insert && x.sIdx.length).forEach((o) => {
+      const b = o.tIdx.length ? o.tIdx[0] : -1;
+      const ad = list.find((x) => x !== o && !drop.has(x) && x.type === 'Addition' && x.origin === 'ai' && x.chapter === o.chapter && x.tIdx.length && x.tIdx[0] >= b && x.tIdx[0] <= b + 2 && (!x.sIdx.length || Math.abs(x.sIdx[0] - o.sIdx[0]) <= 2));
+      if (!ad) return;
+      drop.add(ad); o.severity = topSev(o.severity, ad.severity); o.twin = ad.tgtLoc;
+      o.why = o.why + ' The translation repeats other text here instead (' + ad.tgtLoc + ').';
+    });
+    list = list.filter((x) => !drop.has(x));
+    // (b) the same finding word for word (a pull-quote repeating a sentence) is one finding
+    const byRepeat = new Map();
+    list.forEach((x) => {
+      if (!x.srcText || !x.tgtText || x.srcText.length < 12 || x.tgtText.length < 12 || x.type === 'Structure') return;
+      const k = x.type + '|' + norm(x.srcText) + '|' + norm(x.tgtText);
+      if (!byRepeat.has(k)) byRepeat.set(k, []); byRepeat.get(k).push(x);
+    });
+    byRepeat.forEach((arr) => { if (arr.length > 1) mergeInto(arr[0], arr.slice(1), drop); });
+    list = list.filter((x) => !drop.has(x));
+    // (c) one word-choice problem that recurs: the model names the words; one finding, every place listed
+    const byTerm = new Map();
+    list.forEach((x) => {
+      if (!x.termS || !x.termT) return;
+      const k = norm(x.termS) + '>' + norm(x.termT);
+      if (!byTerm.has(k)) byTerm.set(k, []); byTerm.get(k).push(x);
+    });
+    let pairsAll = null;
+    byTerm.forEach((arr) => {
+      const lead = arr.reduce((best, x) => (SEV_RANK[x.severity] > SEV_RANK[best.severity] ? x : best), arr[0]);
+      const others = arr.filter((x) => x !== lead); if (others.length) mergeInto(lead, others, drop);
+      if (lead.type === 'Omission' || lead.type === 'Addition' || lead.type === 'Structure' || lead.type === 'Number') return;
+      if (!pairsAll) {                                                                      // every paired passage, for finding the other places
+        pairsAll = [];
+        ((state && state.results) || []).forEach((r) => {
+          const w = r.win; if (!w || !r.groups) return;
+          r.groups.forEach((g) => {
+            if (!g.s.length || !g.t.length) return;
+            const sP = g.s.map((k) => w.src[k - 1]), tP = g.t.map((k) => w.tgt[k - 1]);
+            pairsAll.push({ win: w, sP, tP, nS: norm(sP.map((q) => q.text).join(' ')), nT: norm(tP.map((q) => q.text).join(' ')) });
+          });
+        });
+      }
+      const mk = (t) => new RegExp('(^|[^\\p{L}\\p{N}])' + escRe(norm(t)) + '(?![\\p{L}\\p{N}])', 'u');
+      let reS, reT; try { reS = mk(lead.termS); reT = mk(lead.termT); } catch (_) { return; }
+      lead.also = lead.also || [];
+      const have = new Set(lead.tIdx); lead.also.forEach((a) => a.tIdx.forEach((v) => have.add(v)));
+      pairsAll.forEach((pr) => {
+        if (pr.tP.some((q) => have.has(q.i))) return;
+        if (!(reS.test(pr.nS) && reT.test(pr.nT))) return;
+        const chap = chapLabel(pr.win), pre = chap ? chap + ' ' : '';
+        pr.tP.forEach((q) => have.add(q.i));
+        lead.also.push({ srcLoc: pre + paraRange(pr.sP, pr.win.srcBase), tgtLoc: pre + paraRange(pr.tP, pr.win.tgtBase), page: (pr.tP.find((q) => q.page) || {}).page || null, sIdx: pr.sP.map((q) => q.i), tIdx: pr.tP.map((q) => q.i) });
+      });
+    });
+    list = list.filter((x) => !drop.has(x));
+    list.forEach((x) => {
+      if (x.also && x.also.length) { x.also.sort((a, b) => (a.tIdx[0] || 0) - (b.tIdx[0] || 0)); x.alsoCount = x.also.length; x.also = x.also.slice(0, 80); }
+      else if (x.also) delete x.also;
+    });
+    return list;
   }
 
   // state: { done: {windowId: result}, windows: [...] } survives errors so the run can continue.
@@ -739,13 +913,40 @@ Return ONLY valid JSON: {"verdicts":[{"id":1,"verdict":"confirmed|false_alarm|un
     state = state || { done: {}, results: [], inTok: 0, outTok: 0, calls: 0, splits: 0, verifyCalls: 0 };
     state.stopped = false; state.finished = false;                    // a continued run starts clean
     const o = { srcLang: ctx.srcLang, tgtLang: ctx.tgtLang, extra: ctx.extra, sameScript: ctx.sameScript };
-    const system = systemPrompt(o), vsystem = verifySystemPrompt(o);
+    const system = systemPrompt(o), vsystem = verifySystemPrompt(o), msystem = meaningSystemPrompt(o);
     const maxDepth = ctx.maxDepth == null ? 3 : ctx.maxDepth;
+    state.second = ctx.second ? { on: true } : null;
 
     async function ask(sys, user, meta) {
-      const r = await ctx.callModel(sys, user, meta);
+      const second = meta && meta.kind === 'meaning';
+      const r = await (second && ctx.callModelSecond ? ctx.callModelSecond : ctx.callModel)(sys, user, meta);
       state.inTok += r.inTok || 0; state.outTok += r.outTok || 0; state.calls++;
+      if (second) { state.sInTok = (state.sInTok || 0) + (r.inTok || 0); state.sOutTok = (state.sOutTok || 0) + (r.outTok || 0); state.sCalls = (state.sCalls || 0) + 1; }
       return r;
+    }
+
+    // The second look: every paired passage is judged again ("same" or "differs"), with a prompt about meaning only.
+    // A failure here never fails the run: the passages simply count as not double-checked.
+    async function meaningPass(win, groups) {
+      const pairs = [];
+      groups.forEach((g) => { if (g.s.length && g.t.length) pairs.push({ s: g.s, t: g.t, sText: g.s.map((k) => win.src[k - 1].text).join(' '), tText: g.t.map((k) => win.tgt[k - 1].text).join(' ') }); });
+      const out = { pairs: pairs.length, checked: 0, raws: [], failed: '' };
+      for (let c0 = 0; c0 < pairs.length; c0 += 40) {
+        const chunk = pairs.slice(c0, c0 + 40).map((p, k) => Object.assign({}, p, { p: k + 1 }));
+        let note = '', got = null;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          let r;
+          try { r = await ask(msystem, meaningUserPrompt(chunk, win) + (note ? '\n\nIMPORTANT: ' + note : ''), { win, attempt, kind: 'meaning' }); }
+          catch (e) { if (e && e.stop) throw e; out.failed = String((e && e.message) || e); break; }
+          let ans; try { ans = parseJSONLoose(r.text); } catch (e) { note = 'Return ONLY the JSON object, nothing else.'; continue; }
+          got = readMeaning(chunk, ans);
+          if (!got.missing.length) break;
+          note = 'You did not judge ' + got.missing.slice(0, 12).map((x) => 'P' + x).join(', ') + '. Every pair must be in "same" or in "differs".';
+        }
+        if (got) { out.checked += chunk.length - got.missing.length; got.raws.forEach((x) => out.raws.push(x)); }
+        if (out.failed) break;
+      }
+      return out;
     }
 
     async function doWindow(win, depth) {
@@ -822,7 +1023,13 @@ Return ONLY valid JSON: {"verdicts":[{"id":1,"verdict":"confirmed|false_alarm|un
         } catch (e) { if (e && e.stop) throw e; /* verification is a bonus: keep the claims unverified */ }
       }
       const kept = raws.filter((x) => !x._drop).concat(rules);
-      return { win, ledger: { s: win.src.map((p) => p.i), t: win.tgt.map((p) => p.i), unverifiedS: unS, unverifiedT: unT }, raws: kept, groups, dropped, rule: false, collapsed };
+      let meaning = null;
+      if (ctx.second && !collapsed && groups.length) {
+        const m = await meaningPass(win, groups);
+        meaning = { pairs: m.pairs, checked: m.checked, failed: m.failed };
+        mergeSecond(kept, m.raws);
+      }
+      return { win, ledger: { s: win.src.map((p) => p.i), t: win.tgt.map((p) => p.i), unverifiedS: unS, unverifiedT: unT }, raws: kept, groups, dropped, rule: false, collapsed, meaning };
     }
     async function both(pair, depth) {
       const a = await doWindow(pair[0], depth + 1), b = await doWindow(pair[1], depth + 1);
@@ -853,7 +1060,8 @@ Return ONLY valid JSON: {"verdicts":[{"id":1,"verdict":"confirmed|false_alarm|un
     meta = meta || {};
     const issues = []; const perWin = new Map();
     const cov = { windows: plan.windows.length, windowsDone: 0, splits: state.splits || 0, verifyCalls: state.verifyCalls || 0,
-      srcParas: 0, tgtParas: 0, srcChecked: 0, tgtChecked: 0, oneToOne: 0, grouped: 0, omitted: 0, added: 0, unverified: [], dropped: 0 };
+      srcParas: 0, tgtParas: 0, srcChecked: 0, tgtChecked: 0, oneToOne: 0, grouped: 0, omitted: 0, added: 0, unverified: [], dropped: 0,
+      second: !!state.second, meaningPairs: 0, meaningChecked: 0, meaningFailed: 0 };
     const secRows = new Map();
     const secOf = (w) => { if (!secRows.has(w.num)) secRows.set(w.num, { num: w.num, title: w.title || '', label: w.num === 0 ? 'Front matter' : (plan.how === 'length' ? 'Whole document' : 'Chapter ' + w.num), srcWords: 0, tgtWords: 0, srcParas: 0, tgtParas: 0, issues: [], done: true }); return secRows.get(w.num); };
     plan.windows.forEach((w) => { const s = secOf(w); s.srcWords += w.srcWords; s.tgtWords += w.tgtWords; s.srcParas += w.src.length; s.tgtParas += w.tgt.length; if (!state.done[w.id]) s.done = false; });
@@ -861,6 +1069,7 @@ Return ONLY valid JSON: {"verdicts":[{"id":1,"verdict":"confirmed|false_alarm|un
       const w = r.win; cov.srcChecked += r.ledger.s.length - r.ledger.unverifiedS.length; cov.tgtChecked += r.ledger.t.length - r.ledger.unverifiedT.length;
       if (r.ledger.unverifiedS.length || r.ledger.unverifiedT.length) cov.unverified.push({ window: w.id, label: w.label, s: r.ledger.unverifiedS, t: r.ledger.unverifiedT });
       cov.dropped += r.dropped.length;
+      if (r.meaning) { cov.meaningPairs += r.meaning.pairs; cov.meaningChecked += r.meaning.checked; if (r.meaning.failed) cov.meaningFailed++; }
       r.groups.forEach((g) => { if (g.s.length && g.t.length) { if (g.s.length === 1 && g.t.length === 1) cov.oneToOne++; else cov.grouped++; } else if (g.s.length) cov.omitted += g.s.length; else cov.added += g.t.length; });
       const fin = finishIssues(w, r.raws, meta); const sec = secOf(w);
       fin.forEach((x) => { issues.push(x); sec.issues.push(x); });
@@ -892,6 +1101,10 @@ Return ONLY valid JSON: {"verdicts":[{"id":1,"verdict":"confirmed|false_alarm|un
         why: 'This chapter\'s translation is ' + (pct > 100 ? 'much longer' : 'much shorter') + ' than the rest of the book compared with its source (' + pct + '% of the usual length). Check for missing or extra text, or a wrong chapter boundary.' };
       issues.push(x); secOf(w).issues.push(x);
     });
+    // one problem, one finding: twins, verbatim repeats and recurring word choices are merged
+    const refined = refineIssues(issues, plan, state);
+    issues.length = 0; refined.forEach((x) => issues.push(x));
+    secRows.forEach((sr) => { sr.issues = []; }); issues.forEach((x) => { const sr = secRows.get(x.chapter); if (sr) sr.issues.push(x); });
     cov.srcParas = plan.windows.reduce((a, w) => a + w.src.length, 0); cov.tgtParas = plan.windows.reduce((a, w) => a + w.tgt.length, 0);
     cov.windowsDone = plan.windows.filter((w) => state.done[w.id]).length;
     // whole-window failures count as "not verified"
@@ -915,21 +1128,27 @@ Return ONLY valid JSON: {"verdicts":[{"id":1,"verdict":"confirmed|false_alarm|un
   // ======================================================================
   // 13. Hand-offs: reviewer link payload and CSV rows
   // ======================================================================
+  // "Also at: Ch 19 para 3; Ch 19 para 4 ..." for a finding that was merged with its repeats
+  function alsoText(x) {
+    if (!x.also || !x.also.length) return '';
+    const n = x.alsoCount || x.also.length, shown = x.also.slice(0, 12).map((a) => a.tgtLoc || a.srcLoc).filter(Boolean);
+    return 'Also at: ' + shown.join('; ') + (n > shown.length ? ' and ' + (n - shown.length) + ' more' : '') + '.';
+  }
   function toShareIssues(issues, srcLang) {
-    return issues.map((x) => ({
+    return issues.filter((x) => x.severity !== 'Note').map((x) => ({
       id: x.id, type: x.type, severity: x.severity, page: x.page || null,
       loc: (x.tgtLoc || (x.srcLoc ? 'after source ' + x.srcLoc : '')) + (x.srcLoc && x.tgtLoc ? ' (source ' + x.srcLoc + ')' : ''),
-      context: x.tgtContext || '', original: x.insert ? '' : x.tgtText, corrected: x.fix || '', explanation: x.why,
+      context: x.tgtContext || '', original: x.insert ? '' : x.tgtText, corrected: x.fix || '', explanation: (x.why + ' ' + alsoText(x)).trim(),
       insert: x.insert ? true : undefined,
       source: x.srcContext ? { label: 'Source' + (srcLang ? ' (' + srcLang + ')' : ''), text: x.srcContext } : undefined,
     }));
   }
-  const CSV_HEAD = ['#', 'Chapter', 'Source location', 'Translation location', 'Page', 'Type', 'Severity', 'Source text', 'Translation text', 'Suggested fix', 'Explanation', 'Checked by'];
+  const CSV_HEAD = ['#', 'Chapter', 'Source location', 'Translation location', 'Page', 'Type', 'Severity', 'Source text', 'Translation text', 'Suggested fix', 'Explanation', 'Also at', 'Checked by'];
   function toCsvRows(issues) {
-    return issues.map((x) => [x.id, x.chapter || '', x.srcLoc, x.tgtLoc, x.page || '', x.type, x.severity, x.srcText || x.srcContext, x.tgtText || x.tgtContext, x.fix, x.why,
-      x.origin === 'rule' ? 'rule' : (x.verified === 'confirmed' ? 'AI, double-checked' : 'AI')]);
+    return issues.map((x) => [x.id, x.chapter || '', x.srcLoc, x.tgtLoc, x.page || '', x.type, x.severity, x.srcText || x.srcContext, x.tgtText || x.tgtContext, x.fix, x.why, alsoText(x).replace(/^Also at: /, '').replace(/\.$/, ''),
+      x.origin === 'rule' ? 'rule' : x.second === 'agrees' ? 'AI, confirmed by a second look' : x.origin === 'ai2' ? 'AI, second look' : (x.verified === 'confirmed' ? 'AI, double-checked' : 'AI')]);
   }
 
-  Object.assign(global.TC, { parseJSONLoose, estimateRun, halve, checkWindows, buildReport, toShareIssues, CSV_HEAD, toCsvRows, finishIssues });
+  Object.assign(global.TC, { parseJSONLoose, estimateRun, halve, checkWindows, buildReport, toShareIssues, CSV_HEAD, toCsvRows, finishIssues, alsoText, refineIssues, relabel, mergeSecond });
 
 })(typeof window !== 'undefined' ? window : globalThis);
