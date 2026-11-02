@@ -596,9 +596,12 @@
       .tc-card .none { color:var(--muted); font-style:italic; } .tc-after { color:var(--muted); font-size:12.5px; margin-top:4px; }
       .tc-card-foot { display:grid; grid-template-columns:1fr 1fr; gap:16px; padding:13px 16px 15px; background:var(--sf2); border-top:1px solid var(--border); font-size:14px; line-height:1.6; }
       .tc-card-foot b { display:block; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:3px; }
-      .tc-copy { font:inherit; font-size:12px; font-weight:600; text-transform:none; letter-spacing:0; padding:3px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--accent); cursor:pointer; }
-      .tc-copy:hover { border-color:var(--accent); } .tc-copy.done { background:rgba(16,185,129,.14); border-color:#10b981; color:#059669; }
-      .tc-card-foot b .tc-copy { margin-left:8px; }
+      .tc-ico { display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; padding:0; border-radius:7px; border:1px solid transparent; background:transparent; color:var(--muted); cursor:pointer; vertical-align:middle; }
+      .tc-ico:hover { color:var(--accent); border-color:var(--border); background:var(--surface); }
+      .tc-ico.done { color:#059669; background:rgba(16,185,129,.14); }
+      .tc-findwrap { display:inline-flex; align-items:center; gap:4px; font-size:12.5px; color:var(--muted); max-width:100%; }
+      .tc-findtxt { color:var(--text); font-weight:600; overflow-wrap:anywhere; }
+      .tc-card-foot b { display:flex; align-items:center; gap:6px; }
       .wiz > summary { cursor:pointer; font-weight:600; color:var(--accent); padding:6px 0; list-style:none; font-size:14px; }
       .wiz > summary::-webkit-details-marker { display:none; }
       .wiz[open] > summary { margin-bottom:10px; }
@@ -1169,7 +1172,7 @@
 <footer class="app-footer">
   <span>© 2026 Explorer Publishing &amp; Distribution LLC · All rights reserved</span>
   <span id="cost-footer" style="font-size:10px;color:var(--muted);opacity:.65"></span>
-  <span class="app-footer-version">v5.2.1</span>
+  <span class="app-footer-version">v5.2.2</span>
 </footer>
 
 <div class="toast" id="toast"></div>
@@ -6064,13 +6067,15 @@ function tcFindText(x) {
   const w = x.tgtText ? words(x.tgtText) : x.insert ? words(x.tgtContext).slice(-6) : words(x.tgtContext).slice(0, 8);
   return w.slice(0, 8).join(' ');
 }
-// Copy a piece of an issue. The button itself says "Copied"; if the browser blocks copying, the text is shown to copy by hand.
+const TC_ICON_COPY = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+const TC_ICON_OK = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
+const tcIco = (kind, id, tip) => '<button type="button" class="tc-ico" title="' + tip + '" aria-label="' + tip + '" onclick="tcCopy(this,\'' + kind + '\',' + id + ')">' + TC_ICON_COPY + '</button>';
+// Copy a piece of an issue. The icon turns into a tick; if the browser blocks copying, the text is shown to copy by hand.
 async function tcCopy(btn, kind, id) {
   const x = lastTC && lastTC.issues.find((q) => q.id === id); if (!x) return;
   const text = kind === 'find' ? tcFindText(x) : kind === 'fix' ? (x.fix || '') : kind === 'src' ? (x.srcContext || x.srcText || '') : (x.tgtContext || x.tgtText || '');
   if (!text) { toast('There is nothing to copy here.', 'warn'); return; }
-  const label = btn.dataset.label || btn.textContent; btn.dataset.label = label;
-  if (await srCopy(text)) { btn.classList.add('done'); btn.textContent = 'Copied'; setTimeout(() => { btn.classList.remove('done'); btn.textContent = label; }, 1600); }
+  if (await srCopy(text)) { btn.classList.add('done'); btn.innerHTML = TC_ICON_OK; btn.title = 'Copied'; setTimeout(() => { btn.classList.remove('done'); btn.innerHTML = TC_ICON_COPY; btn.title = 'Copy'; }, 1500); }
   else window.prompt('Your browser blocked copying. Select all of the text below and copy it with Ctrl+C (Cmd+C on a Mac):', text);
 }
 async function tcCopyFind(id) {
@@ -6093,14 +6098,14 @@ function tcRenderRows() {
       '<header class="tc-card-head">' +
         '<span class="badge" style="background:' + c + '22;color:' + c + ';border:1px solid ' + c + '44">' + esc(x.type) + '</span><span class="sev-badge sev-' + esc(x.severity) + '">' + esc(x.severity) + '</span>' +
         '<span class="tc-loc">' + esc(loc) + (x.srcLoc ? '<small>Original: ' + esc(locFmt(x.srcLoc)) + '</small>' : '') + '</span>' +
-        (find ? '<button type="button" class="tc-copy" onclick="tcCopy(this,\'find\',' + x.id + ')" title="Copies the words to search for. Then press Ctrl+F (Cmd+F on a Mac) in your document and paste: ' + esc(find) + '">Copy search words</button>' : '') +
+        (find ? '<span class="tc-findwrap" title="Search for these words with Ctrl+F (Cmd+F on a Mac) in your document">Search for <bdi class="tc-findtxt">&ldquo;' + esc(find.length > 34 ? find.slice(0, 34) + '...' : find) + '&rdquo;</bdi>' + tcIco('find', x.id, 'Copy these words') + '</span>' : '') +
         '<span class="tc-by">' + by + '</span>' +
         '<span class="tc-acts"><button class="tc-act' + (st === 'fixed' ? ' on-fixed' : '') + '" onclick="tcTriage(' + x.id + ',\'fixed\')" title="Mark as fixed">&#10003; Fixed</button><button class="tc-act' + (st === 'false' ? ' on-false' : '') + '" onclick="tcTriage(' + x.id + ',\'false\')" title="This is not a real problem. It leaves the score.">&#10007; Not an issue</button></span>' +
       '</header>' +
-      '<div class="tc-cols"><section><h5><span>Original' + (lastTC.source && lastTC.source.lang ? ' (' + esc(lastTC.source.lang) + ')' : '') + '</span>' + ((x.srcContext || x.srcText) ? '<button type="button" class="tc-copy" onclick="tcCopy(this,\'src\',' + x.id + ')">Copy</button>' : '') + '</h5><div dir="auto">' + src + '</div></section>' +
-        '<section><h5><span>Translation' + (lastTC.target && lastTC.target.lang ? ' (' + esc(lastTC.target.lang) + ')' : '') + '</span>' + ((x.tgtContext || x.tgtText) ? '<button type="button" class="tc-copy" onclick="tcCopy(this,\'tgt\',' + x.id + ')">Copy</button>' : '') + '</h5><div dir="auto">' + tgt + '</div></section></div>' +
+      '<div class="tc-cols"><section><h5><span>Original' + (lastTC.source && lastTC.source.lang ? ' (' + esc(lastTC.source.lang) + ')' : '') + '</span>' + ((x.srcContext || x.srcText) ? tcIco('src', x.id, 'Copy the original text') : '') + '</h5><div dir="auto">' + src + '</div></section>' +
+        '<section><h5><span>Translation' + (lastTC.target && lastTC.target.lang ? ' (' + esc(lastTC.target.lang) + ')' : '') + '</span>' + ((x.tgtContext || x.tgtText) ? tcIco('tgt', x.id, 'Copy the translation text') : '') + '</h5><div dir="auto">' + tgt + '</div></section></div>' +
       (x.fix || x.why || (x.also && x.also.length) ? '<footer class="tc-card-foot">' +
-        (x.fix ? '<div><b>Suggested fix <button type="button" class="tc-copy" onclick="tcCopy(this,\'fix\',' + x.id + ')">Copy</button></b><div dir="auto"><mark class="c">' + esc(x.fix) + '</mark></div></div>' : '') +
+        (x.fix ? '<div><b>Suggested fix ' + tcIco('fix', x.id, 'Copy the suggested fix') + '</b><div dir="auto"><mark class="c">' + esc(x.fix) + '</mark></div></div>' : '') +
         (x.why || (x.also && x.also.length) ? '<div><b>Why</b><div>' + why + '</div>' + tcAlsoHtml(x) + '</div>' : '') + '</footer>' : '') +
       '</article>';
   }).join('');

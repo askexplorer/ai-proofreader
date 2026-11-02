@@ -8,7 +8,7 @@ Single-file browser app for professional AI-powered proofreading. Powered by Ant
 **Live repo:** github.com/askexplorer/ai-proofreader (remote `askexplorer`; the old `origin` = shakkeer-cloud is retired)  
 **Live site:** https://askexplorer.github.io/ai-proofreader/ (GitHub Pages, serves `master`)  
 **Branch:** master  
-**Current version:** v5.2.1
+**Current version:** v5.2.2
 
 ---
 
@@ -303,7 +303,7 @@ Trigger: an editor reviewed a real Arabic -> English book check (188 findings; t
 ### Translation report as review cards (v5.2.0)
 The 8-column table (`#tc-body`) is replaced by a list of cards (`#tc-list`, built by `tcRenderRows`): a header row (type and severity badges, location "Page N . para N" with "Original: para N" under it, "Find in document" copy link, who found it, and two labelled buttons **Fixed** / **Not an issue**), then Original and Translation side by side (stacked on phones; `dir="auto"` so Arabic/Hebrew read right-to-left), then Suggested fix and Why. Severity shows as the card's left border; fixed / not-an-issue cards fade. `tcTriage`, `tcFiltered`, sorting, "show minor", exports and the translator share are unchanged. The header is calmer: one summary line (`#tc-sumline`: "N issues to review" + severity pills + "Every paragraph was checked"); cost, tokens and coverage sit in a folded "How this check was done" (a PARTIAL result still shows its banner); the count tiles (`#tc-stats`) are hidden by CSS; the chapters row shows only when there is more than one chapter. The score ring has a tooltip explaining Pass/Revise/Fail. `.tc-table` CSS is now unused.
 
-**Copying (v5.2.1).** Every card has real buttons: "Copy search words" (the quoted words, for Ctrl+F in Word), and "Copy" on the Original passage, the Translation passage and the Suggested fix (`tcCopy(btn, kind, id)`). The button itself turns green and says "Copied" for 1.6 s (a pop-up alone was easy to miss); if the browser blocks copying, the text is shown in a prompt to copy by hand. `srCopy` tries the Clipboard API, then a read-only textarea with `execCommand('copy')`. Test on the live site by clicking for real (a synthetic click can overwrite the user's clipboard: stub `navigator.clipboard.writeText` when testing).
+**Copying (v5.2.2).** Quiet by design: the card header shows the actual search words ("Search for ..."), and every copy action is a small icon (`tcIco`) next to what it copies: the search words, the Original passage, the Translation passage, the Suggested fix. The icon turns into a green tick for 1.5 s; if the browser blocks copying, the text is shown in a prompt to copy by hand (`tcCopy(btn, kind, id)`; `srCopy` tries the Clipboard API, then a read-only textarea with `execCommand('copy')`). Do not turn these back into labelled buttons (the user asked for text plus a small icon). Test on the live site by clicking for real only with `navigator.clipboard.writeText` stubbed (a synthetic click can overwrite the user's clipboard).
 
 ### Ideas not built
 Cross-chapter term glossary check, mechanical pre-pass, re-verify diff mode, InDesign Find/Change script, per-client glossary, proxy so the API key never reaches browsers.
