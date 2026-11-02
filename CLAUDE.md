@@ -8,7 +8,7 @@ Single-file browser app for professional AI-powered proofreading. Powered by Ant
 **Live repo:** github.com/askexplorer/ai-proofreader (remote `askexplorer`; the old `origin` = shakkeer-cloud is retired)  
 **Live site:** https://askexplorer.github.io/ai-proofreader/ (GitHub Pages, serves `master`)  
 **Branch:** master  
-**Current version:** v5.0.0
+**Current version:** v5.1.0
 
 ---
 
@@ -291,6 +291,14 @@ Goal: anyone can use it without help. Logic and element ids are unchanged; the l
 - **Report**: the three rows of count tiles (`#checked-summary`, `#stats-grid`) are hidden by CSS (still filled by JS) and replaced by one summary line (`#report-sumline`: "11 issues to review", severity pills).
 - **Admin**: the one-time Workspace setup wizard is folded into `<details class="wiz">`; key help text is role specific (`data-for`), because with the proxy on, admin keys live on the server.
 - Verified: every screen in light and dark, phone width (no horizontal scroll), full proofread flow with a faked model. NOT verified: real colleagues' first impressions; ask 2-3 people to try it without help and note where they hesitate.
+
+### Translation check: facts-only default, calmer list, page numbers (v5.1.0)
+Trigger: an editor reviewed a real Arabic -> English book check (188 findings; the exported feedback CSV showed 28 of 28 reviewed findings dismissed; 81% were "Mistranslation", 61% "Minor"; every location "Ch 1"; no page). Their reasons, in their words: pull quotes shortened for space; Arabic paragraphs split differently from the English; repeated blessings dropped on purpose; client edits; "same meaning, just not a literal translation". The first 35 they saw were simply the first in document order. (Client text is NOT in the repo or the tests.)
+- **How strict** (`ctx.strict`, `TC.strictLevel`, `TC.calibration`; dialog radio `tc-strict`, remembered in `proof_tc_strict`): `facts` (DEFAULT: changed or missing facts, names, numbers, claims, a whole idea; Critical/Major only), `close` (also meaning shifts and lost qualifiers: legal/technical), `all` (everything, the old behaviour). The prompt (main, second look, verification) now carries a "NORMAL TRANSLATION CHOICES - never report" block (rewording, condensing, one of several near-synonyms/adjectives/blessings dropped, merged or split sentences and paragraphs, pull quotes/callouts, deliberate edits) plus the level; an Arabic source or target adds a note on blessings/formulas (report only as Query, only if it carries information). In `facts`, `buildReport` demotes the model's Minor and its wording-only Queries to hidden Notes (`x.was` keeps the original); rule-based Number/Untranslated checks stay. Length outliers need 250+ source characters; mild ones are Notes, extreme ones Queries.
+- **List**: opens on what needs attention, most serious first (`tcShowMinor=false`, `tcSort='severity'`); a bar says how many minor/style findings are hidden ("Show them") and has the order switch. Translator share = what you see (Minor excluded unless shown). Findings with no chapter structure (fewer than 3 chapter headings) no longer say "Ch 1".
+- **Locations**: `Find: "..."` under each location copies the quoted words for Ctrl+F (`tcFindText`, `tcCopyFind`). **Word page numbers** (`TC.docxPages`): Word stores its last page layout in the file (`w:lastRenderedPageBreak`, plus hard breaks); the file is read directly (no mammoth) when the translation is a .docx and its text length matches mammoth's within 15%; otherwise paragraph numbers only. The dialog tells which. A PDF/IDML translation still gives real page numbers.
+- Tests: `tests/tc-strict.test.mjs` (levels, prompt text, locations, length outliers), `tests/tc-docx.test.mjs` (page reader on hand-built .docx files). The older engine tests run with `strict: 'all'` to keep their expectations. NOT verified: how the real models behave under the new prompts. Re-run the Arabic -> English book at the default level and compare with the editor's 28 "disagreed" (it should hide most), then check that real problems still appear (e.g. the one "hundreds of thousands" vs "thousands" finding, which is a real candidate).
+- Ideas not built: learning from dismissed findings (store editors' "disagree" reasons as team-wide "do not report things like this" examples), sending the length-based pairing to the model as an alignment hint.
 
 ### Ideas not built
 Cross-chapter term glossary check, mechanical pre-pass, re-verify diff mode, InDesign Find/Change script, per-client glossary, proxy so the API key never reaches browsers.

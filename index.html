@@ -13,7 +13,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/docx@7.8.2/build/index.js"></script>
   <script src="share-core.js?v=4.5.0"></script>
-  <script src="tc-core.js?v=4.2.0"></script>
+  <script src="tc-core.js?v=5.1.0"></script>
   <script>try{document.documentElement.dataset.theme=localStorage.getItem('proof_theme')||'light'}catch(e){document.documentElement.dataset.theme='light'}</script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -563,6 +563,11 @@
       #checked-summary, #stats-grid { display:none !important; }
       .table-wrap { box-shadow:var(--card-shadow); }
 
+      .tc-minor-bar { display:flex; flex-wrap:wrap; gap:6px 18px; align-items:center; margin:0 0 12px; font-size:13px; color:var(--muted); }
+      .tc-minor-bar a { color:var(--accent); font-weight:600; cursor:pointer; }
+      .tc-minor-bar select { padding:4px 8px; font-size:13px; border-radius:8px; }
+      .tc-find { display:block; max-width:100%; margin-top:4px; font-size:11.5px; color:var(--accent); cursor:pointer; white-space:normal; overflow-wrap:anywhere; }
+      .tc-find:hover { text-decoration:underline; }
       .wiz > summary { cursor:pointer; font-weight:600; color:var(--accent); padding:6px 0; list-style:none; font-size:14px; }
       .wiz > summary::-webkit-details-marker { display:none; }
       .wiz[open] > summary { margin-bottom:10px; }
@@ -745,6 +750,8 @@
       <button type="button" class="instr-chip only-proof" onclick="instrAdd('Check that every date, number and name is written the same way everywhere.')">Dates, numbers, names</button>
       <button type="button" class="instr-chip only-proof" onclick="instrAdd('This is for young readers: flag long or hard sentences.')">Young readers</button>
       <button type="button" class="instr-chip only-proof" onclick="instrAdd('Do not flag foreign words, italics or quotations.')">Ignore foreign words</button>
+      <button type="button" class="instr-chip only-tc" onclick="instrAdd('This is an adapted translation (a speech, letter or book): it is not word for word.')">Adapted, not literal</button>
+      <button type="button" class="instr-chip only-tc" onclick="instrAdd('Pull quotes and callouts may be shortened or rephrased for space. Do not report them.')">Pull quotes shortened</button>
       <button type="button" class="instr-chip only-tc" onclick="instrAdd('Keep names and titles exactly as in the original.')">Keep names</button>
       <button type="button" class="instr-chip only-tc" onclick="instrAdd('Dates follow the Gregorian calendar.')">Gregorian dates</button>
       <button type="button" class="instr-chip only-tc" onclick="instrAdd('Ignore small differences in wording that do not change the meaning.')">Ignore small wording</button>
@@ -949,6 +956,7 @@
     </div>
     <div class="tc-chapters-wrap"><div class="tc-chapters-head">Chapters <span id="tc-chapters-hint">(click one to filter; colour shows its score)</span></div><div class="tc-chapters" id="tc-chapters"></div></div>
     <div class="stats-grid" id="tc-stats"></div>
+    <div class="tc-minor-bar" id="tc-minor-bar"></div>
     <div class="filter-bar" id="tc-filter-type"></div>
     <div class="sev-filter-bar" id="tc-filter-sev"></div>
     <div class="table-wrap">
@@ -1132,7 +1140,7 @@
 <footer class="app-footer">
   <span>© 2026 Explorer Publishing &amp; Distribution LLC · All rights reserved</span>
   <span id="cost-footer" style="font-size:10px;color:var(--muted);opacity:.65"></span>
-  <span class="app-footer-version">v5.0.0</span>
+  <span class="app-footer-version">v5.1.0</span>
 </footer>
 
 <div class="toast" id="toast"></div>
@@ -4873,7 +4881,7 @@ function closeShareModal() { $sr('share-modal').classList.remove('open'); SRS = 
 function srScrollSetup() { setTimeout(() => { const c = $sr('sr-setup-card'); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 80); }
 function srShareData() {
   if (SRS && SRS.kind === 'translation') {
-    const r = lastTC, all = r.issues.filter((e) => e.severity !== 'Note'), open = all.filter((e) => !['false', 'fixed'].includes(tcState(e)));
+    const r = lastTC, all = r.issues.filter((e) => e.severity !== 'Note' && (tcShowMinor || e.severity !== 'Minor')), open = all.filter((e) => !['false', 'fixed'].includes(tcState(e)));
     return { r, di: { filename: 'Translation check: ' + r.target.name, pages: r.target.pages, wordCount: r.target.words, language: r.target.lang }, all, open };
   }
   const r = lastReport, di = r._docInfo || docInfo;
@@ -5540,6 +5548,7 @@ let TC_RUN = null;         // the run in progress / resumable: { plan, srcDoc, t
 let TC_PENDING = null;     // { tgt } while the confirm dialog is open
 const tcFilters = new Set(), tcSevFilter = new Set();
 let tcChapterFilter = null, tcShown = 120;
+let tcShowMinor = false, tcSort = 'severity';          // the list opens on what needs attention; minor and style differences are one click away
 
 // ── Source document ────────────────────────────────────────────────────
 function tcToggleSource() { const b = document.getElementById('tc-src-body'); b.hidden = !b.hidden; }
@@ -5612,6 +5621,13 @@ async function tcLoadTarget() {
     if (file) {
       docInfo = { filename: file.name, ext: file.name.split('.').pop().toLowerCase(), fileSize: file.size, pages: null, pageTexts: [], wordCount: 0, charCount: 0, paraCount: 0, images: null, graphics: null, tables: null, language: '', isSpread: false, scriptDir: 'ltr' };
       lastExtractedText = await extractText(file);
+      if (docInfo.ext === 'docx' && TC.docxPages) {         // Word keeps its page layout inside the file: use it for page numbers
+        try {
+          const dp = await TC.docxPages(await file.arrayBuffer());
+          const ratio = dp ? dp.pageTexts.join('').length / Math.max(1, lastExtractedText.length) : 0;
+          if (dp && dp.pages > 1 && ratio > 0.85 && ratio < 1.15) docInfo.docxPages = dp;       // text must match what was read the normal way, else no pages
+        } catch (_) { /* no page numbers: locations use paragraph numbers */ }
+      }
     } else {
       lastExtractedText = paste;
       docInfo = { filename: '', ext: '', fileSize: 0, pages: null, pageTexts: [], wordCount: 0, charCount: 0, paraCount: 0, images: null, graphics: null, tables: null, language: '', isSpread: false, scriptDir: 'ltr' };
@@ -5619,11 +5635,11 @@ async function tcLoadTarget() {
     }
   } catch (e) { toast('File error: ' + e.message, 'err'); setLoading(false); return null; }
   setLoading(false);
-  const paged = docInfo.pageTexts && docInfo.pageTexts.length > 1;
-  const paras = paged ? TC.parasFromPages(docInfo.pageTexts) : TC.parasFromText(lastExtractedText);
+  const wp = docInfo.docxPages || null, paged = !wp && docInfo.pageTexts && docInfo.pageTexts.length > 1;
+  const paras = wp ? TC.parasFromPages(wp.pageTexts) : paged ? TC.parasFromPages(docInfo.pageTexts) : TC.parasFromText(lastExtractedText);
   if (!paras.length) { toast('No text found in the translation.', 'err'); return null; }
   const st = TC.docStats(paras);
-  return { name: docInfo.filename || 'Pasted text', ext: docInfo.ext, paras, words: st.words, chars: st.chars, pages: paged ? docInfo.pages : null,
+  return { name: docInfo.filename || 'Pasted text', ext: docInfo.ext, paras, words: st.words, chars: st.chars, pages: wp ? wp.pages : paged ? docInfo.pages : null, pageSource: wp ? 'word' : paged ? 'file' : null,
            lang: tcLangName('language', docInfo.language) || docInfo.language || '' };
 }
 
@@ -5687,6 +5703,7 @@ function tcRecalc() {
   document.getElementById('tc-est').innerHTML = (plan.windows.length ? '<b>' + plan.windows.length + ' parts</b> to check &middot; about ' + calls + ' model calls' + (sec ? ' (' + sec.calls + ' of them for the second look)' : '') + ' &middot; roughly ' + inTok.toLocaleString() + ' tokens in, ' + outTok.toLocaleString() + ' out<br>Estimated cost with <b>' + esc(modelDisplayName(model)) + '</b>' + (sec && sc.model2 ? ' + <b>' + esc(modelDisplayName(sc.model2)) + '</b>' : '') + ': <b>' + usd + '</b> &middot; time: ' + (mins < 1.5 ? 'about a minute' : 'about ' + Math.round(mins) + ' minutes') + '<br><span style="color:var(--muted)">Estimates only; long documents may take longer if your API key has a low rate limit (the portal slows down automatically).</span>' : '<span style="color:#f97316">No chapters match that list.</span>');
   document.getElementById('tc-go').disabled = !plan.windows.length;
 }
+function tcStrictPref() { try { const v = localStorage.getItem('proof_tc_strict'); return ['facts', 'close', 'all'].includes(v) ? v : 'facts'; } catch (_) { return 'facts'; } }
 function tcShowConfirm(tgt) {
   const d = tcDocs(tgt); TC_PENDING = { tgt, d, plan: null, only: null };
   const plan = TC.planWindows(d.srcDoc, d.tgtDoc, {});
@@ -5694,9 +5711,16 @@ function tcShowConfirm(tgt) {
   document.getElementById('tc-box').innerHTML = '<div class="modal-title">Check translation</div>' +
     line('Source', TCS.name, d.srcLang, TCS.words, TCS.paras.length, TCS.pages ? ' &middot; ' + TCS.pages + ' pages' : '') +
     line('Translation', tgt.name, d.tgtLang, tgt.words, tgt.paras.length, tgt.pages ? ' &middot; ' + tgt.pages + ' pages' : '') +
+    (tgt.pageSource === 'word' ? '<div class="sr-hint" style="margin:-2px 0 8px 94px">Page numbers come from the page layout Word last saved. They can differ slightly from a printed PDF.</div>'
+      : !tgt.pages && tgt.ext === 'docx' ? '<div class="sr-hint" style="margin:-2px 0 8px 94px">This Word file has no saved page layout, so locations show paragraph numbers. Use the PDF or InDesign file as the translation to get page numbers.</div>'
+      : !tgt.pages ? '<div class="sr-hint" style="margin:-2px 0 8px 94px">No page numbers in this file: locations show paragraph numbers. A PDF or InDesign file gives page numbers.</div>' : '') +
     '<div style="margin:12px 0 10px">' + tcStructureHtml(plan, d) + '</div>' +
     '<div class="sr-field"><label>Only check these chapters <span style="font-weight:500;text-transform:none;letter-spacing:0">(optional, handy for a cheap trial)</span></label><input class="sr-input" id="tc-only" placeholder="all chapters  (or e.g. 33, 36, 42  or  30-35)" oninput="tcRecalc()" autocomplete="off"></div>' +
     (instrText() ? '<div class="sr-field"><label>Your instructions for the AI</label><div class="sr-box" style="white-space:pre-wrap;font-size:12.5px">' + esc(instrText()) + '</div><div class="sr-hint">To change them, press Cancel and edit the box on the Proof page.</div></div>' : '') +
+    '<div class="sr-field" style="margin-top:12px"><label>How strict should the check be?</label>' +
+      [['facts', 'Facts only', ' (recommended)', 'Reports changed or missing facts, names, numbers and claims. Ignores rewording, condensing, pull quotes, repeated phrases and different paragraph breaks. Best for books, speeches and letters.'],
+       ['close', 'Close translation', '', 'Also reports changes of meaning and lost qualifiers. For legal, technical or official texts.'],
+       ['all', 'Everything', '', 'Also reports small differences. Expect many findings.']].map((o) => '<label class="sr-opt" style="display:flex;gap:9px;align-items:flex-start;cursor:pointer;margin:5px 0"><input type="radio" name="tc-strict" value="' + o[0] + '"' + (tcStrictPref() === o[0] ? ' checked' : '') + ' style="margin-top:3px;width:auto"><span><b>' + o[1] + '</b>' + o[2] + '<br><span class="sr-hint" style="margin:0;font-weight:400">' + o[3] + '</span></span></label>').join('') + '</div>' +
     '<div class="sr-field" style="margin-top:2px"><label class="sr-opt" style="display:flex;gap:9px;align-items:flex-start;cursor:pointer"><input type="checkbox" id="tc-second" checked onchange="tcRecalc()" style="margin-top:3px"><span><b>Second look at meaning (recommended)</b><br><span style="color:var(--muted);font-weight:400;font-size:12px;line-height:1.5">Every matched passage is judged a second time, looking only at meaning: who acts, the direction of a duty or trust, advising versus deciding, a lost qualifier, an unclear reference. It finds problems the first check misses and confirms the ones it found. It costs about as much again.</span></span></label>' +
     '<div id="tc-second-model-wrap" style="margin:6px 0 0 26px"><label style="font-size:11px;color:var(--muted)">Use this model for the second look</label><select class="sr-input" id="tc-model2" onchange="tcRecalc()">' + tcSecondModelOptions(document.getElementById('model').value) + '</select><div class="sr-hint" style="margin-top:3px">A different model often notices different things. Choosing one from another company sends both texts to that company as well.</div></div></div>' +
     '<div id="tc-est" class="sr-hint" style="font-size:12.5px;line-height:1.7;margin-top:2px"></div>' +
@@ -5780,11 +5804,12 @@ async function tcCall(system, user, meta) {
 // ── Running a check ────────────────────────────────────────────────────
 async function tcConfirmStart() {
   const P = TC_PENDING; if (!P || !P.plan || !P.plan.windows.length) return;
-  const model = document.getElementById('model').value, notes = instrText();
+  const model = document.getElementById('model').value, notes = instrText(), strict = (document.querySelector('input[name="tc-strict"]:checked') || {}).value || 'facts';
+  try { localStorage.setItem('proof_tc_strict', strict); } catch (_) {}
   const gl = getGlossary(); const extra = [notes, gl.length ? 'Terms and names that must stay exactly as written in the translation (never flag them): ' + gl.join(', ') : ''].filter(Boolean).join('\n');
   TC_BUDGET.tpm = window.TC_TEST_TPM || 45000; TC_BUDGET.ok = 0; TC_BUDGET.log = [];
   const sc = tcSecondChoice();
-  TC_RUN = { plan: P.plan, srcDoc: P.d.srcDoc, tgtDoc: P.d.tgtDoc, tgtName: P.tgt.name, srcName: TCS.name, srcLang: P.d.srcLang, tgtLang: P.d.tgtLang, model, extra, notes, only: P.only, stop: false, error: null, tracked: 0, second: sc.second, model2: sc.second ? sc.model2 : null,
+  TC_RUN = { plan: P.plan, srcDoc: P.d.srcDoc, tgtDoc: P.d.tgtDoc, tgtName: P.tgt.name, srcName: TCS.name, srcLang: P.d.srcLang, tgtLang: P.d.tgtLang, model, extra, notes, strict, only: P.only, stop: false, error: null, tracked: 0, second: sc.second, model2: sc.second ? sc.model2 : null,
              state: { done: {}, results: [], inTok: 0, outTok: 0, calls: 0, splits: 0, verifyCalls: 0 }, startedAt: Date.now() };
   tcCancelConfirm();
   await tcExecute();
@@ -5795,7 +5820,7 @@ async function tcExecute() {
   setLoading(true); document.getElementById('loading-stop').style.display = 'inline-block'; document.getElementById('loading-stop').textContent = 'Stop and show results so far';
   const t0 = Date.now(), doneAtStart = Object.keys(R.state.done).length;
   const ctx = {
-    callModel: tcCall, callModelSecond: tcCall, second: !!R.second, srcLang: R.srcLang, tgtLang: R.tgtLang, extra: R.extra, shouldStop: () => R.stop,
+    callModel: tcCall, callModelSecond: tcCall, second: !!R.second, srcLang: R.srcLang, tgtLang: R.tgtLang, extra: R.extra, strict: R.strict, shouldStop: () => R.stop,
     onProgress: (p) => {
       const n = Object.keys(R.state.done).length - doneAtStart, per = n > 0 ? (Date.now() - t0) / n : 0, left = per ? Math.round(per * (p.total - p.index) / 1000) : 0;
       tcTitle('Checking ' + p.win.label + '  (' + (p.index + 1) + ' of ' + p.total + ')');
@@ -5822,7 +5847,7 @@ function tcFinalize() {
   const triage = lastTC && lastTC.triage ? lastTC.triage : {};
   Object.assign(rep, {
     source: { name: R.srcName, lang: R.srcLang, words: R.srcDoc.words, paras: R.srcDoc.paras.length }, target: { name: R.tgtName, lang: R.tgtLang, words: R.tgtDoc.words, paras: R.tgtDoc.paras.length, pages: R.tgtDoc.pages || null },
-    instructions: R.notes || '', projectId: R.projectId || (lastTC && lastTC.projectId) || undefined,
+    instructions: R.notes || '', strict: R.strict || 'facts', projectId: R.projectId || (lastTC && lastTC.projectId) || undefined,
     model: R.model, model2: R.second ? (R.model2 || R.model) : null, cost, inTok: R.state.inTok, outTok: R.state.outTok, only: R.only || null, triage, finished: !!R.state.finished,
     stopped: !!R.state.stopped, error: R.error ? String(R.error.message || R.error) : '',
   });
@@ -5965,21 +5990,48 @@ function tcRender() {
   if (sevs.length > 1) {
     sb.style.display = 'flex'; const l = document.createElement('span'); l.className = 'sev-filter-label'; l.textContent = 'Severity:'; sb.appendChild(l);
     sb.appendChild(mk('All', tcSevFilter.size === 0, '#64748b', 'sev-btn', () => { tcSevFilter.clear(); tcShown = 120; tcRender(); }));
-    sevs.forEach((s) => sb.appendChild(mk(s === 'Note' ? 'Notes: acceptable rewording (' + rep.issues.filter((x) => x.severity === 'Note').length + ', not scored)' : s, tcSevFilter.has(s), TC_SEV_COLORS[s], 'sev-btn', () => { tcSevFilter.has(s) ? tcSevFilter.delete(s) : tcSevFilter.add(s); tcShown = 120; tcRender(); })));
+    sevs.forEach((s) => sb.appendChild(mk(s === 'Note' ? 'Style notes (' + rep.issues.filter((x) => x.severity === 'Note').length + ', not scored)' : s, tcSevFilter.has(s), TC_SEV_COLORS[s], 'sev-btn', () => { tcSevFilter.has(s) ? tcSevFilter.delete(s) : tcSevFilter.add(s); tcShown = 120; tcRender(); })));
   } else sb.style.display = 'none';
   if (tcChapterFilter !== null) { const c = mk('Chapter ' + (tcChapterFilter || 'front') + '  ×', true, 'var(--accent)', 'sev-btn', () => { tcChapterFilter = null; tcRender(); }); sb.style.display = 'flex'; sb.appendChild(c); }
+  tcRenderMinorBar();
   tcRenderRows();
 }
 function tcFiltered() {
-  const notes = tcSevFilter.has('Note');                                      // Notes only show when asked for
-  return lastTC.issues.filter((x) => (x.severity !== 'Note' || notes) && (!tcFilters.size || tcFilters.has(x.type)) && (!tcSevFilter.size || tcSevFilter.has(x.severity)) && (tcChapterFilter === null || x.chapter === tcChapterFilter));
+  const sel = tcSevFilter.size > 0;
+  const list = lastTC.issues.filter((x) => {
+    const soft = x.severity === 'Minor' || x.severity === 'Note';
+    const showSev = sel ? tcSevFilter.has(x.severity) : (!soft || tcShowMinor);                 // an explicit severity choice wins
+    return showSev && (!tcFilters.size || tcFilters.has(x.type)) && (tcChapterFilter === null || x.chapter === tcChapterFilter);
+  });
+  if (tcSort === 'severity') { const rank = { Critical: 5, Major: 4, Query: 3, Minor: 2, Note: 1 }; list.sort((a, b) => (rank[b.severity] || 0) - (rank[a.severity] || 0) || a.id - b.id); }
+  return list;
+}
+function tcToggleMinor() { tcShowMinor = !tcShowMinor; tcShown = 120; tcRender(); }
+function tcSetSort(v) { tcSort = v === 'document' ? 'document' : 'severity'; tcShown = 120; tcRender(); }
+function tcRenderMinorBar() {
+  const el = document.getElementById('tc-minor-bar'); if (!el || !lastTC) return;
+  const hidden = lastTC.issues.filter((x) => (x.severity === 'Minor' || x.severity === 'Note') && tcState(x) !== 'false').length;
+  const lvl = { facts: 'Facts only', close: 'Close translation', all: 'Everything' }[lastTC.strict || 'all'];
+  el.innerHTML = (lvl ? '<span>Check level: <b>' + lvl + '</b></span>' : '') +
+    (hidden && !tcSevFilter.size ? '<span>' + (tcShowMinor ? 'Showing ' + hidden + ' minor or style ' + (hidden === 1 ? 'difference.' : 'differences.') : '<b>' + hidden + '</b> minor or style ' + (hidden === 1 ? 'difference is' : 'differences are') + ' hidden (same meaning in other words, or small).') + ' <a onclick="tcToggleMinor()">' + (tcShowMinor ? 'Hide them' : 'Show them') + '</a></span>' : '') +
+    '<span style="margin-left:auto">Order: <select aria-label="Order" onchange="tcSetSort(this.value)"><option value="severity"' + (tcSort === 'severity' ? ' selected' : '') + '>Most serious first</option><option value="document"' + (tcSort === 'document' ? ' selected' : '') + '>Document order</option></select></span>';
+}
+// What to search for in the document to land on an issue (Ctrl+F): the quoted words, else the first words of the paragraph
+function tcFindText(x) {
+  const words = (t) => String(t || '').trim().split(/\s+/).filter(Boolean);
+  const w = x.tgtText ? words(x.tgtText) : x.insert ? words(x.tgtContext).slice(-6) : words(x.tgtContext).slice(0, 8);
+  return w.slice(0, 8).join(' ');
+}
+async function tcCopyFind(id) {
+  const x = lastTC && lastTC.issues.find((q) => q.id === id); if (!x) return;
+  const ok2 = await srCopy(tcFindText(x)); toast(ok2 ? 'Copied. Press Ctrl+F (Cmd+F on a Mac) in your document and paste.' : 'Copy was blocked. Select the words and copy them manually.', ok2 ? undefined : 'warn', 6000);
 }
 function tcRenderRows() {
   const list = tcFiltered(), body = document.getElementById('tc-body'), shown = list.slice(0, tcShown);
   if (!list.length) { body.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:28px;color:var(--muted)">' + (lastTC.issues.length ? 'No issues match these filters.' : '&#127881; No translation issues were found.') + '</td></tr>'; document.getElementById('tc-more').style.display = 'none'; return; }
   body.innerHTML = shown.map((x) => {
     const c = TC_TYPE_COLORS[x.type] || '#94a3b8', st = tcState(x), by = x.origin === 'rule' ? 'automatic check' : x.second === 'agrees' ? 'AI, confirmed by a second look' : x.origin === 'ai2' ? 'AI, found by the second look' : x.verified === 'confirmed' ? 'AI, double-checked' : 'AI';
-    const where = '<b>' + esc(x.tgtLoc || '-') + '</b>' + (x.srcLoc ? '<br>source: ' + esc(x.srcLoc) : '') + (x.page ? '<br>p.' + x.page : '') + tcAlsoHtml(x);
+    const where = '<b>' + esc(x.tgtLoc || '-') + '</b>' + (x.srcLoc ? '<br>source: ' + esc(x.srcLoc) : '') + (x.page ? '<br>p.' + x.page : '') + (tcFindText(x) ? '<br><a class="tc-find" onclick="tcCopyFind(' + x.id + ')" title="Copy these words, then press Ctrl+F in your document">Find: &ldquo;' + esc(tcFindText(x).length > 34 ? tcFindText(x).slice(0, 34) + '...' : tcFindText(x)) + '&rdquo;</a>' : '') + tcAlsoHtml(x);
     const tgt = x.insert && x.type === 'Omission'
       ? '<span class="none">Missing here</span>' + (x.tgtContext ? '<div style="color:var(--muted);font-size:11px;margin-top:3px" dir="auto">after: ' + esc(x.tgtContext.length > 140 ? '...' + x.tgtContext.slice(-140) : x.tgtContext) + '</div>' : '')
       : tcHl(x.tgtContext, x.tgtText, 'o', 260);

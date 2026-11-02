@@ -446,6 +446,22 @@
     untranslated: 'Untranslated', structure: 'Structure', consistency: 'Terminology',
     wording: 'Wording', variation: 'Wording', rewording: 'Wording', 'acceptable rewording': 'Wording', 'minor wording variation': 'Wording' };
 
+  // How strict the check is: facts (default) | close | all, plus the list of normal translation choices that are never problems.
+  // Real feedback (an Arabic -> English book, 188 findings, 28 of 28 reviewed ones dismissed): pull quotes shortened for space,
+  // paragraphs split differently, repeated blessings left out, client edits and non-literal wording were reported as errors.
+  const STRICT_LEVELS = ['facts', 'close', 'all'];
+  const strictLevel = (o) => (o && STRICT_LEVELS.indexOf(o.strict) >= 0 ? o.strict : 'facts');
+  function calibration(o) {
+    const lvl = strictLevel(o), arabic = /arabic/i.test((o.srcLang || '') + ' ' + (o.tgtLang || ''));
+    const normal = 'NORMAL TRANSLATION CHOICES - never report these, whatever the strictness: rewording that says the same thing; condensing or expanding; leaving out ONE of several near-synonyms, adjectives, blessings or repeated phrases; merging or splitting sentences; a different paragraph break (when the source has two paragraphs and the translation one, or the reverse, that is a merge or a split: put them in ONE group, for example "10,11|10"); word order; non-literal or idiomatic wording; a short standalone line that repeats or condenses a sentence from the nearby body text (a pull quote or callout, often shortened for space); and deliberate editorial changes. A professionally adapted translation of a speech, letter or book is NOT a word-for-word copy.' +
+      (arabic ? ' Arabic prose often repeats blessings, honorific formulas and synonyms for emphasis and quotes scripture; English versions usually condense these. Leaving out such a formula or a repeated blessing is normal: report it only as a Query, and only if it carries information (a name, a fact, an instruction).' : '');
+    const level = lvl === 'facts'
+      ? 'STRICTNESS: FACTS ONLY. Report a problem only when a reader of the translation would get a different FACT, name, number, date, quantity, claim, instruction or obligation than a reader of the source, or when a whole substantive sentence or idea is missing or invented. Use severity Critical or Major only; do not report Minor differences at all. If an editor could reasonably accept the translation as it is, do not report it. When in doubt, leave it out.'
+      : lvl === 'close'
+      ? 'STRICTNESS: CLOSE TRANSLATION. Report changes of meaning, including a lost qualifier or a shift of nuance that matters in this kind of text (legal, technical, official). Use Minor only when the meaning really shifts slightly, never for style.'
+      : 'STRICTNESS: EVERYTHING. Report every real difference in meaning, including small ones (Minor).';
+    return normal + '\n\n' + level;
+  }
   function systemPrompt(o) {
     const sl = o.srcLang || 'the source language', tl = o.tgtLang || 'the translation language';
     return `You are a senior translation reviewer: a professional ${sl} to ${tl} translator and editor checking a published translation against its original. Compare the SOURCE (${sl}) with the TRANSLATION (${tl}) paragraph by paragraph.
@@ -457,16 +473,18 @@ You receive numbered paragraphs: [S1], [S2] ... are the source; [T1], [T2] ... a
    A source paragraph with NO counterpart in the translation is written "7|" (omitted). A translation paragraph with NO counterpart in the source is written "|8" (added). EVERY source paragraph [S#] and EVERY translation paragraph [T#] must appear exactly once. Do not mark a paragraph as omitted or added if its content appears elsewhere in the translation: pair it instead.
 
 2) ISSUES. Report real translation problems only:
-   - Omission: source content (a sentence, clause, name, qualifier or number) is missing in the translation.
+   - Omission: source content (a sentence, clause, name, or a number or qualifier that matters) is missing in the translation.
    - Addition: the translation contains content that is not in the source.
    - Mistranslation: the meaning differs, is reversed, or is wrong (wrong word sense, wrong subject or object, wrong tense that changes the facts, a negation lost).
    - Number: a number, date, time, quantity, unit or currency differs from the source.
    - Terminology: a key term, title or proper name is translated wrongly or inconsistently inside this text.
-   - Untranslated: text that should be translated was left in the source language.
+   - Untranslated: text that should be translated was left in the source language (never use this for text that is simply missing).
    - Wording: the translation words something differently but says the same thing in substance (an acceptable rewording). Always use severity "Note" for it. Give at most 3 of the clearest examples in your answer; they are not counted as problems.
    Severity: Critical = a whole sentence or more is missing or added, the meaning is reversed, or a number, date or name that matters is wrong. Major = the meaning clearly changes: who acts or is affected, the direction of a duty or relationship, what is asserted, a role or authority (advising versus deciding), a negation, or a key term is wrong. A defensible but different rendering of a word is NOT Major. Minor = small loss of nuance or a slightly inaccurate word that does not change the message. Query = you suspect a problem but are not sure (about 70 percent), or the translation can be read in an unintended way. Prefer Query to guessing. Note = acceptable rewording (type Wording).
 
 DO NOT report: spelling, grammar or punctuation of the translation (a separate proofreading handles that), style or word-order choices, idioms that are correctly rendered, reasonable transliteration of names, added explanations that are harmless, differences caused only by layout, hyphenation, headings or page furniture. The translation may be a typeset book: running headers, page numbers, and pull-quotes that repeat a sentence from the body are layout, not additions (pair a repeated sentence with the text it repeats, or list it as "|n" without reporting an issue). Do not invent problems. If everything is fine return an empty "issues" list. Only report a problem if your suggested fix is clearly better than the translation; if you cannot improve on it, it is not a problem (at most a Wording note). Never write paragraph labels such as S12 or T12 inside "why", "fix" or "target"; point to a place with a short quote instead.
+${calibration(o)}
+
 If one word-choice problem repeats in several places, report it ONCE (the clearest example) and also give "term_s" (the source word or phrase, at most 5 words, exactly as written in the source) and "term_t" (the translation's word or phrase, at most 6 words, exactly as written in the translation); the portal then finds the other places by itself. Leave term_s and term_t empty for one-off problems.
 
 For every issue give: "type", "severity", "s" (source paragraph numbers), "t" (translation paragraph numbers; for an omission use the translation paragraph the missing text belongs after, or [] if unknown), "source" (the exact source words, verbatim, at most 30 words), "target" (the exact translation words, verbatim from the [T#] text, at most 30 words; use "" for an omission), "fix" (the corrected or missing text written in ${tl}; keep it short; "" if you cannot), and "why" (one plain English sentence that starts with the problem), plus "term_s" and "term_t" (see above, or "").
@@ -485,7 +503,7 @@ Return ONLY valid JSON, no markdown:
     return `You double-check possible translation defects between ${sl} (source) and ${tl} (translation). For each numbered claim decide whether it is TRUE by searching the whole text you are given.
 - For an OMISSION claim: the quoted source passage supposedly has no counterpart. Search the entire translation; if the same content appears anywhere (even reworded, merged into another paragraph or moved) the claim is false.
 - For an ADDITION claim: the quoted translation passage supposedly has no counterpart. Search the entire source; if the same content appears anywhere, the claim is false.
-Answer "confirmed" only when you are sure the content is really absent. Answer "false_alarm" when the content is present (say where in "note"). Answer "unsure" otherwise.
+Answer "confirmed" only when you are sure the content is really absent.${strictLevel(o) !== 'all' ? ' Also answer "false_alarm" when the missing words are only one of several near-synonyms, an extra adjective or a repeated blessing or phrase, when a paragraph was merely merged or split, or when the passage is a pull quote or callout that repeats or condenses text found elsewhere.' : ''} Answer "false_alarm" when the content is present (say where in "note"). Answer "unsure" otherwise.
 Return ONLY valid JSON: {"verdicts":[{"id":1,"verdict":"confirmed|false_alarm|unsure","note":"short"}]}`;
   }
   function verifyUserPrompt(win, items, o) {
@@ -502,6 +520,8 @@ Return ONLY valid JSON: {"verdicts":[{"id":1,"verdict":"confirmed|false_alarm|un
 Look closely for these meaning shifts: who acts and who is affected (subject and object swapped, or an actor added or removed); the direction of a duty, trust or relationship (towards or from); advising turned into deciding, or any change in role or authority; a qualifier lost, added or changed (only, often, some, federal, all, never); tense, mood or degree of certainty (may, will, must); a negation lost or added; a word with a different sense, or a narrower or wider scope (for example a legal term that covers fewer people); a reference such as "them", "its" or "among them" that the translation resolves differently or leaves open; a metaphor replaced by a plain word; numbers, dates and names.
 
 Do NOT report spelling, grammar, punctuation, style, or acceptable rewording that keeps the meaning. If you list an acceptable rewording at all, use type "Wording" and severity "Note" (at most 3 per answer). Only report a problem if your suggested fix is clearly better than the translation.
+
+${calibration(o)}
 
 Answer with "same": the pairs that say the same thing, as a compact list such as "1-4,6,9-12", and "differs": one object for every pair that does NOT. EVERY pair number must appear exactly once, either in "same" or in "differs". For each differing pair give: "p" (the pair number), "type" (Mistranslation, Terminology, Number, Untranslated or Wording), "severity" (Major = the meaning clearly changes; Minor = small loss of nuance; Query = you suspect a problem or the translation could be misread; Note = acceptable rewording), "source" and "target" (the exact words, copied character for character, at most 30 words each), "fix" (the better wording in ${tl}, or ""), "why" (one plain English sentence that starts with the problem; never write pair labels such as P3 in it), and "term_s" and "term_t" (only when the same word-choice problem repeats: the source word or phrase, at most 5 words, and the translation's phrase, at most 6 words, exactly as written; otherwise "").
 
@@ -692,11 +712,11 @@ Return ONLY valid JSON: {"same":"1-4,6","differs":[{"p":5,"type":"Mistranslation
       }
       // length outlier
       const sc = sText.length, tc = tText.length;
-      if (med > 0 && sc >= 150) {
+      if (med > 0 && sc >= 250) {
         const r = tc / sc;
-        if (r < med * 0.45) out.push({ type: 'Omission', severity: 'Query', s: g.s.slice(), t: g.t.slice(), sText: '', tText: '', sOk: true, tOk: true, fix: '',
+        if (r < med * 0.35) out.push({ type: 'Omission', severity: r < med * 0.2 ? 'Query' : 'Note', s: g.s.slice(), t: g.t.slice(), sText: '', tText: '', sOk: true, tOk: true, fix: '',
           why: 'The translation is much shorter than this source passage (' + Math.round(r / med * 100) + '% of the usual length), so part of it may be missing.', origin: 'rule' });
-        else if (r > med * 2.3) out.push({ type: 'Addition', severity: 'Query', s: g.s.slice(), t: g.t.slice(), sText: '', tText: '', sOk: true, tOk: true, fix: '',
+        else if (r > med * 2.8) out.push({ type: 'Addition', severity: r > med * 4 ? 'Query' : 'Note', s: g.s.slice(), t: g.t.slice(), sText: '', tText: '', sOk: true, tOk: true, fix: '',
           why: 'The translation is much longer than this source passage (' + Math.round(r / med * 100) + '% of the usual length), so something may have been added.', origin: 'rule' });
       }
     });
@@ -806,7 +826,7 @@ Return ONLY valid JSON: {"same":"1-4,6","differs":[{"p":5,"type":"Mistranslation
 
   // Final issue objects (locations, excerpts) from one window's raw issues
   function finishIssues(win, raws, o) {
-    const chap = chapLabel(win);
+    const chap = o && o.single ? '' : chapLabel(win);
     return raws.map((r) => {
       const sP = r.s.map((k) => win.src[k - 1]).filter(Boolean), tP = r.t.map((k) => win.tgt[k - 1]).filter(Boolean);
       const insert = r.type === 'Omission' || (!tP.length && !r.tText);
@@ -912,10 +932,11 @@ Return ONLY valid JSON: {"same":"1-4,6","differs":[{"p":5,"type":"Mistranslation
   async function checkWindows(plan, srcDoc, tgtDoc, ctx, state) {
     state = state || { done: {}, results: [], inTok: 0, outTok: 0, calls: 0, splits: 0, verifyCalls: 0 };
     state.stopped = false; state.finished = false;                    // a continued run starts clean
-    const o = { srcLang: ctx.srcLang, tgtLang: ctx.tgtLang, extra: ctx.extra, sameScript: ctx.sameScript };
+    const o = { srcLang: ctx.srcLang, tgtLang: ctx.tgtLang, extra: ctx.extra, sameScript: ctx.sameScript, strict: ctx.strict };
     const system = systemPrompt(o), vsystem = verifySystemPrompt(o), msystem = meaningSystemPrompt(o);
     const maxDepth = ctx.maxDepth == null ? 3 : ctx.maxDepth;
     state.second = ctx.second ? { on: true } : null;
+    state.strict = strictLevel({ strict: ctx.strict });
 
     async function ask(sys, user, meta) {
       const second = meta && meta.kind === 'meaning';
@@ -1062,6 +1083,7 @@ Return ONLY valid JSON: {"same":"1-4,6","differs":[{"p":5,"type":"Mistranslation
     const cov = { windows: plan.windows.length, windowsDone: 0, splits: state.splits || 0, verifyCalls: state.verifyCalls || 0,
       srcParas: 0, tgtParas: 0, srcChecked: 0, tgtChecked: 0, oneToOne: 0, grouped: 0, omitted: 0, added: 0, unverified: [], dropped: 0,
       second: !!state.second, meaningPairs: 0, meaningChecked: 0, meaningFailed: 0 };
+    const single = new Set(plan.windows.filter((w) => w.num > 0).map((w) => w.num)).size <= 1;   // no chapters found: locations are paragraph/page only
     const secRows = new Map();
     const secOf = (w) => { if (!secRows.has(w.num)) secRows.set(w.num, { num: w.num, title: w.title || '', label: w.num === 0 ? 'Front matter' : (plan.how === 'length' ? 'Whole document' : 'Chapter ' + w.num), srcWords: 0, tgtWords: 0, srcParas: 0, tgtParas: 0, issues: [], done: true }); return secRows.get(w.num); };
     plan.windows.forEach((w) => { const s = secOf(w); s.srcWords += w.srcWords; s.tgtWords += w.tgtWords; s.srcParas += w.src.length; s.tgtParas += w.tgt.length; if (!state.done[w.id]) s.done = false; });
@@ -1071,7 +1093,7 @@ Return ONLY valid JSON: {"same":"1-4,6","differs":[{"p":5,"type":"Mistranslation
       cov.dropped += r.dropped.length;
       if (r.meaning) { cov.meaningPairs += r.meaning.pairs; cov.meaningChecked += r.meaning.checked; if (r.meaning.failed) cov.meaningFailed++; }
       r.groups.forEach((g) => { if (g.s.length && g.t.length) { if (g.s.length === 1 && g.t.length === 1) cov.oneToOne++; else cov.grouped++; } else if (g.s.length) cov.omitted += g.s.length; else cov.added += g.t.length; });
-      const fin = finishIssues(w, r.raws, meta); const sec = secOf(w);
+      const fin = finishIssues(w, r.raws, Object.assign({}, meta, { single })); const sec = secOf(w);
       fin.forEach((x) => { issues.push(x); sec.issues.push(x); });
     });
     // chapters that exist on one side only
@@ -1104,6 +1126,12 @@ Return ONLY valid JSON: {"same":"1-4,6","differs":[{"p":5,"type":"Mistranslation
     // one problem, one finding: twins, verbatim repeats and recurring word choices are merged
     const refined = refineIssues(issues, plan, state);
     issues.length = 0; refined.forEach((x) => issues.push(x));
+    if (strictLevel({ strict: state.strict }) === 'facts') {
+      issues.forEach((x) => {
+        const soft = x.origin !== 'rule' && (x.severity === 'Minor' || (x.severity === 'Query' && ['Omission', 'Addition', 'Number', 'Untranslated'].indexOf(x.type) < 0));
+        if (soft) { x.was = x.severity; x.severity = 'Note'; }
+      });
+    }
     secRows.forEach((sr) => { sr.issues = []; }); issues.forEach((x) => { const sr = secRows.get(x.chapter); if (sr) sr.issues.push(x); });
     cov.srcParas = plan.windows.reduce((a, w) => a + w.src.length, 0); cov.tgtParas = plan.windows.reduce((a, w) => a + w.tgt.length, 0);
     cov.windowsDone = plan.windows.filter((w) => state.done[w.id]).length;
@@ -1149,6 +1177,64 @@ Return ONLY valid JSON: {"same":"1-4,6","differs":[{"p":5,"type":"Mistranslation
       x.origin === 'rule' ? 'rule' : x.second === 'agrees' ? 'AI, confirmed by a second look' : x.origin === 'ai2' ? 'AI, second look' : (x.verified === 'confirmed' ? 'AI, double-checked' : 'AI')]);
   }
 
-  Object.assign(global.TC, { parseJSONLoose, estimateRun, halve, checkWindows, buildReport, toShareIssues, CSV_HEAD, toCsvRows, finishIssues, alsoText, refineIssues, relabel, mergeSecond });
+  // ======================================================================
+  // 14. Page numbers of a Word (.docx) file, read from the file itself
+  // ======================================================================
+  // Word records where every page started the last time it laid the document out (<w:lastRenderedPageBreak/>) and keeps hard page
+  // breaks; the usual text extractors drop both. This reads word/document.xml directly: paragraphs with the page they START on.
+  // The numbers are those of Word's last layout (a different printer or font can shift them), so the UI says so.
+  async function zipEntry(u8, name) {
+    const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+    let e = -1;
+    for (let i = u8.length - 22; i >= Math.max(0, u8.length - 66000); i--) { if (dv.getUint32(i, true) === 0x06054b50) { e = i; break; } }
+    if (e < 0) return null;
+    const count = dv.getUint16(e + 10, true); let p = dv.getUint32(e + 16, true);
+    for (let k = 0; k < count; k++) {
+      if (p + 46 > u8.length || dv.getUint32(p, true) !== 0x02014b50) return null;
+      const method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true), nlen = dv.getUint16(p + 28, true), xlen = dv.getUint16(p + 30, true), clen = dv.getUint16(p + 32, true), off = dv.getUint32(p + 42, true);
+      if (new TextDecoder().decode(u8.subarray(p + 46, p + 46 + nlen)) === name) {
+        if (csize === 0xffffffff || off === 0xffffffff) return null;               // zip64: not supported
+        const start = off + 30 + dv.getUint16(off + 26, true) + dv.getUint16(off + 28, true), data = u8.subarray(start, start + csize);
+        if (method === 0) return data;
+        if (method !== 8 || typeof DecompressionStream === 'undefined') return null;
+        const ds = new DecompressionStream('deflate-raw'), w = ds.writable.getWriter(); w.write(data); w.close();
+        return new Uint8Array(await new Response(ds.readable).arrayBuffer());
+      }
+      p += 46 + nlen + xlen + clen;
+    }
+    return null;
+  }
+  const xmlDecode = (x) => x.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#(\d+);/g, (m, d) => String.fromCharCode(+d)).replace(/&amp;/g, '&');
+  // -> { pageTexts, pages, how } or null when the file has no usable page information
+  async function docxPages(buf) {
+    let xml;
+    try { const u8 = buf instanceof Uint8Array ? buf : new Uint8Array(buf), ent = await zipEntry(u8, 'word/document.xml'); if (!ent) return null; xml = new TextDecoder('utf-8').decode(ent); }
+    catch (_) { return null; }
+    const soft = (xml.match(/<w:lastRenderedPageBreak\s*\/?>/g) || []).length;
+    const how = soft >= 2 ? 'layout' : 'breaks';                                    // Word's own layout if it saved one, else explicit page breaks only
+    const tok = how === 'layout'
+      ? /<w:lastRenderedPageBreak\s*\/?>|<w:t(?:\s[^>]*)?>[\s\S]*?<\/w:t>|<w:tab\s*\/>/g
+      : /<w:br\b[^>]*w:type="page"[^>]*\/?>|<w:pageBreakBefore\b|<w:t(?:\s[^>]*)?>[\s\S]*?<\/w:t>|<w:tab\s*\/>/g;
+    const pageTexts = []; let page = 1, breaks = 0;
+    (xml.match(/<w:p[ >][\s\S]*?<\/w:p>/g) || []).forEach((px) => {
+      let text = '', startPage = 0;
+      (px.match(tok) || []).forEach((t) => {
+        if (t.indexOf('<w:t>') === 0 || t.indexOf('<w:t ') === 0) {
+          const v = xmlDecode(t.replace(/^<w:t(?:\s[^>]*)?>/, '').replace(/<\/w:t>$/, ''));
+          if (!startPage && v.trim()) startPage = page; text += v;
+        } else if (t.indexOf('<w:tab') === 0) text += ' ';
+        else { page++; breaks++; }
+      });
+      text = text.replace(/\s+/g, ' ').trim();
+      if (!text) return;
+      const at = startPage || page;
+      while (pageTexts.length < at) pageTexts.push('');
+      pageTexts[at - 1] += (pageTexts[at - 1] ? '\n\n' : '') + text;
+    });
+    if (breaks < 1 || pageTexts.length < 2) return null;
+    return { pageTexts, pages: pageTexts.length, how };
+  }
+
+  Object.assign(global.TC, { parseJSONLoose, estimateRun, halve, checkWindows, buildReport, toShareIssues, CSV_HEAD, toCsvRows, finishIssues, alsoText, refineIssues, relabel, mergeSecond, calibration, strictLevel, STRICT_LEVELS, docxPages });
 
 })(typeof window !== 'undefined' ? window : globalThis);

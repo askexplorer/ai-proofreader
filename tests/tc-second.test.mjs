@@ -121,13 +121,13 @@ async function callSecond(system, user, meta) {
 }
 
 // ---------- run WITHOUT the second look: the clean-up alone ----------
-const base = await TC.checkWindows(plan, srcDoc, tgtDoc, { callModel: callMain, srcLang: 'English', tgtLang: 'German' });
+const base = await TC.checkWindows(plan, srcDoc, tgtDoc, { callModel: callMain, strict: 'all', srcLang: 'English', tgtLang: 'German' });
 const rep0 = TC.buildReport(plan, srcDoc, tgtDoc, base, {});
 t('no second look: no extra calls, no meaning coverage', calls.meaningMain + calls.meaningSecond === 0 && rep0.coverage.second === false && rep0.coverage.meaningPairs === 0);
 
 // ---------- run WITH the second look (a separate model function) ----------
 const calls0 = Object.assign({}, calls);
-const state = await TC.checkWindows(plan, srcDoc, tgtDoc, { callModel: callMain, callModelSecond: callSecond, second: true, srcLang: 'English', tgtLang: 'German' });
+const state = await TC.checkWindows(plan, srcDoc, tgtDoc, { callModel: callMain, callModelSecond: callSecond, second: true, strict: 'all', srcLang: 'English', tgtLang: 'German' });
 const rep = TC.buildReport(plan, srcDoc, tgtDoc, state, {});
 rep.issues.forEach((x) => console.log('  #' + x.id, x.type, x.severity, x.origin + (x.second ? '/' + x.second : ''), '|', x.tgtLoc, '|', (x.also ? 'also ' + x.also.map((a) => a.tgtLoc).join(', ') + ' | ' : '') + x.why.slice(0, 80)));
 const real = rep.issues.filter((x) => x.severity !== 'Note');

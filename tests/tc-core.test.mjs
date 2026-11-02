@@ -97,7 +97,7 @@ console.log('window tokens: max', Math.max(...plan.windows.map((w) => w.estToken
 
 // ---------- run ----------
 let progress = 0;
-const state = await TC.checkWindows(plan, srcDoc, tgtDoc, { callModel, srcLang: 'English', tgtLang: 'Mongolian', onProgress: () => { progress++; } });
+const state = await TC.checkWindows(plan, srcDoc, tgtDoc, { callModel, strict: 'all', srcLang: 'English', tgtLang: 'Mongolian', onProgress: () => { progress++; } });
 const rep = TC.buildReport(plan, srcDoc, tgtDoc, state, {});
 console.log('calls', stats.calls, '(verify ' + stats.verify + ') | misbehaviours', JSON.stringify(stats.misbehaviours), '| splits', state.splits);
 console.log('score', JSON.stringify(rep.score), '| issues', rep.issues.length);
@@ -132,11 +132,11 @@ t('the omission is located next to the right translation paragraph', rep.issues.
   let n = 0; const stopAt = 10; const st2 = { done: {}, results: [], inTok: 0, outTok: 0, calls: 0, splits: 0, verifyCalls: 0 };
   let stop = false; const slow = async (sys, user, meta) => { if (meta.kind === 'check' && ++n === stopAt) stop = true; return callModel(sys, user, meta); };
   stats.misbehaviours = {}; nthCheck = 0; seenWin.clear(); winNo = 0;
-  await TC.checkWindows(plan, srcDoc, tgtDoc, { callModel: slow, srcLang: 'English', tgtLang: 'Mongolian', shouldStop: () => stop }, st2);
+  await TC.checkWindows(plan, srcDoc, tgtDoc, { callModel: slow, strict: 'all', srcLang: 'English', tgtLang: 'Mongolian', shouldStop: () => stop }, st2);
   const partial = TC.buildReport(plan, srcDoc, tgtDoc, st2, {});
   t('stop: the run stops part-way and says so', st2.stopped && !st2.finished && !partial.coverage.complete && partial.coverage.windowsDone < plan.windows.length, JSON.stringify([st2.stopped, st2.finished, partial.coverage.windowsDone]));
   const doneBefore = Object.keys(st2.done).length; stop = false; const callsBefore = st2.calls;
-  await TC.checkWindows(plan, srcDoc, tgtDoc, { callModel, srcLang: 'English', tgtLang: 'Mongolian', shouldStop: () => stop }, st2);
+  await TC.checkWindows(plan, srcDoc, tgtDoc, { callModel, strict: 'all', srcLang: 'English', tgtLang: 'Mongolian', shouldStop: () => stop }, st2);
   const full = TC.buildReport(plan, srcDoc, tgtDoc, st2, {});
   t('continue: finishes, no longer marked stopped', st2.finished && !st2.stopped && full.coverage.complete);
   t('continue: finished windows were not run again', st2.calls - callsBefore <= plan.windows.length - doneBefore + 12, (st2.calls - callsBefore) + ' calls for ' + (plan.windows.length - doneBefore) + ' windows');
