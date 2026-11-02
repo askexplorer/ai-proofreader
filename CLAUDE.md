@@ -8,7 +8,7 @@ Single-file browser app for professional AI-powered proofreading. Powered by Ant
 **Live repo:** github.com/askexplorer/ai-proofreader (remote `askexplorer`; the old `origin` = shakkeer-cloud is retired)  
 **Live site:** https://askexplorer.github.io/ai-proofreader/ (GitHub Pages, serves `master`)  
 **Branch:** master  
-**Current version:** v4.2.1
+**Current version:** v4.3.0
 
 ---
 
@@ -262,6 +262,9 @@ A real run on a long English -> German book manuscript (confidential: no client 
 
 **Verified:** engine/rules/validation/stop-continue with a deliberately misbehaving fake model on a pseudo-translation with known defects (tests/tc-core.test.mjs); the REAL pair (English RTF 1,173 paragraphs vs Mongolian IDML 1,297 paragraphs / 306 pages) plans as 50 of 50 chapters matched, 54 windows, ~68 calls, ~$2 on Sonnet-class (~$0.5 Haiku), and every real window runs through the engine; full UI flow in the browser (confirm, run, stop, continue, 429 retry, bad key, filters, triage, exports, history, share to translator and back).
 **NOT verified:** the real model's judgement quality on real Mongolian text (no API key in the build environment). Recommend a pilot on chapters 33, 36, 42 (a few cents) and checking its flags by hand before trusting a full run. Known limits: terminology consistency is checked only inside a window (not across chapters); scanned PDFs have no OCR; PDF paragraph reconstruction is heuristic.
+
+### Your own instructions (v4.3.0)
+One box on the Proof page, `#ai-instructions` ("Your own instructions for the AI"), shown in BOTH modes (it used to be proofread-only; the translation dialog had a separate "Notes for the AI", now removed so there is one place). `instrText()` reads it (cap 3000 chars), `instrSave/instrLoad` remember it in `localStorage.proof_custom_prompt`, `instrAdd` is the example chips. Proofreading appends it to the system prompt inside a framed block ("THE EDITOR'S OWN INSTRUCTIONS ... <<< ... >>>": follow in addition to the checks, report extra findings under the closest of the eight categories, can never change the JSON format or exact-text rules). Translation check passes it as `extra` to tc-core (unchanged). It is stored with the report (`report._instructions`, history `instructions`) and shown as "Instructions given:" under the report header.
 
 ### Ideas not built
 Cross-chapter term glossary check, mechanical pre-pass, re-verify diff mode, InDesign Find/Change script, per-client glossary, proxy so the API key never reaches browsers.

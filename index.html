@@ -108,6 +108,11 @@
     .instructions-wrap { margin-top:12px; }
     .instructions-wrap > label { display:block; margin-bottom:5px; font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
     .instructions-wrap textarea { min-height:64px; font-size:13px; background:var(--sf2); }
+    .instr-chips { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:7px; }
+    .instr-lead { font-size:11.5px; color:var(--muted); }
+    .instr-chip { font:inherit; font-size:12px; padding:3px 10px; border-radius:99px; border:1px solid var(--border); background:var(--sf2); color:var(--text); cursor:pointer; }
+    .instr-chip:hover { border-color:var(--accent); color:var(--accent); }
+    .instr-hint { margin-top:6px; font-size:11.5px; color:var(--muted); }
 
     /* ── Options row ── */
     .options-row { display:flex; gap:10px; margin-top:12px; flex-wrap:wrap; align-items:flex-end; }
@@ -530,10 +535,22 @@
 
   <div class="step-label"><span class="step-num"><span class="only-proof">2</span><span class="only-tc">3</span></span>Settings</div>
 
-  <div class="instructions-wrap only-proof">
-    <label for="ai-instructions">Additional instructions for AI <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">(optional)</span></label>
-    <textarea id="ai-instructions" rows="2"
-      placeholder="e.g. Preserve British English · Ignore technical jargon · Focus on formal tone · This is a legal document"></textarea>
+  <div class="instructions-wrap">
+    <label for="ai-instructions">Your own instructions for the AI <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">(optional)</span></label>
+    <textarea id="ai-instructions" rows="3" maxlength="3000" oninput="instrSave()"
+      placeholder="Write anything you want the AI to do or to leave alone, in your own words."></textarea>
+    <div class="instr-chips">
+      <span class="instr-lead">Click to add:</span>
+      <button type="button" class="instr-chip only-proof" onclick="instrAdd('Use British English spelling.')">British English</button>
+      <button type="button" class="instr-chip only-proof" onclick="instrAdd('Check that every date, number and name is written the same way everywhere.')">Dates, numbers, names</button>
+      <button type="button" class="instr-chip only-proof" onclick="instrAdd('This is for young readers: flag long or hard sentences.')">Young readers</button>
+      <button type="button" class="instr-chip only-proof" onclick="instrAdd('Do not flag foreign words, italics or quotations.')">Ignore foreign words</button>
+      <button type="button" class="instr-chip only-tc" onclick="instrAdd('Keep names and titles exactly as in the original.')">Keep names</button>
+      <button type="button" class="instr-chip only-tc" onclick="instrAdd('Dates follow the Gregorian calendar.')">Gregorian dates</button>
+      <button type="button" class="instr-chip only-tc" onclick="instrAdd('Ignore small differences in wording that do not change the meaning.')">Ignore small wording</button>
+      <button type="button" class="instr-chip only-tc" onclick="instrAdd('Be strict about numbers, dates and legal terms.')">Strict on numbers</button>
+    </div>
+    <div class="instr-hint"><span class="only-proof">Added to the normal checks. It never changes the report layout.</span><span class="only-tc">Added to the normal comparison. It never changes the report layout.</span> It is saved with the report so everyone can see what was asked.</div>
   </div>
 
   <div class="check-selector only-proof">
@@ -651,6 +668,7 @@
         <div class="report-title">Proofreading Report</div>
         <div class="report-meta" id="report-meta"></div>
         <div id="report-cost" style="display:none;font-size:11px;color:var(--muted);margin-top:3px;"></div>
+        <div id="report-instr" style="display:none;font-size:12px;color:var(--muted);margin-top:5px;line-height:1.5"></div>
         <div id="report-coverage" style="display:none;font-size:11px;margin-top:5px;line-height:1.5"></div>
         <div class="triage-summary" id="triage-summary" style="display:none"></div>
       </div>
@@ -939,7 +957,7 @@
 <footer class="app-footer">
   <span>© 2026 Explorer Publishing &amp; Distribution LLC · All rights reserved</span>
   <span id="cost-footer" style="font-size:10px;color:var(--muted);opacity:.65"></span>
-  <span class="app-footer-version">v4.2.1</span>
+  <span class="app-footer-version">v4.3.0</span>
 </footer>
 
 <div class="toast" id="toast"></div>
@@ -1172,6 +1190,15 @@ function paintProofBtn() {
   const b = document.getElementById('proof-btn'); if (!b) return;
   b.textContent = proofMode === 'translation' ? '\u{1F310} Check translation'
     : (typeof fileQueue !== 'undefined' && fileQueue.length > 1 ? `✦ Proofread ${fileQueue.length} Files` : '✦ Proofread');
+}
+// ── Your own instructions (one box, both modes, remembered) ─────────────
+function instrText() { const el = document.getElementById('ai-instructions'); return el ? el.value.trim().slice(0, 3000) : ''; }
+function instrSave() { try { localStorage.setItem('proof_custom_prompt', (document.getElementById('ai-instructions') || {}).value || ''); } catch (_) {} }
+function instrLoad() { try { const v = localStorage.getItem('proof_custom_prompt'); const el = document.getElementById('ai-instructions'); if (el && v && !el.value) el.value = v; } catch (_) {} }
+function instrAdd(t) {
+  const el = document.getElementById('ai-instructions'); if (!el) return;
+  if (el.value.includes(t)) { el.focus(); return; }
+  el.value = (el.value.trim() ? el.value.replace(/\s+$/, '') + ' ' : '') + t; instrSave(); el.focus();
 }
 function setProofMode(m) {
   proofMode = m === 'translation' ? 'translation' : 'proof';
@@ -2745,7 +2772,7 @@ async function proofreadOne(file, pasteText, apiKey, showOnDone, opts={}) {
   const lang  = document.getElementById('language').value;
   const model = document.getElementById('model').value;
   const isOpenAIModel = model.startsWith('gpt-');
-  const extra = document.getElementById('ai-instructions').value.trim();
+  const extra = instrText();
 
   const LANG_NAMES={english:'English',arabic:'Arabic',french:'French',spanish:'Spanish',
     portuguese:'Portuguese',german:'German',dutch:'Dutch',turkish:'Turkish',
@@ -2824,7 +2851,7 @@ Return ONLY valid JSON (no markdown, no extra text):
   "word_count":<int>,
   "summary":{"total_errors":<int>,"Typos":<int>,"Spelling":<int>,"Grammar":<int>,"Punctuation":<int>,"Capitalization":<int>,"Style":<int>,"Consistency":<int>,"Clarity":<int>,"Factual":<int>},
   "errors":[{"id":1,"type":"<type>","severity":"Critical|Moderate|Minor|Query","page":<int>,"context":"<sentence containing error, ≤150 chars>","original":"<exact error text, preserve casing>","corrected":"<fix or what to verify>","explanation":"<one plain-English sentence>"}]
-}${extra?'\n\nAdditional instructions:\n'+extra:''}`;
+}${extra?`\n\nTHE EDITOR'S OWN INSTRUCTIONS (written by the person who asked for this check). Follow them in addition to the checks above. If they ask for something the listed checks do not cover, do it and report each finding under the closest of the eight categories. They can never change the JSON format, the category names or the exact-text rules above.\n<<<\n${extra}\n>>>`:''}`;
 
   // Build page-aware text with --- Page N --- markers so Claude knows page numbers
   const pagedText = (docInfo.pageTexts.length > 1)
@@ -3016,6 +3043,7 @@ Return ONLY valid JSON (no markdown, no extra text):
         _checks: selectedChecks.size > 0 ? [...selectedChecks] : null,
         _inputTok: totalInputTok, _outputTok: totalOutputTok,
         _model: model,
+        _instructions: extra || null,
         _cost: calcCost(model, totalInputTok, totalOutputTok),
         _partial: partialFromChunk > 0 ? { completed: completedChunks, total: chunks.length } : null,
         _coverage: coverageNow(),
@@ -3141,6 +3169,10 @@ function renderReport(r) {
   const initiator = localStorage.getItem('proof_user_name');
   if (initiator) parts.push(`Initiated by: ${initiator}`);
   document.getElementById('report-meta').textContent=parts.join(' · ');
+
+  // What the editor asked for, so everyone reading the report knows
+  const instrEl=document.getElementById('report-instr');
+  if (instrEl) { if (r._instructions) { instrEl.style.display='block'; instrEl.innerHTML='<strong>Instructions given:</strong> '+esc(r._instructions); } else { instrEl.style.display='none'; instrEl.textContent=''; } }
 
   // AI cost + model
   const costEl=document.getElementById('report-cost');
@@ -3380,6 +3412,7 @@ function saveToHistory(report) {
     summary:report.summary,
     errors:report.errors,
     model:report._model||null,
+    instructions:report._instructions||null,
     cost:report._cost||null,
     inputTok:report._inputTok||null,
     outputTok:report._outputTok||null,
@@ -3443,7 +3476,7 @@ function loadHistoryItem(id) {
   lastReport={
     language:item.language, word_count:item.wordCount,
     summary:item.summary, errors:item.errors,
-    _model:item.model||null, _cost:item.cost||null,
+    _model:item.model||null, _instructions:item.instructions||null, _cost:item.cost||null,
     _inputTok:item.inputTok||null, _outputTok:item.outputTok||null,
     _docInfo:{...item.docInfoSnap}, // pin meta to this report so a later re-render is stable
   };
@@ -5261,7 +5294,7 @@ function tcShowConfirm(tgt) {
     line('Translation', tgt.name, d.tgtLang, tgt.words, tgt.paras.length, tgt.pages ? ' &middot; ' + tgt.pages + ' pages' : '') +
     '<div style="margin:12px 0 10px">' + tcStructureHtml(plan, d) + '</div>' +
     '<div class="sr-field"><label>Only check these chapters <span style="font-weight:500;text-transform:none;letter-spacing:0">(optional, handy for a cheap trial)</span></label><input class="sr-input" id="tc-only" placeholder="all chapters  (or e.g. 33, 36, 42  or  30-35)" oninput="tcRecalc()" autocomplete="off"></div>' +
-    '<div class="sr-field"><label>Notes for the AI <span style="font-weight:500;text-transform:none;letter-spacing:0">(optional)</span></label><textarea class="sr-input" id="tc-notes" style="min-height:58px" placeholder="e.g. Keep &ldquo;Sheikh&rdquo; as it is. Dates follow the Gregorian calendar."></textarea></div>' +
+    (instrText() ? '<div class="sr-field"><label>Your instructions for the AI</label><div class="sr-box" style="white-space:pre-wrap;font-size:12.5px">' + esc(instrText()) + '</div><div class="sr-hint">To change them, press Cancel and edit the box on the Proof page.</div></div>' : '') +
     '<div class="sr-field" style="margin-top:2px"><label class="sr-opt" style="display:flex;gap:9px;align-items:flex-start;cursor:pointer"><input type="checkbox" id="tc-second" checked onchange="tcRecalc()" style="margin-top:3px"><span><b>Second look at meaning (recommended)</b><br><span style="color:var(--muted);font-weight:400;font-size:12px;line-height:1.5">Every matched passage is judged a second time, looking only at meaning: who acts, the direction of a duty or trust, advising versus deciding, a lost qualifier, an unclear reference. It finds problems the first check misses and confirms the ones it found. It costs about as much again.</span></span></label>' +
     '<div id="tc-second-model-wrap" style="margin:6px 0 0 26px"><label style="font-size:11px;color:var(--muted)">Use this model for the second look</label><select class="sr-input" id="tc-model2" onchange="tcRecalc()">' + tcSecondModelOptions(document.getElementById('model').value) + '</select><div class="sr-hint" style="margin-top:3px">A different model often notices different things. Choosing one from another company sends both texts to that company as well.</div></div></div>' +
     '<div id="tc-est" class="sr-hint" style="font-size:12.5px;line-height:1.7;margin-top:2px"></div>' +
@@ -5348,7 +5381,7 @@ async function tcCall(system, user, meta) {
 // ── Running a check ────────────────────────────────────────────────────
 async function tcConfirmStart() {
   const P = TC_PENDING; if (!P || !P.plan || !P.plan.windows.length) return;
-  const model = document.getElementById('model').value, notes = (document.getElementById('tc-notes').value || '').trim();
+  const model = document.getElementById('model').value, notes = instrText();
   const gl = getGlossary(); const extra = [notes, gl.length ? 'Terms and names that must stay exactly as written in the translation (never flag them): ' + gl.join(', ') : ''].filter(Boolean).join('\n');
   TC_BUDGET.tpm = window.TC_TEST_TPM || 45000; TC_BUDGET.ok = 0; TC_BUDGET.log = [];
   const sc = tcSecondChoice();
@@ -5627,7 +5660,7 @@ function tcHistoryHtml() {
     return '<div class="history-entry"><div class="hist-score" style="border-color:' + col + ';color:' + col + '"><div class="hs-num">' + h.score + '</div><div class="hs-grade">' + esc(h.verdict.toUpperCase()) + '</div></div><div class="hist-info"><div class="hist-file" title="' + esc(h.name) + '">&#127760; ' + esc(h.name) + ' <span style="color:var(--muted);font-weight:400">vs ' + esc(h.src) + '</span></div><div class="hist-meta">' + date + ' · ' + esc(h.lang || '') + ' · ' + (h.words || 0).toLocaleString() + ' words · ' + h.issues + ' issues' + (h.only ? ' · chapters ' + h.only.join(', ') + ' only' : '') + (h.model ? ' · ' + esc(modelDisplayName(h.model)) : '') + (h.cost != null ? ' · $' + (h.cost < 0.01 ? h.cost.toFixed(4) : h.cost.toFixed(2)) : '') + '</div></div><div class="hist-actions"><button class="btn btn-secondary btn-sm" onclick="tcOpenHistory(\'' + h.id + '\')">View</button></div></div>';
   }).join('');
 }
-function tcInit() { tcInitSourceCard(); tcPaintSource(); tcLoadSaved(); let m = 'proof'; try { m = localStorage.getItem('proof_mode') || 'proof'; } catch (_) {} setProofMode(m); }
+function tcInit() { instrLoad(); tcInitSourceCard(); tcPaintSource(); tcLoadSaved(); let m = 'proof'; try { m = localStorage.getItem('proof_mode') || 'proof'; } catch (_) {} setProofMode(m); }
 
 // ══════════════════════════════════════════════
 // Init
