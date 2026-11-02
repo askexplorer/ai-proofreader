@@ -14,6 +14,7 @@
   <script src="https://cdn.jsdelivr.net/npm/docx@7.8.2/build/index.js"></script>
   <script src="share-core.js?v=4.5.0"></script>
   <script src="tc-core.js?v=4.2.0"></script>
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem('proof_theme')||'light'}catch(e){document.documentElement.dataset.theme='light'}</script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -459,6 +460,130 @@
     .sr-dec.agree { color:#10b981; } .sr-dec.disagree { color:#f97316; } .sr-dec.edit { color:#3b82f6; } .sr-dec.none { color:var(--muted); }
     .sr-fbtable mark.o { background:var(--mark-orig-bg); color:var(--mark-orig-fg); text-decoration:line-through; border-radius:3px; padding:0 3px; }
     .sr-fbtable mark.c { background:var(--mark-corr-bg); color:var(--mark-corr-fg); border-radius:3px; padding:0 3px; font-weight:700; }
+
+    /* ═════════ v5 look: calm, light-first, one clear path ═════════ */
+    @media screen {
+      :root { --bg:#0e1424; --surface:#161d30; --sf2:#1d2740; --border:#2a3552; --text:#eef2fb; --muted:#9ba9c6; --accent:#7c83ff; --acc2:#6a72f5; --card-shadow:0 1px 2px rgba(0,0,0,.35); --radius:14px; }
+      [data-theme="light"] { --bg:#f6f7fb; --surface:#ffffff; --sf2:#f1f3f8; --border:#e2e6ef; --text:#1a2233; --muted:#5b6880; --accent:#4f46e5; --acc2:#4338ca; --card-shadow:0 1px 2px rgba(20,28,50,.05), 0 2px 8px rgba(20,28,50,.05); }
+      body { font-size:15px; line-height:1.55; font-family:Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans', 'Noto Sans Arabic', 'Noto Sans Bengali', 'Noto Sans Devanagari', sans-serif; -webkit-font-smoothing:antialiased; }
+      label { text-transform:none; letter-spacing:0; font-size:13px; font-weight:600; color:var(--text); }
+      header { padding:14px 28px; gap:14px; }
+      header h1 { font-size:18px; letter-spacing:-.01em; }
+      header p { display:none; }
+      .logo svg { height:32px; }
+      .theme-btn { padding:7px 11px; border-radius:10px; }
+      nav { padding:0 24px; gap:2px; position:sticky; top:0; z-index:30; overflow-x:auto; scrollbar-width:none; }
+      nav::-webkit-scrollbar { display:none; }
+      nav button { padding:15px 16px; font-size:14px; font-weight:600; white-space:nowrap; border-bottom-width:3px; }
+      nav button:hover:not(.active) { background:color-mix(in srgb, var(--accent) 7%, transparent); }
+      nav button[hidden] { display:none !important; }
+      .page { padding:30px 28px 40px; }
+      #proof-page { max-width:880px; }
+      .card, .sr-card, .table-wrap, .source-card { border-radius:var(--radius); }
+      .card { padding:22px; box-shadow:var(--card-shadow); margin-bottom:16px; }
+      .card h3 { font-size:16px; }
+      .sr-card { padding:16px 18px; box-shadow:var(--card-shadow); }
+      .sr-head h2 { font-size:22px; letter-spacing:-.01em; }
+      .modal-box { border-radius:18px; }
+
+      .btn { font-size:14px; font-weight:600; padding:10px 18px; border-radius:10px; transition:background .15s, border-color .15s, box-shadow .15s, transform .05s; }
+      .btn:active:not(:disabled) { transform:translateY(1px); }
+      .btn-sm { padding:7px 13px; font-size:13px; border-radius:9px; }
+      .btn-lg { padding:13px 28px; font-size:16px; border-radius:12px; }
+      .btn-primary { box-shadow:0 1px 2px rgba(79,70,229,.3); }
+      .btn-ghost { background:none; border:none; color:var(--muted); font-weight:500; padding:10px 12px; }
+      .btn-ghost:hover { color:var(--accent); }
+      .btn:focus-visible, nav button:focus-visible, .instr-chip:focus-visible, .mode-opt:focus-visible, summary:focus-visible { outline:3px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset:2px; }
+      input[type=text], input[type=password], input[type=search], select, textarea, .sr-input { font-size:15px; padding:11px 13px; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:var(--text); }
+      input[type=checkbox], input[type=radio] { padding:0; }
+      input:focus, select:focus, textarea:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 4px color-mix(in srgb, var(--accent) 16%, transparent); }
+      select { cursor:pointer; }
+
+      .mode-switch { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:8px; }
+      .mode-opt { display:flex; gap:14px; align-items:flex-start; text-align:left; padding:18px 20px; border-radius:14px; border:2px solid var(--border); background:var(--surface); cursor:pointer; color:var(--text); font:inherit; transition:border-color .15s, box-shadow .15s; }
+      .mode-opt b { display:block; font-size:16px; margin-bottom:3px; }
+      .mode-opt small { display:block; font-size:13px; color:var(--muted); line-height:1.45; font-weight:400; }
+      .mode-opt .mo-ico { font-size:24px; line-height:1; }
+      .mode-opt:hover { border-color:color-mix(in srgb, var(--accent) 50%, var(--border)); }
+      .mode-opt { position:relative; }
+      .mode-opt.active { border-color:var(--accent); background:color-mix(in srgb, var(--accent) 7%, var(--surface)); box-shadow:0 0 0 4px color-mix(in srgb, var(--accent) 14%, transparent); }
+      .mode-opt.active::after { content:'\2713'; position:absolute; top:12px; right:14px; width:22px; height:22px; border-radius:50%; background:var(--accent); color:#fff; font-size:13px; font-weight:700; display:flex; align-items:center; justify-content:center; }
+      .instructions-wrap textarea { background:var(--surface); }
+      .source-card { border:1px solid var(--border); background:var(--surface); box-shadow:var(--card-shadow); }
+      .sc-drop { border-radius:12px; padding:22px 16px; }
+      .step-label { font-size:17px; font-weight:700; margin:30px 0 12px; gap:12px; }
+      .step-label small { font-size:13px; font-weight:400; }
+      .step-num { width:28px; height:28px; font-size:14px; }
+
+      .upload-zone { border:2px dashed color-mix(in srgb, var(--accent) 40%, var(--border)); background:color-mix(in srgb, var(--accent) 4%, var(--surface)); border-radius:16px; padding:32px 20px; }
+      .upload-zone:hover, .upload-zone.drag { border-color:var(--accent); background:color-mix(in srgb, var(--accent) 9%, var(--surface)); }
+      .upload-zone .icon { font-size:44px; }
+      .upload-zone h3 { font-size:18px; }
+      .upload-zone small { font-size:13px; }
+      .upload-zone .hint { font-size:14px; font-weight:600; margin-top:8px; }
+      .analyse-standalone { width:auto; background:none !important; border:none !important; color:var(--accent) !important; padding:6px 0; font-size:13px; font-weight:600; margin:4px 0 0; justify-content:flex-start; }
+      #file-queue:empty + #analyse-btn { display:none !important; }
+      .divider { font-size:13px; margin:18px 0 12px; }
+      #paste-area { min-height:84px; line-height:1.55; transition:min-height .2s; }
+      #paste-area:focus, #paste-area:not(:placeholder-shown) { min-height:200px; }
+      .char-counter { font-size:12px; }
+
+      .options-row { gap:14px; margin-top:0; }
+      .main-opts { margin-bottom:6px; }
+      .main-opts .field { flex:1 1 240px; }
+      .more-body .field { flex:1 1 220px; }
+      .field { gap:6px; }
+      .instructions-wrap { margin-top:16px; }
+      .instructions-wrap > label { font-size:13px; text-transform:none; letter-spacing:0; color:var(--text); font-weight:600; }
+      .instructions-wrap textarea { min-height:74px; font-size:15px; }
+      .instr-chip { font-size:13px; padding:5px 12px; }
+      .instr-lead, .instr-hint { font-size:12.5px; }
+      .more-opts { margin-top:18px; border:1px solid var(--border); border-radius:12px; background:var(--surface); }
+      .more-opts > summary { list-style:none; cursor:pointer; padding:14px 18px; font-weight:600; font-size:14px; display:flex; align-items:center; gap:10px; }
+      .more-opts > summary::-webkit-details-marker { display:none; }
+      .more-opts > summary::before { content:'\25B8'; color:var(--muted); transition:transform .15s; }
+      .more-opts[open] > summary::before { transform:rotate(90deg); }
+      .more-opts summary small { color:var(--muted); font-weight:400; font-size:12.5px; }
+      .more-body { padding:2px 18px 18px; border-top:1px solid var(--border); }
+      .more-body .check-selector { margin-top:16px; }
+      .more-body .options-row { margin-top:16px; }
+      .check-selector > label { font-size:13px; text-transform:none; letter-spacing:0; color:var(--text); font-weight:600; }
+      #check-chips > * { font-size:13px !important; padding:6px 13px !important; }
+      .action-bar { position:sticky; bottom:0; z-index:15; display:flex; align-items:center; justify-content:flex-end; gap:12px; margin-top:26px; padding:18px 0 14px; background:linear-gradient(to top, var(--bg) 72%, transparent); }
+      .action-bar #proof-btn { min-width:240px; }
+
+      .report-header { margin-bottom:14px; }
+      .report-title { font-size:24px; font-weight:800; letter-spacing:-.01em; }
+      .report-sumline { margin-top:10px; font-size:15px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+      .report-sumline b { font-size:16px; margin-right:4px; }
+      .sl { font-size:12.5px; font-weight:700; padding:3px 10px; border-radius:20px; background:var(--sf2); border:1px solid var(--border); color:var(--muted); }
+      .sl-critical { color:#dc2626; background:rgba(220,38,38,.1); border-color:rgba(220,38,38,.3); }
+      .sl-moderate { color:#d97706; background:rgba(217,119,6,.1); border-color:rgba(217,119,6,.3); }
+      .sl-query { color:#7c3aed; background:rgba(124,58,237,.1); border-color:rgba(124,58,237,.3); }
+      #checked-summary, #stats-grid { display:none !important; }
+      .table-wrap { box-shadow:var(--card-shadow); }
+
+      .wiz > summary { cursor:pointer; font-weight:600; color:var(--accent); padding:6px 0; list-style:none; font-size:14px; }
+      .wiz > summary::-webkit-details-marker { display:none; }
+      .wiz[open] > summary { margin-bottom:10px; }
+      .gate-box { border-radius:20px; padding:32px 30px 24px; }
+      .app-footer { font-size:12px; padding:14px 28px; }
+      @media (prefers-reduced-motion: reduce) { * { transition:none !important; } }
+    }
+    @media screen and (max-width:700px) {
+      header { padding:12px 16px; }
+      .page { padding:18px 16px 30px; }
+      nav { padding:0 6px; }
+      nav button { padding:14px 12px; }
+      .mode-switch { grid-template-columns:1fr; }
+      .main-opts .field, .more-body .field { flex:1 1 100%; }
+      .action-bar { justify-content:stretch; }
+      .action-bar #proof-btn { flex:1; min-width:0; }
+      .report-header { flex-wrap:wrap; gap:12px; }
+      .user-chip .who { display:none; }
+      .mode-opt { padding:14px 16px; }
+      .mode-opt:not(.active) small { display:none; }
+    }
   </style>
 </head>
 <body>
@@ -476,9 +601,9 @@
 </header>
 
 <nav id="nav">
-  <button class="active" onclick="showTab('proof')">Proof Document</button>
-  <button onclick="showTab('report')">Report</button>
-  <button onclick="showTab('translation')">Translation</button>
+  <button class="active" onclick="showTab('proof')">New check</button>
+  <button onclick="showTab('report')" id="nav-report" hidden>Proof report</button>
+  <button onclick="showTab('translation')" id="nav-translation" hidden>Translation report</button>
   <button onclick="showTab('projects')" data-for="member admin">Projects</button>
   <button onclick="showTab('history')" id="nav-history">History</button>
   <button onclick="showTab('reviews')" data-for="member admin">Reviews<span class="nav-badge" id="reviews-badge" hidden></span></button>
@@ -512,7 +637,7 @@
   <div class="file-queue" id="file-queue"></div>
 
   <button class="btn btn-secondary analyse-standalone only-proof" id="analyse-btn" onclick="analyseDocument()">
-    📊 Analyse Document
+    📊 See document statistics
   </button>
 
   <div class="analyse-panel only-proof" id="analyse-panel">
@@ -523,9 +648,9 @@
     <div class="analyse-grid" id="analyse-grid"></div>
   </div>
 
-  <div class="divider">or paste text directly</div>
+  <div class="divider">or paste your text</div>
 
-  <textarea id="paste-area" rows="6"
+  <textarea id="paste-area" rows="3"
     placeholder="Paste your text here…&#10;&#10;Articles, emails, reports — paste anything to proofread."
     oninput="updateCharCount()"></textarea>
   <div class="char-counter" id="char-counter">0 words · 0 / 300,000 chars</div>
@@ -551,32 +676,9 @@
     </div>
   </div>
 
-  <div class="step-label"><span class="step-num"><span class="only-proof">2</span><span class="only-tc">3</span></span>Settings</div>
+  <div class="step-label"><span class="step-num"><span class="only-proof">2</span><span class="only-tc">3</span></span>Choose your options</div>
 
-  <div class="instructions-wrap">
-    <label for="ai-instructions">Your own instructions for the AI <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">(optional)</span></label>
-    <textarea id="ai-instructions" rows="3" maxlength="3000" oninput="instrSave()"
-      placeholder="Write anything you want the AI to do or to leave alone, in your own words."></textarea>
-    <div class="instr-chips">
-      <span class="instr-lead">Click to add:</span>
-      <button type="button" class="instr-chip only-proof" onclick="instrAdd('Use British English spelling.')">British English</button>
-      <button type="button" class="instr-chip only-proof" onclick="instrAdd('Check that every date, number and name is written the same way everywhere.')">Dates, numbers, names</button>
-      <button type="button" class="instr-chip only-proof" onclick="instrAdd('This is for young readers: flag long or hard sentences.')">Young readers</button>
-      <button type="button" class="instr-chip only-proof" onclick="instrAdd('Do not flag foreign words, italics or quotations.')">Ignore foreign words</button>
-      <button type="button" class="instr-chip only-tc" onclick="instrAdd('Keep names and titles exactly as in the original.')">Keep names</button>
-      <button type="button" class="instr-chip only-tc" onclick="instrAdd('Dates follow the Gregorian calendar.')">Gregorian dates</button>
-      <button type="button" class="instr-chip only-tc" onclick="instrAdd('Ignore small differences in wording that do not change the meaning.')">Ignore small wording</button>
-      <button type="button" class="instr-chip only-tc" onclick="instrAdd('Be strict about numbers, dates and legal terms.')">Strict on numbers</button>
-    </div>
-    <div class="instr-hint"><span class="only-proof">Added to the normal checks. It never changes the report layout.</span><span class="only-tc">Added to the normal comparison. It never changes the report layout.</span> It is saved with the report so everyone can see what was asked.</div>
-  </div>
-
-  <div class="check-selector only-proof">
-    <label>Checks to run</label>
-    <div class="check-chips" id="check-chips"></div>
-  </div>
-
-  <div class="options-row">
+  <div class="options-row main-opts">
     <div class="field">
       <label><span class="only-proof">Language</span><span class="only-tc">Language of the translation</span></label>
       <select id="language" onchange="toggleOtherLang(this.value)">
@@ -618,23 +720,7 @@
       <input type="text" id="language-other" placeholder="e.g. Tagalog, Swahili, Hindi…" style="display:none;margin-top:6px;width:100%;padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:var(--sf2);color:var(--text);font-size:12px">
     </div>
     <div class="field">
-      <label>Page Layout</label>
-      <select id="page-layout">
-        <option value="auto" selected>Auto-detect</option>
-        <option value="single">Single page</option>
-        <option value="spread">Double-page spread</option>
-      </select>
-    </div>
-    <div class="field">
-      <label>Reading Direction</label>
-      <select id="reading-dir">
-        <option value="auto" selected>Auto-detect</option>
-        <option value="ltr">Left-to-right (LTR)</option>
-        <option value="rtl">Right-to-left (RTL)</option>
-      </select>
-    </div>
-    <div class="field">
-      <label>AI Model</label>
+      <label>AI model</label>
       <select id="model">
         <optgroup label="Anthropic Claude">
           <option value="claude-sonnet-4-6">Sonnet 4.6 — Fast</option>
@@ -647,12 +733,58 @@
         </optgroup>
       </select>
     </div>
-    <div style="flex:1;min-width:0"></div>
-    <div style="display:flex;gap:7px;align-items:center;flex-shrink:0">
-      <button class="btn btn-secondary only-proof" id="demo-btn" onclick="runDemo()">🧪 Demo</button>
-      <button class="btn btn-primary btn-lg" id="proof-btn" onclick="runPrimary()">✦ Proofread</button>
-    </div>
   </div>
+
+  <div class="instructions-wrap">
+    <label for="ai-instructions">Your own instructions for the AI <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">(optional)</span></label>
+    <textarea id="ai-instructions" rows="3" maxlength="3000" oninput="instrSave()"
+      placeholder="Write anything you want the AI to do or to leave alone, in your own words."></textarea>
+    <div class="instr-chips">
+      <span class="instr-lead">Click to add:</span>
+      <button type="button" class="instr-chip only-proof" onclick="instrAdd('Use British English spelling.')">British English</button>
+      <button type="button" class="instr-chip only-proof" onclick="instrAdd('Check that every date, number and name is written the same way everywhere.')">Dates, numbers, names</button>
+      <button type="button" class="instr-chip only-proof" onclick="instrAdd('This is for young readers: flag long or hard sentences.')">Young readers</button>
+      <button type="button" class="instr-chip only-proof" onclick="instrAdd('Do not flag foreign words, italics or quotations.')">Ignore foreign words</button>
+      <button type="button" class="instr-chip only-tc" onclick="instrAdd('Keep names and titles exactly as in the original.')">Keep names</button>
+      <button type="button" class="instr-chip only-tc" onclick="instrAdd('Dates follow the Gregorian calendar.')">Gregorian dates</button>
+      <button type="button" class="instr-chip only-tc" onclick="instrAdd('Ignore small differences in wording that do not change the meaning.')">Ignore small wording</button>
+      <button type="button" class="instr-chip only-tc" onclick="instrAdd('Be strict about numbers, dates and legal terms.')">Strict on numbers</button>
+    </div>
+    <div class="instr-hint"><span class="only-proof">Added to the normal checks. It never changes the report layout.</span><span class="only-tc">Added to the normal comparison. It never changes the report layout.</span> It is saved with the report so everyone can see what was asked.</div>
+  </div>
+  <details class="more-opts">
+    <summary>More options <small>what to check, page layout, reading direction</small></summary>
+    <div class="more-body">
+  <div class="check-selector only-proof">
+    <label>What to check</label>
+    <div class="check-chips" id="check-chips"></div>
+  </div>
+      <div class="options-row">
+        <div class="field">
+      <label>Page layout</label>
+      <select id="page-layout">
+        <option value="auto" selected>Auto-detect</option>
+        <option value="single">Single page</option>
+        <option value="spread">Double-page spread</option>
+      </select>
+    </div>
+        <div class="field">
+      <label>Reading direction</label>
+      <select id="reading-dir">
+        <option value="auto" selected>Auto-detect</option>
+        <option value="ltr">Left-to-right (LTR)</option>
+        <option value="rtl">Right-to-left (RTL)</option>
+      </select>
+    </div>
+      </div>
+    </div>
+  </details>
+
+  <div class="action-bar">
+    <button class="btn btn-ghost only-proof" id="demo-btn" onclick="runDemo()" title="See an example report without using the AI">Try a demo</button>
+    <button class="btn btn-primary btn-lg" id="proof-btn" onclick="runPrimary()">&#10022; Proofread</button>
+  </div>
+
 
   <div class="loading" id="loading">
     <div class="progress-wrap"><div class="progress-bar" id="progress-bar"></div></div>
@@ -685,6 +817,7 @@
       <div class="report-header-left">
         <div class="report-title">Proofreading Report</div>
         <div class="report-meta" id="report-meta"></div>
+        <div class="report-sumline" id="report-sumline"></div>
         <div id="report-cost" style="display:none;font-size:11px;color:var(--muted);margin-top:3px;"></div>
         <div id="report-instr" style="display:none;font-size:12px;color:var(--muted);margin-top:5px;line-height:1.5"></div>
         <div id="report-coverage" style="display:none;font-size:11px;margin-top:5px;line-height:1.5"></div>
@@ -865,11 +998,13 @@
     <p class="help" data-for="admin" style="margin:0 0 12px;font-size:13px;color:var(--text)"><strong>Team API keys.</strong> Paste the keys once and press <em>Save for the whole team</em>. Everyone who is signed in can then proofread, with no key of their own. Paste each key in its own box (the app also fixes it if they are swapped).</p>
     <h3>🔑 Anthropic API Key <span style="font-size:11px;font-weight:400;color:var(--muted)">(for Claude models)</span></h3>
     <input type="password" id="api-key-input" placeholder="sk-ant-api03-…" autocomplete="off">
-    <p class="help">Stored only in your browser's local storage — never sent anywhere except Anthropic's API.<br>Get a key at <strong>console.anthropic.com</strong>.</p>
+    <p class="help" data-for="guest">Stored only in your browser's local storage — never sent anywhere except Anthropic's API.<br>Get a key at <strong>console.anthropic.com</strong>.</p>
+    <p class="help" data-for="admin">Get a key at <strong>console.anthropic.com</strong>. It is kept on the team server and is not shown here again. Paste a key only to replace it.</p>
     <br>
     <h3 style="margin-top:14px">🔑 OpenAI API Key <span style="font-size:11px;font-weight:400;color:var(--muted)">(for GPT-4o models)</span></h3>
     <input type="password" id="openai-key-input" placeholder="sk-proj-…" autocomplete="off">
-    <p class="help">Required only when selecting GPT-4o or GPT-4o mini. Get a key at <strong>platform.openai.com/api-keys</strong>.</p>
+    <p class="help" data-for="guest">Required only when selecting GPT-4o or GPT-4o mini. Get a key at <strong>platform.openai.com/api-keys</strong>.</p>
+    <p class="help" data-for="admin">Only needed if the team uses GPT-4o. Get a key at <strong>platform.openai.com/api-keys</strong>.</p>
     <br>
     <h3 style="margin-top:14px">👤 Your Name</h3>
     <input type="text" id="user-name-input" placeholder="e.g. Shakkeer" autocomplete="off" style="margin-top:6px">
@@ -900,6 +1035,7 @@
       <h3 style="margin:0;flex:1">🔧 Workspace setup <span style="font-weight:400;font-size:12px;color:var(--muted)">(admin, one time)</span></h3>
       <span class="sr-pill todo" id="sr-status-pill">Not set up</span>
     </div>
+    <details class="wiz"><summary>Show the one-time setup steps</summary>
     <p class="sr-intro">Gives your team personal accounts, one shared list of reviews with layout progress, one shared API key, and password-protected links for outside translators. About 10 minutes, once, using a free Supabase project. Colleagues do not do any of this.</p>
     <div class="sr-steps">
       <div class="sr-step" id="sr-s1">
@@ -936,6 +1072,7 @@
         <div class="sr-checks" id="sr-checks"></div>
       </div>
     </div>
+    </details>
   </div>
   <div class="card" style="border-color:rgba(99,102,241,.3)">
     <h3>ℹ️ About</h3>
@@ -995,7 +1132,7 @@
 <footer class="app-footer">
   <span>© 2026 Explorer Publishing &amp; Distribution LLC · All rights reserved</span>
   <span id="cost-footer" style="font-size:10px;color:var(--muted);opacity:.65"></span>
-  <span class="app-footer-version">v4.5.1</span>
+  <span class="app-footer-version">v5.0.0</span>
 </footer>
 
 <div class="toast" id="toast"></div>
@@ -1251,7 +1388,14 @@ function setProofMode(m) {
 }
 function runPrimary() { return proofMode === 'translation' ? tcStart() : runProofread(); }
 
+// The two report tabs appear only when there is something to show
+function navSync() {
+  const r = $sr('nav-report'), t = $sr('nav-translation');
+  if (r) r.hidden = !(typeof lastReport !== 'undefined' && lastReport);
+  if (t) t.hidden = !(typeof lastTC !== 'undefined' && lastTC);
+}
 function showTab(name) {
+  navSync();
   ['proof','report','translation','projects','history','reviews','setup'].forEach((t,i) => {
     document.getElementById(t+'-page').classList.toggle('active', t===name);
     document.querySelectorAll('nav button')[i].classList.toggle('active', t===name);
@@ -1259,6 +1403,7 @@ function showTab(name) {
   if (name === 'history') renderHistory();
   if (name === 'projects') { renderProjects(); projRefresh(false); }
   if (name === 'translation') tcRenderPage();
+  setTimeout(navSync, 0);
   if (name === 'setup')   { renderCostTracker(); renderShareSetup(); }
   if (name === 'reviews') { renderReviews(); srRefresh(false); }
 }
@@ -3191,6 +3336,12 @@ function renderReport(r) {
   const initiator = localStorage.getItem('proof_user_name');
   if (initiator) parts.push(`Initiated by: ${initiator}`);
   document.getElementById('report-meta').textContent=parts.join(' · ');
+  (function () {
+    const el = document.getElementById('report-sumline'); if (!el) return;
+    const errs = r.errors || [], n = errs.length, by = (sv) => errs.filter((e) => e.severity === sv).length;
+    const bits = [['Critical', 'critical'], ['Moderate', 'moderate'], ['Minor', 'minor'], ['Query', 'to query']].map(([k, w]) => by(k) ? '<span class="sl sl-' + k.toLowerCase() + '">' + by(k) + ' ' + w + '</span>' : '').filter(Boolean);
+    el.innerHTML = n ? '<b>' + n + (n === 1 ? ' issue' : ' issues') + ' to review</b>' + (bits.length ? ' ' + bits.join('') : '') : '<b>No issues found</b> in the checks that were run.';
+  })();
 
   // What the editor asked for, so everyone reading the report knows
   const instrEl=document.getElementById('report-instr');
@@ -5923,7 +6074,7 @@ function tcInit() { instrLoad(); tcInitSourceCard(); tcPaintSource(); tcLoadSave
   tcInit();
   TEAM_JOINING = teamBoot();
   if (!k && !ok && !TEAM_JOINING && !srCfg()) setTimeout(()=>showTab('setup'),200);
-  const t=localStorage.getItem('proof_theme')||'dark';
+  const t=localStorage.getItem('proof_theme')||'light';
   document.documentElement.dataset.theme=t;
   document.getElementById('theme-btn').textContent=t==='light'?'☀️':'🌙';
   renderProofChecks();
