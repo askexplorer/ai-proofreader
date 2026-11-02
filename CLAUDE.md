@@ -8,7 +8,7 @@ Single-file browser app for professional AI-powered proofreading. Powered by Ant
 **Live repo:** github.com/askexplorer/ai-proofreader (remote `askexplorer`; the old `origin` = shakkeer-cloud is retired)  
 **Live site:** https://askexplorer.github.io/ai-proofreader/ (GitHub Pages, serves `master`)  
 **Branch:** master  
-**Current version:** v5.1.1
+**Current version:** v5.2.0
 
 ---
 
@@ -299,6 +299,9 @@ Trigger: an editor reviewed a real Arabic -> English book check (188 findings; t
 - **Locations**: `Find: "..."` under each location copies the quoted words for Ctrl+F (`tcFindText`, `tcCopyFind`). **Word page numbers** (`TC.docxPages`): Word stores its last page layout in the file (`w:lastRenderedPageBreak`, plus hard breaks); the file is read directly (no mammoth) when the translation is a .docx and its text length matches mammoth's within 15%; otherwise paragraph numbers only. The dialog tells which. A PDF/IDML translation still gives real page numbers.
 - Tests: `tests/tc-strict.test.mjs` (levels, prompt text, locations, length outliers), `tests/tc-docx.test.mjs` (page reader on hand-built .docx files). The older engine tests run with `strict: 'all'` to keep their expectations. NOT verified: how the real models behave under the new prompts. Re-run the Arabic -> English book at the default level and compare with the editor's 28 "disagreed" (it should hide most), then check that real problems still appear (e.g. the one "hundreds of thousands" vs "thousands" finding, which is a real candidate).
 - Ideas not built: learning from dismissed findings (store editors' "disagree" reasons as team-wide "do not report things like this" examples), sending the length-based pairing to the model as an alignment hint.
+
+### Translation report as review cards (v5.2.0)
+The 8-column table (`#tc-body`) is replaced by a list of cards (`#tc-list`, built by `tcRenderRows`): a header row (type and severity badges, location "Page N . para N" with "Original: para N" under it, "Find in document" copy link, who found it, and two labelled buttons **Fixed** / **Not an issue**), then Original and Translation side by side (stacked on phones; `dir="auto"` so Arabic/Hebrew read right-to-left), then Suggested fix and Why. Severity shows as the card's left border; fixed / not-an-issue cards fade. `tcTriage`, `tcFiltered`, sorting, "show minor", exports and the translator share are unchanged. The header is calmer: one summary line (`#tc-sumline`: "N issues to review" + severity pills + "Every paragraph was checked"); cost, tokens and coverage sit in a folded "How this check was done" (a PARTIAL result still shows its banner); the count tiles (`#tc-stats`) are hidden by CSS; the chapters row shows only when there is more than one chapter. The score ring has a tooltip explaining Pass/Revise/Fail. `.tc-table` CSS is now unused.
 
 ### Ideas not built
 Cross-chapter term glossary check, mechanical pre-pass, re-verify diff mode, InDesign Find/Change script, per-client glossary, proxy so the API key never reaches browsers.

@@ -567,8 +567,35 @@
       .tc-minor-bar { display:flex; flex-wrap:wrap; gap:6px 18px; align-items:center; margin:0 0 12px; font-size:13px; color:var(--muted); }
       .tc-minor-bar a { color:var(--accent); font-weight:600; cursor:pointer; }
       .tc-minor-bar select { padding:4px 8px; font-size:13px; border-radius:8px; }
-      .tc-find { display:block; max-width:100%; margin-top:4px; font-size:11.5px; color:var(--accent); cursor:pointer; white-space:normal; overflow-wrap:anywhere; }
+      .tc-find { display:inline-block; max-width:100%; font-size:12.5px; color:var(--accent); cursor:pointer; white-space:normal; overflow-wrap:anywhere; }
       .tc-find:hover { text-decoration:underline; }
+      #tc-stats { display:none !important; }
+      .tc-summary { margin-top:10px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; font-size:15px; }
+      .tc-summary b { font-size:16px; margin-right:4px; }
+      .sl-major { color:#ea580c; background:rgba(234,88,12,.1); border-color:rgba(234,88,12,.3); }
+      .sl-ok { color:#059669; background:rgba(5,150,105,.1); border-color:rgba(5,150,105,.3); }
+      .tc-details { margin-top:8px; } .tc-details > summary { cursor:pointer; color:var(--muted); font-size:13px; list-style:none; } .tc-details > summary::before { content:'\25B8 '; } .tc-details[open] > summary::before { content:'\25BE '; }
+      .tc-details > summary::-webkit-details-marker { display:none; }
+      .tc-list { display:flex; flex-direction:column; gap:14px; margin-top:6px; }
+      .tc-none { text-align:center; padding:36px 16px; color:var(--muted); background:var(--surface); border:1px dashed var(--border); border-radius:14px; }
+      .tc-card { background:var(--surface); border:1px solid var(--border); border-left:5px solid #94a3b8; border-radius:14px; box-shadow:var(--card-shadow); overflow:hidden; }
+      .tc-card.sevc-Critical { border-left-color:#ef4444; } .tc-card.sevc-Major { border-left-color:#f97316; } .tc-card.sevc-Query { border-left-color:#8b5cf6; } .tc-card.sevc-Note { border-left-color:#64748b; }
+      .tc-card.is-fixed { opacity:.55; } .tc-card.is-false { opacity:.4; } .tc-card.is-note { background:var(--sf2); }
+      .tc-card-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; padding:12px 16px; border-bottom:1px solid var(--border); }
+      .tc-loc { font-weight:700; font-size:14px; display:flex; flex-direction:column; line-height:1.3; } .tc-loc small { font-weight:400; font-size:12px; color:var(--muted); }
+      .tc-by { font-size:12px; color:var(--muted); }
+      .tc-acts { margin-left:auto; display:flex; gap:8px; }
+      .tc-act { font:inherit; font-size:13px; font-weight:600; padding:7px 13px; border-radius:9px; border:1px solid var(--border); background:var(--surface); color:var(--text); cursor:pointer; }
+      .tc-act:hover { border-color:var(--accent); }
+      .tc-act.on-fixed { background:rgba(16,185,129,.14); border-color:#10b981; color:#059669; } .tc-act.on-false { background:rgba(100,116,139,.16); border-color:#64748b; }
+      .tc-cols { display:grid; grid-template-columns:1fr 1fr; }
+      .tc-cols section { padding:14px 16px 16px; min-width:0; } .tc-cols section + section { border-left:1px solid var(--border); }
+      .tc-cols h5 { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:6px; }
+      .tc-cols section > div { font-size:15.5px; line-height:1.65; overflow-wrap:anywhere; }
+      .tc-card mark.o { background:var(--mark-orig-bg); color:var(--mark-orig-fg); border-radius:4px; padding:1px 4px; } .tc-card mark.c { background:var(--mark-corr-bg); color:var(--mark-corr-fg); border-radius:4px; padding:1px 4px; font-weight:600; }
+      .tc-card .none { color:var(--muted); font-style:italic; } .tc-after { color:var(--muted); font-size:12.5px; margin-top:4px; }
+      .tc-card-foot { display:grid; grid-template-columns:1fr 1fr; gap:16px; padding:13px 16px 15px; background:var(--sf2); border-top:1px solid var(--border); font-size:14px; line-height:1.6; }
+      .tc-card-foot b { display:block; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:3px; }
       .wiz > summary { cursor:pointer; font-weight:600; color:var(--accent); padding:6px 0; list-style:none; font-size:14px; }
       .wiz > summary::-webkit-details-marker { display:none; }
       .wiz[open] > summary { margin-bottom:10px; }
@@ -587,6 +614,8 @@
       .action-bar #proof-btn { flex:1; min-width:0; }
       .report-header { flex-wrap:wrap; gap:12px; }
       .user-chip .who { display:none; }
+      .tc-cols, .tc-card-foot { grid-template-columns:1fr; } .tc-cols section + section { border-left:none; border-top:1px solid var(--border); }
+      .tc-acts { margin-left:0; width:100%; } .tc-act { flex:1; }
       .mode-opt { padding:14px 16px; }
       .mode-opt:not(.active) small { display:none; }
     }
@@ -932,12 +961,15 @@
     <div id="tc-partial" class="tc-banner" hidden></div>
     <div class="report-header">
       <div class="report-header-left">
-        <div class="report-title">Translation Check</div>
+        <div class="report-title">Translation check</div>
         <div class="report-meta" id="tc-meta"></div>
-        <div id="tc-cost" style="display:none;font-size:11px;color:var(--muted);margin-top:3px"></div>
-        <div id="tc-coverage" style="font-size:11px;margin-top:5px;line-height:1.5"></div>
+        <div class="tc-summary" id="tc-sumline"></div>
+        <details class="tc-details"><summary>How this check was done</summary>
+          <div id="tc-cost" style="display:none;font-size:12px;color:var(--muted);margin-top:6px"></div>
+          <div id="tc-coverage" style="font-size:12px;margin-top:6px;line-height:1.6"></div>
+        </details>
       </div>
-      <div class="score-wrap" id="tc-score-wrap">
+      <div class="score-wrap" id="tc-score-wrap" title="Score out of 100. Pass: 90 or more and nothing critical. Revise: 75 to 89, or anything critical. Fail: below 75. Critical issues count 10, major 5, minor 1; the score drops 4 points for every point of penalty per 1,000 words.">
         <div class="score-circle" id="tc-score-circle"><div class="score-num" id="tc-score-num">-</div><div class="score-grade" id="tc-score-grade"></div></div>
         <div class="score-label" id="tc-score-label"></div>
       </div>
@@ -959,13 +991,7 @@
     <div class="tc-minor-bar" id="tc-minor-bar"></div>
     <div class="filter-bar" id="tc-filter-type"></div>
     <div class="sev-filter-bar" id="tc-filter-sev"></div>
-    <div class="table-wrap">
-      <table class="tc-table">
-        <colgroup><col style="width:40px"><col style="width:112px"><col style="width:118px"><col><col><col style="width:170px"><col style="width:190px"><col style="width:66px"></colgroup>
-        <thead><tr><th>#</th><th>Where</th><th>Type</th><th>Source</th><th>Translation</th><th>Suggested fix</th><th>Why</th><th class="triage-th">Status</th></tr></thead>
-        <tbody id="tc-body"></tbody>
-      </table>
-    </div>
+    <div class="tc-list" id="tc-list"></div>
     <div style="text-align:center;padding:12px 0 18px"><button class="btn btn-secondary" id="tc-more" style="display:none" onclick="tcShowMore()">Show more</button></div>
   </div>
 </div>
@@ -1140,7 +1166,7 @@
 <footer class="app-footer">
   <span>© 2026 Explorer Publishing &amp; Distribution LLC · All rights reserved</span>
   <span id="cost-footer" style="font-size:10px;color:var(--muted);opacity:.65"></span>
-  <span class="app-footer-version">v5.1.1</span>
+  <span class="app-footer-version">v5.2.0</span>
 </footer>
 
 <div class="toast" id="toast"></div>
@@ -5975,6 +6001,13 @@ function tcRender() {
     return '<div class="tc-ch ' + cls + (tcChapterFilter === s.num ? ' sel' : '') + '" title="' + esc(tip) + '" onclick="tcPickChapter(' + s.num + ')">' + (s.num === 0 ? 'Front' : s.label === 'Whole document' ? 'All' : s.num) + '<small>' + (s.done ? act.value : '-') + '</small></div>';
   });
   document.getElementById('tc-chapters').innerHTML = chips.join('');
+  const cw = document.querySelector('.tc-chapters-wrap'); if (cw) cw.style.display = rep.sections.length > 1 ? '' : 'none';      // a single "All" box says nothing
+  (function () {
+    const el = document.getElementById('tc-sumline'); if (!el) return;
+    const real = tcReal(rep), n = (sv) => real.filter((x) => x.severity === sv).length;
+    const bits = [['Critical', 'critical'], ['Major', 'major'], ['Minor', 'minor'], ['Query', 'to check']].map(([k, w]) => n(k) ? '<span class="sl sl-' + k.toLowerCase() + '">' + n(k) + ' ' + w + '</span>' : '').filter(Boolean);
+    el.innerHTML = (real.length ? '<b>' + real.length + (real.length === 1 ? ' issue' : ' issues') + ' to review</b> ' + bits.join('') : '<b>No issues found</b>') + (rep.coverage.complete ? '<span class="sl sl-ok">&#10003; Every paragraph was checked</span>' : '');
+  })();
   // stats
   const act = tcReal(rep), grid = document.getElementById('tc-stats'); grid.innerHTML = '';
   addStatCard(grid, act.length, 'Total issues', 'var(--accent)');
@@ -6029,21 +6062,31 @@ async function tcCopyFind(id) {
   const ok2 = await srCopy(tcFindText(x)); toast(ok2 ? 'Copied. Press Ctrl+F (Cmd+F on a Mac) in your document and paste.' : 'Copy was blocked. Select the words and copy them manually.', ok2 ? undefined : 'warn', 6000);
 }
 function tcRenderRows() {
-  const list = tcFiltered(), body = document.getElementById('tc-body'), shown = list.slice(0, tcShown);
-  if (!list.length) { body.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:28px;color:var(--muted)">' + (lastTC.issues.length ? 'No issues match these filters.' : '&#127881; No translation issues were found.') + '</td></tr>'; document.getElementById('tc-more').style.display = 'none'; return; }
+  const list = tcFiltered(), body = document.getElementById('tc-list'), shown = list.slice(0, tcShown), PARA = String.fromCharCode(182);
+  const locFmt = (t) => String(t || '').split(PARA).join('para ');
+  if (!list.length) { body.innerHTML = '<div class="tc-none">' + (lastTC.issues.length ? 'Nothing to show with these filters.' : '&#127881; No translation issues were found.') + '</div>'; document.getElementById('tc-more').style.display = 'none'; return; }
   body.innerHTML = shown.map((x) => {
     const c = TC_TYPE_COLORS[x.type] || '#94a3b8', st = tcState(x), by = x.origin === 'rule' ? 'automatic check' : x.second === 'agrees' ? 'AI, confirmed by a second look' : x.origin === 'ai2' ? 'AI, found by the second look' : x.verified === 'confirmed' ? 'AI, double-checked' : 'AI';
-    const where = '<b>' + esc(x.tgtLoc || '-') + '</b>' + (x.srcLoc ? '<br>source: ' + esc(x.srcLoc) : '') + (x.page ? '<br>p.' + x.page : '') + (tcFindText(x) ? '<br><a class="tc-find" onclick="tcCopyFind(' + x.id + ')" title="Copy these words, then press Ctrl+F in your document">Find: &ldquo;' + esc(tcFindText(x).length > 34 ? tcFindText(x).slice(0, 34) + '...' : tcFindText(x)) + '&rdquo;</a>' : '') + tcAlsoHtml(x);
+    const find = tcFindText(x), loc = [x.page ? 'Page ' + x.page : '', locFmt(x.tgtLoc)].filter(Boolean).join(' · ') || 'Location unknown';
     const tgt = x.insert && x.type === 'Omission'
-      ? '<span class="none">Missing here</span>' + (x.tgtContext ? '<div style="color:var(--muted);font-size:11px;margin-top:3px" dir="auto">after: ' + esc(x.tgtContext.length > 140 ? '...' + x.tgtContext.slice(-140) : x.tgtContext) + '</div>' : '')
-      : tcHl(x.tgtContext, x.tgtText, 'o', 260);
-    const fix = x.fix ? '<mark class="c">' + esc(x.fix) + '</mark>' : '<span class="none">-</span>';
-    return '<tr class="' + (st === 'fixed' ? 'row-fixed' : st === 'false' ? 'row-false' : x.severity === 'Note' ? 'row-note' : '') + '"><td style="color:var(--muted);font-weight:700;font-size:11px">' + x.id + '</td>' +
-      '<td class="tc-where">' + where + '</td>' +
-      '<td><span class="badge" style="background:' + c + '22;color:' + c + ';border:1px solid ' + c + '44">' + esc(x.type) + '</span> <span class="sev-badge sev-' + esc(x.severity) + '">' + esc(x.severity) + '</span><div style="font-size:10px;color:var(--muted);margin-top:3px">' + by + '</div></td>' +
-      '<td class="tc-src" dir="auto" title="' + esc(x.srcContext) + '">' + tcHl(x.srcContext, x.srcText, 'o', 260) + '</td><td class="tc-tgt" dir="auto" title="' + esc(x.tgtContext) + '">' + tgt + '</td><td class="tc-fix" dir="auto">' + fix + '</td>' +
-      '<td class="tc-why">' + esc(x.why) + (x.note && x.verified === 'unsure' ? '<br><i>' + esc(x.note) + '</i>' : '') + '</td>' +
-      '<td class="triage-cell" style="white-space:nowrap"><button class="triage-btn' + (st === 'fixed' ? ' t-fixed' : '') + '" onclick="tcTriage(' + x.id + ',\'fixed\')" title="Mark as fixed">&#10003;</button><button class="triage-btn' + (st === 'false' ? ' t-false' : '') + '" onclick="tcTriage(' + x.id + ',\'false\')" title="Mark as false positive (leaves the score)">&#10007;</button></td></tr>';
+      ? '<span class="none">Missing here</span>' + (x.tgtContext ? '<div class="tc-after" dir="auto">after: ' + esc(x.tgtContext.length > 140 ? '...' + x.tgtContext.slice(-140) : x.tgtContext) + '</div>' : '')
+      : tcHl(x.tgtContext, x.tgtText, 'o', 320);
+    const src = tcHl(x.srcContext, x.srcText, 'o', 320);
+    const why = esc(x.why) + (x.note && x.verified === 'unsure' ? '<br><i>' + esc(x.note) + '</i>' : '');
+    return '<article class="tc-card sevc-' + esc(x.severity) + (st === 'fixed' ? ' is-fixed' : st === 'false' ? ' is-false' : x.severity === 'Note' ? ' is-note' : '') + '">' +
+      '<header class="tc-card-head">' +
+        '<span class="badge" style="background:' + c + '22;color:' + c + ';border:1px solid ' + c + '44">' + esc(x.type) + '</span><span class="sev-badge sev-' + esc(x.severity) + '">' + esc(x.severity) + '</span>' +
+        '<span class="tc-loc">' + esc(loc) + (x.srcLoc ? '<small>Original: ' + esc(locFmt(x.srcLoc)) + '</small>' : '') + '</span>' +
+        (find ? '<a class="tc-find" onclick="tcCopyFind(' + x.id + ')" title="Copy these words, then press Ctrl+F (Cmd+F on a Mac) in your document">Find in document: &ldquo;<bdi>' + esc(find.length > 30 ? find.slice(0, 30) + '...' : find) + '</bdi>&rdquo;</a>' : '') +
+        '<span class="tc-by">' + by + '</span>' +
+        '<span class="tc-acts"><button class="tc-act' + (st === 'fixed' ? ' on-fixed' : '') + '" onclick="tcTriage(' + x.id + ',\'fixed\')" title="Mark as fixed">&#10003; Fixed</button><button class="tc-act' + (st === 'false' ? ' on-false' : '') + '" onclick="tcTriage(' + x.id + ',\'false\')" title="This is not a real problem. It leaves the score.">&#10007; Not an issue</button></span>' +
+      '</header>' +
+      '<div class="tc-cols"><section><h5>Original' + (lastTC.source && lastTC.source.lang ? ' (' + esc(lastTC.source.lang) + ')' : '') + '</h5><div dir="auto">' + src + '</div></section>' +
+        '<section><h5>Translation' + (lastTC.target && lastTC.target.lang ? ' (' + esc(lastTC.target.lang) + ')' : '') + '</h5><div dir="auto">' + tgt + '</div></section></div>' +
+      (x.fix || x.why || (x.also && x.also.length) ? '<footer class="tc-card-foot">' +
+        (x.fix ? '<div><b>Suggested fix</b><div dir="auto"><mark class="c">' + esc(x.fix) + '</mark></div></div>' : '') +
+        (x.why || (x.also && x.also.length) ? '<div><b>Why</b><div>' + why + '</div>' + tcAlsoHtml(x) + '</div>' : '') + '</footer>' : '') +
+      '</article>';
   }).join('');
   const more = document.getElementById('tc-more'); more.style.display = list.length > shown.length ? '' : 'none'; more.textContent = 'Show ' + Math.min(120, list.length - shown.length) + ' more (' + (list.length - shown.length) + ' left)';
 }
