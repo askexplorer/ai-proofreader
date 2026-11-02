@@ -939,7 +939,7 @@
 <footer class="app-footer">
   <span>© 2026 Explorer Publishing &amp; Distribution LLC · All rights reserved</span>
   <span id="cost-footer" style="font-size:10px;color:var(--muted);opacity:.65"></span>
-  <span class="app-footer-version">v4.2.0</span>
+  <span class="app-footer-version">v4.2.1</span>
 </footer>
 
 <div class="toast" id="toast"></div>
@@ -2652,6 +2652,7 @@ async function callOpenAI(payload, apiKey, ci, total, showUI) {
 // Main proofreading flow
 // ══════════════════════════════════════════════
 async function runProofread() {
+  fixLocalKeys();
   const selectedModel = document.getElementById('model').value;
   const isOpenAIModel = selectedModel.startsWith('gpt-');
   const apiKey = isOpenAIModel
@@ -3930,9 +3931,36 @@ function netErrorHelpHtml(msg) {
     '4. Open <strong>Setup &rarr; Test connection</strong> for a precise result.<br><br>' +
     '<span style="color:var(--muted)">Technical detail: ' + esc(String(msg).replace(/^NETWORK:\s*/, '')) + '</span>';
 }
+// ── Key mix-up guard ────────────────────────────────────────────────────
+// Anthropic keys start with sk-ant-; OpenAI keys start with sk- (never sk-ant-). The two are easy to paste into each
+// other's boxes, and then both providers answer "key rejected". The prefix tells them apart for certain, so a key in
+// the wrong box is moved to the right one instead of being sent to the wrong company.
+function keyKind(k) { k = String(k || '').trim(); return /^sk-ant-/.test(k) ? 'anthropic' : /^sk-/.test(k) ? 'openai' : ''; }
+function sortKeys(a, o) {
+  a = String(a || '').trim(); o = String(o || '').trim();
+  const ka = keyKind(a), ko = keyKind(o), r = { a, o, moved: false };
+  if (ka === 'openai' && ko === 'anthropic') { r.a = o; r.o = a; r.moved = true; }        // crossed
+  else if (ka === 'openai' && !o) { r.a = ''; r.o = a; r.moved = true; }                  // OpenAI key alone in the Anthropic box
+  else if (ko === 'anthropic' && !a) { r.a = o; r.o = ''; r.moved = true; }               // Anthropic key alone in the OpenAI box
+  return r;
+}
+// Straighten the two keys saved in this browser (also moves the "came from the team" marks with them)
+function fixLocalKeys() {
+  const s = sortKeys(localStorage.getItem('proof_api_key'), localStorage.getItem('proof_openai_key'));
+  if (!s.moved) return false;
+  const ma = srGet('sr_team_a'), mo = srGet('sr_team_o');
+  const put = (k, v) => { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); };
+  put('proof_api_key', s.a); put('proof_openai_key', s.o); put('sr_team_a', mo); put('sr_team_o', ma);
+  const ia = document.getElementById('api-key-input'), io = document.getElementById('openai-key-input');
+  if (ia) ia.value = s.a; if (io) io.value = s.o;
+  return true;
+}
 // One tiny request (1 token, a fraction of a cent) through the same path the real runs use
 async function apiProbe(which, key) {
   const name = which === 'openai' ? 'OpenAI' : 'Anthropic', host = which === 'openai' ? 'api.openai.com' : 'api.anthropic.com';
+  const kind = keyKind(key);
+  if (which === 'anthropic' && kind === 'openai') return { ok: false, text: 'Anthropic: the key in this box starts with sk- but not sk-ant-, so it is an OpenAI key. Put it in the OpenAI box, and put your Anthropic key (it starts with sk-ant-) here. Pressing Save puts each key in the right box for you.' };
+  if (which === 'openai' && kind === 'anthropic') return { ok: false, text: 'OpenAI: the key in this box starts with sk-ant-, so it is an Anthropic key. Put it in the Anthropic box, and put your OpenAI key (it starts with sk-) here. Pressing Save puts each key in the right box for you.' };
   let openaiState = '';
   if (which === 'openai') {
     openaiState = await openaiDiagnose(key);
@@ -3967,14 +3995,15 @@ async function testApiConnection() {
   btn.disabled = false; btn.textContent = 'Test connection';
 }
 function saveSetup() {
-  const k=document.getElementById('api-key-input').value.trim();
-  const ok=document.getElementById('openai-key-input').value.trim();
+  const s = sortKeys(document.getElementById('api-key-input').value, document.getElementById('openai-key-input').value);
+  const k = s.a, ok = s.o;
   if (!k && !ok) { toast('Please enter at least one API key.','warn'); return; }
-  if (k) localStorage.setItem('proof_api_key', k);
-  if (ok) localStorage.setItem('proof_openai_key', ok);
+  document.getElementById('api-key-input').value = k; document.getElementById('openai-key-input').value = ok;
+  if (k) localStorage.setItem('proof_api_key', k); else if (s.moved) localStorage.removeItem('proof_api_key');
+  if (ok) localStorage.setItem('proof_openai_key', ok); else if (s.moved) localStorage.removeItem('proof_openai_key');
   const name = document.getElementById('user-name-input').value.trim();
   if (name) localStorage.setItem('proof_user_name', name);
-  toast('Settings saved!'); showTab('proof');
+  toast(s.moved ? 'Settings saved. Your keys were in each other\'s boxes, so I put each one in the right box.' : 'Settings saved!', s.moved ? 'warn' : undefined, s.moved ? 8000 : undefined); showTab('proof');
 }
 
 function exportJSON() {
@@ -4108,6 +4137,7 @@ async function retryFailedChunks() {
   if (!_retryState || !lastReport) { toast('Nothing to continue.','warn'); return; }
   const {chunks, startChunkIdx, model, systemPrompt, chunkSize} = _retryState;
   const isOpenAIModel = model.startsWith('gpt-');
+  fixLocalKeys();
   const apiKey = localStorage.getItem(isOpenAIModel ? 'proof_openai_key' : 'proof_api_key');
   if (!apiKey) { toast(`Set your ${isOpenAIModel ? 'OpenAI' : 'Anthropic'} API key in Setup first.`,'warn'); showTab('setup'); return; }
   // Switch to proof page so the user sees the loading progress bar
@@ -4964,13 +4994,14 @@ async function teamToggleAdmin(id, on) {
 }
 async function teamSaveKeys() {
   if (!srReady() || !SRU.admin) { toast('Only an admin can change the team key.', 'warn'); return; }
-  const a = ($sr('api-key-input').value || '').trim(), o = ($sr('openai-key-input').value || '').trim();
+  const fx = sortKeys($sr('api-key-input').value, $sr('openai-key-input').value), a = fx.a, o = fx.o;
   if (!a && !o) { toast('Type your API key in the card above first.', 'warn'); return; }
   if (TEAM_ST.stored && !confirm('Replace the team key? Colleagues switch to the new key automatically within a few minutes.')) return;
   try {
     await SR.putTeamKeys(srCfg(), { a, o });
-    if (a) srSet('proof_api_key', a); if (o) srSet('proof_openai_key', o);
-    toast('Team key saved. Signed-in colleagues receive it automatically.');
+    if (fx.moved) { srSet('proof_api_key', a); if (!a) srDel('proof_api_key'); srSet('proof_openai_key', o); if (!o) srDel('proof_openai_key'); $sr('api-key-input').value = a; $sr('openai-key-input').value = o; }
+    else { if (a) srSet('proof_api_key', a); if (o) srSet('proof_openai_key', o); }
+    toast(fx.moved ? 'Team key saved. Your keys were in each other\'s boxes, so I put each one in the right box first.' : 'Team key saved. Signed-in colleagues receive it automatically.', fx.moved ? 'warn' : undefined, fx.moved ? 8000 : undefined);
   } catch (e) { if (!srAuthLost(e)) toast(SR.friendly(e), 'err'); }
   teamRenderCard();
 }
@@ -4985,7 +5016,8 @@ async function teamPull(announce) {
   if (!srReady()) return;
   let got;
   try { got = await SR.getTeamKeys(srCfg()); } catch (e) { if (!srAuthLost(e) && announce) toast(SR.friendly(e), 'warn'); return; }
-  const want = (got && got.keys) || {}, lsKey = { a: 'proof_api_key', o: 'proof_openai_key' };
+  // The stored pair may have been saved crossed (OpenAI key in the Anthropic slot): hand out each key in its right slot
+  const raw = (got && got.keys) || {}, fx = sortKeys(raw.a, raw.o), want = { a: fx.a, o: fx.o }, lsKey = { a: 'proof_api_key', o: 'proof_openai_key' };
   let changed = false, removed = false;
   ['a', 'o'].forEach((f) => {
     const cur = srGet(lsKey[f]), fromTeam = srGet(TEAM_MARK[f]) === '1', v = want[f];
@@ -4996,6 +5028,9 @@ async function teamPull(announce) {
   if (removed) toast('The team API key was removed by the admin. Ask them for access.', 'warn', 8000);
   else if (changed) toast('Team API key ready.');
   else if (announce && !got && !srGet('proof_api_key') && !srGet('proof_openai_key')) toast(SRU && SRU.admin ? 'No team API key is stored yet. Type your key in Setup, then press "Save API key for the team".' : 'Your admin has not stored a team API key yet. Ask them, or type your own key in Setup.', 'warn', 8000);
+  if (fx.moved && fx.a && fx.o && SRU && SRU.admin) {   // an admin signing in repairs the stored pair for everyone
+    try { await SR.putTeamKeys(srCfg(), { a: fx.a, o: fx.o }); toast('The two team keys were stored in each other\'s boxes. I put each in the right one for everybody.', 'warn', 9000); } catch (_) { /* the repair is retried at the next pull */ }
+  }
 }
 // Workspace link: only the address of the workspace (public). It carries no password and no API key.
 function teamCreateLink() {
@@ -5243,6 +5278,7 @@ async function tcStart() {
     return;
   }
   const model = document.getElementById('model').value, openai = model.startsWith('gpt-');
+  fixLocalKeys();
   if (!localStorage.getItem(openai ? 'proof_openai_key' : 'proof_api_key')) { toast('Set your ' + (openai ? 'OpenAI' : 'Anthropic') + ' API key in Setup first.', 'warn'); showTab('setup'); return; }
   const tgt = await tcLoadTarget(); if (!tgt) return;
   tcShowConfirm(tgt);
