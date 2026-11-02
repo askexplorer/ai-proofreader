@@ -538,6 +538,7 @@
       .instructions-wrap textarea { min-height:74px; font-size:15px; }
       .instr-chip { font-size:13px; padding:5px 12px; }
       .instr-lead, .instr-hint { font-size:12.5px; }
+      .instr-explain { font-size:13px; color:var(--muted); margin:2px 0 8px; line-height:1.5; }
       .more-opts { margin-top:18px; border:1px solid var(--border); border-radius:12px; background:var(--surface); }
       .more-opts > summary { list-style:none; cursor:pointer; padding:14px 18px; font-weight:600; font-size:14px; display:flex; align-items:center; gap:10px; }
       .more-opts > summary::-webkit-details-marker { display:none; }
@@ -741,23 +742,22 @@
   </div>
 
   <div class="instructions-wrap">
-    <label for="ai-instructions">Your own instructions for the AI <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">(optional)</span></label>
+    <label for="ai-instructions">Notes for the AI <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">(optional: most people skip this)</span></label>
+    <p class="instr-explain"><span class="only-proof">Tell the AI what to look for or to leave alone, in your own words. For example: &ldquo;Use British English.&rdquo;</span><span class="only-tc">Tell the AI what it should know about this translation, so it does not report things you already know about. For example: &ldquo;This is an adapted translation, not word for word.&rdquo;</span></p>
     <textarea id="ai-instructions" rows="3" maxlength="3000" oninput="instrSave()"
-      placeholder="Write anything you want the AI to do or to leave alone, in your own words."></textarea>
+      placeholder="Write your note here, or click a ready-made one below."></textarea>
     <div class="instr-chips">
-      <span class="instr-lead">Click to add:</span>
-      <button type="button" class="instr-chip only-proof" onclick="instrAdd('Use British English spelling.')">British English</button>
-      <button type="button" class="instr-chip only-proof" onclick="instrAdd('Check that every date, number and name is written the same way everywhere.')">Dates, numbers, names</button>
-      <button type="button" class="instr-chip only-proof" onclick="instrAdd('This is for young readers: flag long or hard sentences.')">Young readers</button>
-      <button type="button" class="instr-chip only-proof" onclick="instrAdd('Do not flag foreign words, italics or quotations.')">Ignore foreign words</button>
-      <button type="button" class="instr-chip only-tc" onclick="instrAdd('This is an adapted translation (a speech, letter or book): it is not word for word.')">Adapted, not literal</button>
-      <button type="button" class="instr-chip only-tc" onclick="instrAdd('Pull quotes and callouts may be shortened or rephrased for space. Do not report them.')">Pull quotes shortened</button>
-      <button type="button" class="instr-chip only-tc" onclick="instrAdd('Keep names and titles exactly as in the original.')">Keep names</button>
-      <button type="button" class="instr-chip only-tc" onclick="instrAdd('Dates follow the Gregorian calendar.')">Gregorian dates</button>
-      <button type="button" class="instr-chip only-tc" onclick="instrAdd('Ignore small differences in wording that do not change the meaning.')">Ignore small wording</button>
-      <button type="button" class="instr-chip only-tc" onclick="instrAdd('Be strict about numbers, dates and legal terms.')">Strict on numbers</button>
+      <span class="instr-lead">Ready-made notes, click to add one:</span>
+      <button type="button" class="instr-chip only-proof" title="Adds: Use British English spelling." onclick="instrAdd('Use British English spelling.')">Use British English</button>
+      <button type="button" class="instr-chip only-proof" title="Adds: Check that every date, number and name is written the same way everywhere." onclick="instrAdd('Check that every date, number and name is written the same way everywhere.')">Dates, numbers and names the same everywhere</button>
+      <button type="button" class="instr-chip only-proof" title="Adds: This is for young readers: flag long or hard sentences." onclick="instrAdd('This is for young readers: flag long or hard sentences.')">Young readers: flag hard sentences</button>
+      <button type="button" class="instr-chip only-proof" title="Adds: Do not flag foreign words, italics or quotations." onclick="instrAdd('Do not flag foreign words, italics or quotations.')">Do not flag foreign words</button>
+      <button type="button" class="instr-chip only-tc" title="Adds: This is an adapted translation (a speech, letter or book): it is not word for word." onclick="instrAdd('This is an adapted translation (a speech, letter or book): it is not word for word.')">It is adapted, not word for word</button>
+      <button type="button" class="instr-chip only-tc" title="Adds: Pull quotes and callouts may be shortened or rephrased for space. Do not report them." onclick="instrAdd('Pull quotes and callouts may be shortened or rephrased for space. Do not report them.')">Pull quotes are shortened</button>
+      <button type="button" class="instr-chip only-tc" title="Adds: Keep names and titles exactly as in the original." onclick="instrAdd('Keep names and titles exactly as in the original.')">Keep names as in the original</button>
+      <button type="button" class="instr-chip only-tc" title="Adds: Dates follow the Gregorian calendar." onclick="instrAdd('Dates follow the Gregorian calendar.')">Dates use the Gregorian calendar</button>
     </div>
-    <div class="instr-hint"><span class="only-proof">Added to the normal checks. It never changes the report layout.</span><span class="only-tc">Added to the normal comparison. It never changes the report layout.</span> It is saved with the report so everyone can see what was asked.</div>
+    <div class="instr-hint">Your notes are saved with the report, so everyone can see what the AI was told.</div>
   </div>
   <details class="more-opts">
     <summary>More options <small>what to check, page layout, reading direction</small></summary>
@@ -1140,7 +1140,7 @@
 <footer class="app-footer">
   <span>© 2026 Explorer Publishing &amp; Distribution LLC · All rights reserved</span>
   <span id="cost-footer" style="font-size:10px;color:var(--muted);opacity:.65"></span>
-  <span class="app-footer-version">v5.1.0</span>
+  <span class="app-footer-version">v5.1.1</span>
 </footer>
 
 <div class="toast" id="toast"></div>
@@ -1391,6 +1391,8 @@ function setProofMode(m) {
   if (ta) ta.placeholder = proofMode === 'translation'
     ? 'Or paste the translation here...'
     : 'Paste your text here…\n\nArticles, emails, reports — paste anything to proofread.';
+  const ai = document.getElementById('ai-instructions');
+  if (ai) ai.placeholder = proofMode === 'translation' ? 'e.g. This is a speech adapted for English readers. Pull quotes are shortened.' : 'e.g. Use British English. Do not flag foreign words.';
   paintProofBtn();
   try { localStorage.setItem('proof_mode', proofMode); } catch (_) {}
 }

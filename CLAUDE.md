@@ -8,7 +8,7 @@ Single-file browser app for professional AI-powered proofreading. Powered by Ant
 **Live repo:** github.com/askexplorer/ai-proofreader (remote `askexplorer`; the old `origin` = shakkeer-cloud is retired)  
 **Live site:** https://askexplorer.github.io/ai-proofreader/ (GitHub Pages, serves `master`)  
 **Branch:** master  
-**Current version:** v5.1.0
+**Current version:** v5.1.1
 
 ---
 
@@ -264,7 +264,7 @@ A real run on a long English -> German book manuscript (confidential: no client 
 **NOT verified:** the real model's judgement quality on real Mongolian text (no API key in the build environment). Recommend a pilot on chapters 33, 36, 42 (a few cents) and checking its flags by hand before trusting a full run. Known limits: terminology consistency is checked only inside a window (not across chapters); scanned PDFs have no OCR; PDF paragraph reconstruction is heuristic.
 
 ### Your own instructions (v4.3.0)
-One box on the Proof page, `#ai-instructions` ("Your own instructions for the AI"), shown in BOTH modes (it used to be proofread-only; the translation dialog had a separate "Notes for the AI", now removed so there is one place). `instrText()` reads it (cap 3000 chars), `instrSave/instrLoad` remember it in `localStorage.proof_custom_prompt`, `instrAdd` is the example chips. Proofreading appends it to the system prompt inside a framed block ("THE EDITOR'S OWN INSTRUCTIONS ... <<< ... >>>": follow in addition to the checks, report extra findings under the closest of the eight categories, can never change the JSON format or exact-text rules). Translation check passes it as `extra` to tc-core (unchanged). It is stored with the report (`report._instructions`, history `instructions`) and shown as "Instructions given:" under the report header.
+One box on the Proof page, `#ai-instructions` (labelled "Notes for the AI (optional: most people skip this)" with a one-line explanation and an example per mode since v5.1.1; the ready-made notes are full sentences with the text in their tooltip), shown in BOTH modes (it used to be proofread-only; the translation dialog had a separate "Notes for the AI", now removed so there is one place). `instrText()` reads it (cap 3000 chars), `instrSave/instrLoad` remember it in `localStorage.proof_custom_prompt`, `instrAdd` is the example chips. Proofreading appends it to the system prompt inside a framed block ("THE EDITOR'S OWN INSTRUCTIONS ... <<< ... >>>": follow in addition to the checks, report extra findings under the closest of the eight categories, can never change the JSON format or exact-text rules). Translation check passes it as `extra` to tc-core (unchanged). It is stored with the report (`report._instructions`, history `instructions`) and shown as "Instructions given:" under the report header.
 
 ### Simple sign-in, roles and the Admin tab (v4.4.0)
 Goal: colleagues open the site, sign in, and the tool works; only the admin sets anything up.
