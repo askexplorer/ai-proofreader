@@ -995,7 +995,7 @@
 <footer class="app-footer">
   <span>© 2026 Explorer Publishing &amp; Distribution LLC · All rights reserved</span>
   <span id="cost-footer" style="font-size:10px;color:var(--muted);opacity:.65"></span>
-  <span class="app-footer-version">v4.5.0</span>
+  <span class="app-footer-version">v4.5.1</span>
 </footer>
 
 <div class="toast" id="toast"></div>
@@ -4040,8 +4040,9 @@ async function apiProbe(which, key) {
 }
 async function testApiConnection() {
   const out = document.getElementById('api-test-out'), btn = document.getElementById('api-test-btn');
-  const a = ((document.getElementById('api-key-input').value || localStorage.getItem('proof_api_key') || '')).trim(), o = ((document.getElementById('openai-key-input').value || localStorage.getItem('proof_openai_key') || '')).trim();
-  if (!a && !o) { out.innerHTML = '<span style="color:#f97316">Add an API key first.</span>'; return; }
+  const fromBrowser = !(PROXY_ON && ROLE === 'admin');       // with the server proxy there is no key in this browser: only a freshly pasted key can be tested here
+  const a = ((document.getElementById('api-key-input').value || (fromBrowser ? localStorage.getItem('proof_api_key') : '') || '')).trim(), o = ((document.getElementById('openai-key-input').value || (fromBrowser ? localStorage.getItem('proof_openai_key') : '') || '')).trim();
+  if (!a && !o) { out.innerHTML = '<span style="color:#f97316">' + (fromBrowser ? 'Add an API key first.' : 'Paste a new key to test it here. To test the keys already stored for the team, press Test team keys.') + '</span>'; return; }
   btn.disabled = true; btn.textContent = 'Testing...'; out.innerHTML = '';
   const rows = [];
   if (a) rows.push(await apiProbe('anthropic', a));
@@ -5099,15 +5100,23 @@ async function teamToggleAdmin(id, on) {
 }
 async function teamSaveKeys() {
   if (!srReady() || !SRU.admin) { toast('Only an admin can change the team key.', 'warn'); return; }
-  const fx = sortKeys($sr('api-key-input').value, $sr('openai-key-input').value), a = fx.a, o = fx.o;
-  if (!a && !o) { toast('Type your API key in the card above first.', 'warn'); return; }
-  if (TEAM_ST.stored && !confirm('Replace the team key? Colleagues switch to the new key automatically within a few minutes.')) return;
+  const fx = sortKeys($sr('api-key-input').value, $sr('openai-key-input').value);       // what was typed, each key in its own slot
+  if (!fx.a && !fx.o) { toast('Paste a key in the card above first.', 'warn'); return; }
+  // The server replaces BOTH keys on every save, so a blank box must keep the stored key, not erase it.
+  let cur = null; try { cur = await SR.getTeamKeys(srCfg()); } catch (e) { if (srAuthLost(e)) return; }
+  const kept = sortKeys(cur && cur.keys ? cur.keys.a : '', cur && cur.keys ? cur.keys.o : '');
+  const a = fx.a || kept.a, o = fx.o || kept.o;
+  const mix = sortKeys(a, o), A = mix.a, O = mix.o;                                      // and the final pair is in the right slots
+  if (TEAM_ST.stored && !confirm('Replace ' + (fx.a && fx.o ? 'both team keys' : fx.a ? 'the team Anthropic key' : 'the team OpenAI key') + '? ' + (fx.a && fx.o ? '' : 'The other stored key stays as it is. ') + 'Colleagues switch to the new key straight away.')) return;
   try {
-    await SR.putTeamKeys(srCfg(), { a, o });
-    if (fx.moved) { srSet('proof_api_key', a); if (!a) srDel('proof_api_key'); srSet('proof_openai_key', o); if (!o) srDel('proof_openai_key'); $sr('api-key-input').value = a; $sr('openai-key-input').value = o; }
-    else { if (a) srSet('proof_api_key', a); if (o) srSet('proof_openai_key', o); }
-    proxyProbe();
-    toast(fx.moved ? 'Team key saved. Your keys were in each other\'s boxes, so I put each one in the right box first.' : 'Team key saved. Signed-in colleagues receive it automatically.', fx.moved ? 'warn' : undefined, fx.moved ? 8000 : undefined);
+    await SR.putTeamKeys(srCfg(), { a: A, o: O });
+    if (!PROXY_ON) {                                                                    // without the server proxy this browser keeps a copy; with it, the keys live on the server only
+      if (A) srSet('proof_api_key', A); if (O) srSet('proof_openai_key', O);
+      $sr('api-key-input').value = A; $sr('openai-key-input').value = O;
+    }
+    await proxyProbe();
+    if (PROXY_ON) { $sr('api-key-input').value = ''; $sr('openai-key-input').value = ''; }
+    toast(fx.moved ? 'Team key saved. Your keys were in each other\'s boxes, so I put each one in the right box first.' : 'Team key saved.' + (PROXY_ON ? ' It stays on the server.' : ' Signed-in colleagues receive it automatically.'), fx.moved ? 'warn' : undefined, fx.moved ? 8000 : undefined);
   } catch (e) { if (!srAuthLost(e)) toast(SR.friendly(e), 'err'); }
   teamRenderCard();
 }
@@ -5126,6 +5135,10 @@ async function teamPull(announce) {
   try { got = await SR.getTeamKeys(srCfg()); } catch (e) { if (!srAuthLost(e) && announce) toast(SR.friendly(e), 'warn'); return; }
   // The stored pair may have been saved crossed (OpenAI key in the Anthropic slot): hand out each key in its right slot
   const raw = (got && got.keys) || {}, fx = sortKeys(raw.a, raw.o), want = { a: fx.a, o: fx.o }, lsKey = { a: 'proof_api_key', o: 'proof_openai_key' };
+  if (PROXY_ON) {                                           // keys stay on the server; an admin only repairs a crossed stored pair
+    if (fx.moved && fx.a && fx.o) { try { await SR.putTeamKeys(srCfg(), { a: fx.a, o: fx.o }); toast('The two team keys were stored in each other\'s boxes. I put each in the right one for everybody.', 'warn', 9000); } catch (_) { /* retried at the next pull */ } }
+    return;
+  }
   let changed = false, removed = false;
   ['a', 'o'].forEach((f) => {
     const cur = srGet(lsKey[f]), fromTeam = srGet(TEAM_MARK[f]) === '1', v = want[f];
@@ -5227,10 +5240,13 @@ async function aiFetch(provider, payload, key) {
   const cfg = srCfg(), url = cfg.url.replace(/\/+$/, '') + '/functions/v1/ai-proxy', lost = () => { srAuthLost({ code: 'signed_out' }); return new Error('Your session has ended. Please sign in again.'); };
   let tok; try { tok = await SR.getToken(cfg); } catch (e) { throw lost(); }
   const send = (t) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: cfg.key, Authorization: 'Bearer ' + t }, body: JSON.stringify({ provider, payload }) });
+  // A 401 can be the proxy saying "sign in again" OR the AI provider rejecting the team key (passed through unchanged).
+  // Only the first means the session is gone; a rejected key must never sign anyone out.
+  const sessionGone = async (r) => { if (r.status !== 401) return false; try { const j = await r.clone().json(); return !!(j && j.error && j.error.type === 'signed_out'); } catch (_) { return true; } };
   let res = await send(tok);
-  if (res.status === 401) {
+  if (await sessionGone(res)) {
     try { tok = (await SR.refreshSession(cfg)).access_token; } catch (e) { throw lost(); }
-    res = await send(tok); if (res.status === 401) throw lost();
+    res = await send(tok); if (await sessionGone(res)) throw lost();
   }
   if (res.status === 404) PROXY_ON = false;           // the server function was removed: fall back to delivered keys at the next pull
   return res;
@@ -5247,7 +5263,19 @@ async function proxyProbe() {
   } catch (_) { /* offline: keep the last known state */ }
   const el = $sr('proxy-status');
   if (el) el.innerHTML = PROXY_ON ? '<span style="color:#10b981">&#10003;</span> AI calls go through the team server. The keys stay on the server: colleagues never receive them.' + (PROXY_KEYS.anthropic || PROXY_KEYS.openai ? '' : ' <b>No key is stored there yet.</b>') : '<span style="opacity:.8">&#9675; The team server for AI calls is not installed, so each signed-in colleague\'s browser receives the team key. (Admin: deploy the <code>ai-proxy</code> function, see CLAUDE.md.)</span>';
-  if (PROXY_ON) teamDropKeys();
+  if (PROXY_ON) { teamDropKeys(); proxyTidyAdmin(); }
+}
+// With the server proxy the keys live on the server: the admin's boxes only take a NEW key, and old local copies go
+// (a stale local key was what made "Test connection" disagree with "Test team keys").
+function proxyTidyAdmin() {
+  if (!(SRU && SRU.admin)) return;
+  [['anthropic', 'api-key-input', 'proof_api_key', TEAM_MARK.a, 'sk-ant-api03-...'], ['openai', 'openai-key-input', 'proof_openai_key', TEAM_MARK.o, 'sk-proj-...']].forEach(([prov, id, lsKey, mark, ph]) => {
+    const el = $sr(id); if (!el) return;
+    el.placeholder = PROXY_KEYS[prov] ? 'Stored on the team server. Paste a new key here only to replace it.' : ph;
+    if (!PROXY_KEYS[prov]) return;
+    const old = srGet(lsKey) || ''; if (el.value === old) el.value = '';          // never wipe what is being typed
+    srDel(lsKey); srDel(mark);
+  });
 }
 // Admin: one tiny request per stored key, sent through the server, so a swapped or rejected key is found before colleagues hit it
 async function testTeamKeys() {
@@ -5261,7 +5289,8 @@ async function testTeamKeys() {
       const res = await aiFetch(prov, prov === 'openai' ? { model, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] } : { model, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }, AI_TEAM);
       if (res.ok) { rows.push({ ok: true, text: co + ': the team key works (tested through the server).' }); continue; }
       const e = await res.json().catch(() => ({})), msg = (e.error && e.error.message) || ('HTTP ' + res.status);
-      rows.push({ ok: res.status === 429, text: co + ': ' + (res.status === 401 ? 'the stored team key was rejected. Paste a fresh one above and press Save for the whole team.' : res.status === 429 ? 'the key is valid but rate limited right now.' : /credit|billing|quota/i.test(msg) ? 'the key is valid but the account has no credit left.' : msg) });
+      const noCredit = res.status === 402 || /credit|billing|quota/i.test(msg);
+      rows.push({ ok: !noCredit && res.status === 429, text: co + ': ' + (res.status === 401 ? 'the stored team key was rejected. Paste a fresh one above and press Save for the whole team.' : noCredit ? 'the key is valid, but the account has no credit or quota left (' + msg + '). Add credit in the ' + co + ' billing page.' : res.status === 429 ? 'the key is valid but rate limited right now (' + msg + ').' : msg) });
     } catch (e) { rows.push({ ok: false, text: co + ': ' + (e.message || 'could not test') }); }
   }
   out.innerHTML = rows.map((r) => '<div class="sr-check ' + (r.ok ? 'ok' : 'bad') + '" style="margin-top:6px"><span>' + (r.ok ? '&#10003;' : '&#10007;') + '</span><span>' + esc(r.text) + '</span></div>').join('');

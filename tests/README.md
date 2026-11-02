@@ -6,6 +6,7 @@ Nothing here ships to users; it only protects the code from regressions.
 |---|---|
 | `node tests/tc-core.test.mjs` | Translation-check engine on a generated sample book with known defects (omission, addition, changed number, untranslated text, missing and extra chapter, mistyped chapter number) and a fake model that misbehaves on purpose (bad JSON, incomplete answers, truncation, invented quotes, false omission claims). Also stop and continue. |
 | `node tests/tc-rtf.test.mjs` | RTF reader, paragraph and chapter detection, the scoring rubric. |
+| `node tests/ai-fetch.test.mjs` | `aiFetch` cut out of `index.html`: direct calls unchanged, calls through the team server carry the user token and no key, a provider's 401 (rejected team key) is never treated as a lost session, a real expired token is refreshed once. |
 | `node tests/ai-proxy.test.mjs` | The `ai-proxy` Edge Function, loaded exactly as written against a fake Supabase and fake AI providers: only team members get through, runs as the caller, keys never in any answer, crossed keys sorted, status/rate-limit headers pass through, validation, 140 s cut-off. |
 | `node tests/projects-client.test.mjs` | The Projects helpers in `share-core.js`: gzip + base64 round trip (multi-script, large), the RPC calls and their arguments. |
 | `node tests/admin-users.test.mjs` | The `admin-users` Edge Function (create / remove / reset logins), loaded exactly as written against a fake Supabase: only admins pass, service key never used for others, self/non-member protection, rollback of half-made logins. |
