@@ -12,7 +12,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/docx@7.8.2/build/index.js"></script>
-  <script src="share-core.js"></script>
+  <script src="share-core.js?v=4.4.0"></script>
   <script src="tc-core.js?v=4.2.0"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -369,6 +369,19 @@
     .tm-who span { color:var(--muted); font-size:12px; margin-left:4px; }
     .tm-who em { color:var(--muted); font-size:12px; }
     .tm-acts { display:flex; gap:6px; }
+    [data-for][hidden] { display:none !important; }
+    #gate { position:fixed; inset:0; z-index:300; background:var(--bg); display:flex; align-items:center; justify-content:center; padding:20px; overflow:auto; }
+    #gate[hidden], .gate-box [hidden] { display:none !important; }
+    .gate-box { width:100%; max-width:390px; background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:28px 26px 22px; box-shadow:0 20px 60px rgba(0,0,0,.25); }
+    .gate-box .gate-logo { width:46px; height:27px; } .gate-box .gate-logo svg { width:100%; height:100%; }
+    .gate-box h2 { font-size:21px; margin:14px 0 4px; }
+    .gate-box > p { color:var(--muted); font-size:13px; margin:0 0 16px; line-height:1.5; }
+    .gate-box .sr-field { margin-bottom:12px; }
+    .gate-box .gate-go { width:100%; margin-top:6px; padding:11px; font-size:14px; }
+    .gate-box .gate-foot { color:var(--muted); font-size:12px; margin-top:14px; text-align:center; }
+    .nl-card { background:var(--sf2); border:1px solid var(--border); border-radius:10px; padding:12px 14px; margin-top:10px; font-size:13px; }
+    .nl-card .nl-line { display:flex; gap:8px; align-items:baseline; margin:3px 0; } .nl-card .nl-line b { min-width:78px; color:var(--muted); font-weight:600; }
+    .nl-card .nl-line code { font-size:13.5px; user-select:all; }
     .user-chip { display:inline-flex; align-items:center; gap:8px; font-size:12px; color:var(--muted); margin-right:10px; }
     .user-chip .who { color:var(--text); font-weight:600; }
     .user-chip .who em { font-style:normal; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#10b981; border:1px solid rgba(16,185,129,.4); border-radius:6px; padding:1px 5px; margin-left:4px; }
@@ -463,8 +476,8 @@
   <button onclick="showTab('report')">Report</button>
   <button onclick="showTab('translation')">Translation</button>
   <button onclick="showTab('history')">History</button>
-  <button onclick="showTab('reviews')">Reviews<span class="nav-badge" id="reviews-badge" hidden></span></button>
-  <button onclick="showTab('setup')">Setup</button>
+  <button onclick="showTab('reviews')" data-for="member admin">Reviews<span class="nav-badge" id="reviews-badge" hidden></span></button>
+  <button onclick="showTab('setup')" id="nav-setup">Setup</button>
 </nav>
 
 <!-- ══════════ PROOF PAGE ══════════ -->
@@ -831,7 +844,8 @@
 
 <!-- ══════════ SETUP PAGE ══════════ -->
 <div id="setup-page" class="page">
-  <div class="card">
+  <div class="card" id="keys-card" data-for="guest admin">
+    <p class="help" data-for="admin" style="margin:0 0 12px;font-size:13px;color:var(--text)"><strong>Team API keys.</strong> Paste the keys once and press <em>Save for the whole team</em>. Everyone who is signed in can then proofread, with no key of their own. Paste each key in its own box (the app also fixes it if they are swapped).</p>
     <h3>🔑 Anthropic API Key <span style="font-size:11px;font-weight:400;color:var(--muted)">(for Claude models)</span></h3>
     <input type="password" id="api-key-input" placeholder="sk-ant-api03-…" autocomplete="off">
     <p class="help">Stored only in your browser's local storage — never sent anywhere except Anthropic's API.<br>Get a key at <strong>console.anthropic.com</strong>.</p>
@@ -844,29 +858,26 @@
     <input type="text" id="user-name-input" placeholder="e.g. Shakkeer" autocomplete="off" style="margin-top:6px">
     <p class="help">Shown as "Initiated by" on every report and review request.</p>
     <br>
-    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" onclick="saveSetup()">Save</button><button class="btn btn-secondary" id="api-test-btn" onclick="testApiConnection()" title="Sends one tiny request to check that your browser can reach the AI service and that the key works">Test connection</button></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" data-for="guest" onclick="saveSetup()">Save</button><button class="btn btn-primary" data-for="admin" onclick="teamSaveKeys()">Save for the whole team</button><button class="btn btn-secondary" data-for="admin" onclick="teamRemoveKeys()">Remove team key</button><button class="btn btn-secondary" id="api-test-btn" onclick="testApiConnection()" title="Sends one tiny request to check that your browser can reach the AI service and that the key works">Test connection</button></div>
     <div id="api-test-out"></div>
   </div>
-  <div class="card" id="team-card">
-    <h3 style="margin-bottom:2px">👥 Team workspace <span style="font-weight:400;font-size:12px;color:var(--muted)">(shared reviews &amp; one API key)</span></h3>
+  <div class="card" id="team-card" data-for="member admin">
+    <h3 style="margin-bottom:2px">👥 <span data-for="admin">Team</span><span data-for="member">Your account</span></h3>
     <div id="team-account" style="margin:8px 0 6px"></div>
     <div id="team-status" class="sr-hint" style="margin:0 0 8px"></div>
     <div id="team-admin" hidden>
-      <p class="sr-intro" style="margin-top:10px"><strong>Admin tools.</strong> Store the team&apos;s API key once. Every signed-in colleague receives it automatically, and a change reaches everyone within a few minutes. Colleagues need nothing else: send them the workspace link plus their username and password.</p>
-      <div class="row">
-        <button class="btn btn-primary btn-sm" onclick="teamSaveKeys()">Save API key for the team</button>
-        <button class="btn btn-secondary btn-sm" onclick="teamRemoveKeys()">Remove team key</button>
-        <button class="btn btn-secondary btn-sm" onclick="teamCreateLink()">Workspace link</button>
-      </div>
       <div id="team-out"></div>
-      <div style="margin-top:16px"><h4 style="margin:0 0 6px;font-size:13px">Team members</h4>
+      <div style="margin-top:6px"><h4 style="margin:0 0 6px;font-size:13px">Team members</h4>
         <div id="team-members" class="sr-hint">Loading...</div>
-        <div class="row" style="margin-top:8px"><input type="text" id="tm-user" class="sr-input" placeholder="username, e.g. ben" autocomplete="off" spellcheck="false" style="flex:1;min-width:160px"><button class="btn btn-primary btn-sm" onclick="teamAddMember()">Add colleague</button></div>
-        <div class="sr-hint" style="margin-top:8px"><strong>To add someone:</strong> first create their login in Supabase (Authentication &rarr; Users &rarr; Add user, email <code>username@explorer.team</code>, a password, tick <em>Auto Confirm User</em>). Then type the username here and press Add. Tell them the username and password.<br><strong>To remove someone:</strong> press Remove next to their name. They are locked out immediately.</div>
+        <h4 style="margin:16px 0 6px;font-size:13px">Add a colleague</h4>
+        <div class="row" style="gap:8px;flex-wrap:wrap"><input type="text" id="tm-user" class="sr-input" placeholder="username, e.g. ben" autocomplete="off" spellcheck="false" style="flex:1;min-width:150px"><div class="sr-pw" style="flex:1.4;min-width:220px"><input type="text" id="tm-pass" class="sr-input" autocomplete="off" spellcheck="false" aria-label="First password"><button class="btn btn-secondary btn-sm" type="button" onclick="teamNewPass()" title="Make another password">New</button></div></div>
+        <div class="row" style="margin-top:8px;align-items:center"><label style="font-size:12.5px;font-weight:500;text-transform:none;letter-spacing:0;color:var(--muted);display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" id="tm-admin" style="width:auto;flex:none"> Make admin</label><span style="flex:1"></span><button class="btn btn-primary btn-sm" id="tm-add" onclick="teamCreateLogin()">Create login</button></div>
+        <div id="tm-result"></div>
+        <div class="sr-hint" style="margin-top:8px">Type a username and a first password (one is made for you) and press <strong>Create login</strong>. Then send the person the message that appears. Nothing else to set up.</div>
       </div>
     </div>
   </div>
-  <div class="card" id="sr-setup-card">
+  <div class="card" id="sr-setup-card" data-for="admin">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:2px">
       <h3 style="margin:0;flex:1">🔧 Workspace setup <span style="font-weight:400;font-size:12px;color:var(--muted)">(admin, one time)</span></h3>
       <span class="sr-pill todo" id="sr-status-pill">Not set up</span>
@@ -919,7 +930,7 @@
       <strong>Translation check:</strong> add the original under &ldquo;Compare with a source document&rdquo; to check a translation for missing or added text, wrong meaning and wrong numbers, with a score and a list for the translator.
     </p>
   </div>
-  <div class="card" id="cost-tracker-card">
+  <div class="card" id="cost-tracker-card" data-for="guest admin">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <h3 style="margin:0">💰 Cost Tracker</h3>
       <button class="btn btn-secondary btn-sm" onclick="resetCostStats()">Reset</button>
@@ -950,14 +961,23 @@
 <div class="modal-overlay" id="tc-modal">
   <div class="modal-box mid" id="tc-box"></div>
 </div>
-<div class="modal-overlay" id="login-modal">
-  <div class="modal-box" id="login-box"></div>
+<div id="gate" hidden>
+  <div class="gate-box">
+    <div class="gate-logo" id="gate-logo"></div>
+    <h2>Explorer AI Proofreader</h2>
+    <p>Sign in with the username and password from your admin.</p>
+    <div id="gate-msg"></div>
+    <div class="sr-field"><label>Username</label><input class="sr-input" id="gate-user" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="e.g. ben"></div>
+    <div class="sr-field"><label>Password</label><div class="sr-pw"><input class="sr-input" id="gate-pw" type="password" autocomplete="current-password"><button class="btn btn-secondary btn-sm" id="gate-eye" type="button" onclick="gateEye()">Show</button></div></div>
+    <button class="btn btn-primary gate-go" id="gate-go" onclick="gateLogin()">Sign in</button>
+    <button class="btn btn-secondary gate-go" id="gate-cancel" hidden onclick="srGateClose()">Not now</button>
+    <div class="gate-foot">No login yet, or forgot your password? Ask your admin.</div>
+  </div>
 </div>
-
 <footer class="app-footer">
   <span>© 2026 Explorer Publishing &amp; Distribution LLC · All rights reserved</span>
   <span id="cost-footer" style="font-size:10px;color:var(--muted);opacity:.65"></span>
-  <span class="app-footer-version">v4.3.0</span>
+  <span class="app-footer-version">v4.4.0</span>
 </footer>
 
 <div class="toast" id="toast"></div>
@@ -4511,8 +4531,43 @@ const srGet = (k) => { try { return localStorage.getItem(k); } catch(_) { return
 const srSet = (k, v) => { try { localStorage.setItem(k, v); } catch(_) {} };
 const srDel = (k) => { try { localStorage.removeItem(k); } catch(_) {} };
 const $sr = (id) => document.getElementById(id);
-const srCfg = () => { const url = (srGet(SRK.url) || '').trim(), key = (srGet(SRK.key) || '').trim(); return (url && key) ? { url, key } : null; };
+// Explorer's own workspace. Both values are public by design (the URL, and the publishable key that every sign-in page carries),
+// so the team opens the site and only signs in. A different workspace saved in this browser (Setup wizard) still wins.
+const SR_DEFAULT = { url: 'https://esslcpdxlhsxxeccfixy.supabase.co', key: 'sb_publishable_3igRqU7J8q5F4lDgMqCz5Q_FdhSFdr0' };
+const srCfg = () => { const url = (srGet(SRK.url) || '').trim(), key = (srGet(SRK.key) || '').trim(); return (url && key) ? { url, key } : SR_DEFAULT; };
 let SRU = null;      // the signed-in colleague { id, name, email, admin }, or null
+let ROLE = 'pending';        // 'out' (must sign in) | 'pending' (checking a saved session) | 'member' | 'admin' | 'guest' (?guest=1: own key, no account)
+let SR_PENDING = false, GATE_MSG = '', GATE_FORCE = false;
+const srGuest = () => { try { if (/[?&]guest=1\b/.test(location.search)) sessionStorage.setItem('sr_guest', '1'); return sessionStorage.getItem('sr_guest') === '1'; } catch (_) { return false; } };
+// Show only what the person's role needs; the sign-in screen covers everything until they are in.
+function srApplyRole() {
+  ROLE = SRU ? (SRU.admin ? 'admin' : 'member') : srGuest() ? 'guest' : SR_PENDING ? 'pending' : 'out';
+  document.body.dataset.role = ROLE;
+  document.querySelectorAll('[data-for]').forEach((el) => { el.hidden = !el.getAttribute('data-for').split(/\s+/).includes(ROLE); });
+  const nav = $sr('nav-setup'); if (nav) nav.textContent = ROLE === 'admin' ? 'Admin' : ROLE === 'member' ? 'Settings' : 'Setup';
+  const gate = $sr('gate'); if (!gate) return;
+  const show = ROLE === 'out' || (GATE_FORCE && !SRU);
+  gate.hidden = !show;
+  const m = $sr('gate-msg'); if (m) m.innerHTML = GATE_MSG ? '<div class="sr-check bad" style="margin-bottom:12px"><span>!</span><span><b>' + esc(GATE_MSG) + '</b></span></div>' : '';
+  const c = $sr('gate-cancel'); if (c) c.hidden = ROLE !== 'guest';
+  if (show) { const lg = $sr('gate-logo'), src = document.querySelector('header .logo'); if (lg && src && !lg.firstChild) lg.innerHTML = src.innerHTML; setTimeout(() => { const f = $sr('gate-user'); const g = f && f.value ? $sr('gate-pw') : f; if (g && document.activeElement !== g) g.focus(); }, 60); }
+}
+function srGateClose() { GATE_FORCE = false; GATE_MSG = ''; srApplyRole(); }
+function gateEye() { const f = $sr('gate-pw'), show = f.type === 'password'; f.type = show ? 'text' : 'password'; $sr('gate-eye').textContent = show ? 'Hide' : 'Show'; }
+async function gateLogin() {
+  const u = $sr('gate-user').value.trim(), p = $sr('gate-pw').value, btn = $sr('gate-go');
+  if (!u || !p) { GATE_MSG = 'Type your username and password.'; srApplyRole(); return; }
+  btn.disabled = true; btn.textContent = 'Signing in...'; GATE_MSG = ''; $sr('gate-msg').innerHTML = '';
+  try {
+    await SR.signIn(srCfg(), u, p);
+    if (!(await srSyncIdentity())) throw new SR.SRError('denied');
+    srSet(SRK.last, u.toLowerCase()); GATE_FORCE = false; $sr('gate-pw').value = '';
+    srApplyRole(); srAfterLogin();
+  } catch (e) {
+    SR.clearSession();                       // a half-finished sign-in must not leave a session behind
+    GATE_MSG = SR.friendly(e); srApplyRole(); const pw = $sr('gate-pw'); if (pw) { pw.value = ''; pw.focus(); }
+  } finally { btn.disabled = false; btn.textContent = 'Sign in'; }
+}
 let SRL = [];        // the team's shared reviews, as last fetched from the server
 const srReady = () => !!(srCfg() && SRU && typeof SR !== 'undefined' && SR.hasSession());
 const srDate = (iso, time) => { try { return new Date(iso).toLocaleString(undefined, time ? { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' } : { day:'numeric', month:'short', year:'numeric' }); } catch(_) { return ''; } };
@@ -4547,6 +4602,7 @@ function srAuthLost(e) {
   srOpenLogin(SR.friendly(e)); return true;
 }
 function srPaintChip() {
+  srApplyRole();
   const el = $sr('user-chip'); if (!el) return;
   if (!srCfg()) { el.hidden = true; el.innerHTML = ''; srPaintBadge(); return; }
   el.hidden = false;
@@ -4556,38 +4612,8 @@ function srPaintChip() {
   srPaintBadge();
 }
 
-// ── Sign-in dialog ─────────────────────────────────────────────────────
-function srOpenLogin(msg) {
-  if (!srCfg()) { toast('Connect the team workspace first (Setup).', 'warn'); showTab('setup'); return; }
-  $sr('login-box').innerHTML = '<div class="modal-title">Sign in to the team workspace</div>' +
-    '<p class="sr-hint" style="margin:0 0 12px;font-size:13px">Use the username and password your admin gave you. The team API key is applied automatically after you sign in.</p>' +
-    (msg ? '<div class="sr-check bad" style="margin-bottom:10px"><span>!</span><span><b>' + esc(msg) + '</b></span></div>' : '') +
-    '<div class="sr-field"><label>Username</label><input class="sr-input" id="lg-user" autocomplete="username" autocapitalize="none" spellcheck="false" value="' + esc(srGet(SRK.last) || (srGet(SRK.admin) || '').toLowerCase()) + '"></div>' +
-    '<div class="sr-field"><label>Password</label><div class="sr-pw"><input class="sr-input" id="lg-pw" type="password" autocomplete="current-password"><button class="btn btn-secondary btn-sm" id="lg-eye" onclick="srLoginEye()">Show</button></div></div>' +
-    '<div id="lg-err"></div>' +
-    '<div class="modal-actions"><button class="btn btn-secondary" onclick="srCloseLogin()">Not now</button><button class="btn btn-primary" id="lg-go" onclick="srDoLogin()">Sign in</button></div>' +
-    '<p class="sr-hint" style="margin-top:10px">No account yet, or forgotten your password? Ask your admin.</p>';
-  $sr('login-modal').classList.add('open');
-  ['lg-user', 'lg-pw'].forEach((id) => $sr(id).addEventListener('keydown', (ev) => { if (ev.key === 'Enter') srDoLogin(); }));
-  setTimeout(() => { const f = $sr('lg-user'); const g = f && f.value ? $sr('lg-pw') : f; if (g) g.focus(); }, 60);
-}
-function srCloseLogin() { $sr('login-modal').classList.remove('open'); }
-function srLoginEye() { const f = $sr('lg-pw'), show = f.type === 'password'; f.type = show ? 'text' : 'password'; $sr('lg-eye').textContent = show ? 'Hide' : 'Show'; }
-async function srDoLogin() {
-  const u = $sr('lg-user').value.trim(), p = $sr('lg-pw').value, btn = $sr('lg-go');
-  btn.disabled = true; btn.textContent = 'Signing in...'; $sr('lg-err').innerHTML = '';
-  try {
-    await SR.signIn(srCfg(), u, p);
-    if (!(await srSyncIdentity())) throw new SR.SRError('denied');
-    srSet(SRK.last, u.toLowerCase());
-    srCloseLogin(); srAfterLogin();
-  } catch (e) {
-    SR.clearSession();                       // a half-finished sign-in must not leave a session behind
-    btn.disabled = false; btn.textContent = 'Sign in';
-    $sr('lg-err').innerHTML = '<div class="sr-check bad"><span>&#10007;</span><span><b>' + esc(SR.friendly(e)) + '</b></span></div>';
-    const pw = $sr('lg-pw'); if (pw) { pw.value = ''; pw.focus(); }
-  }
-}
+// ── Sign-in: the full-page screen above (gateLogin). Anything that needs a (new) sign-in just shows it again. ──
+function srOpenLogin(msg) { GATE_MSG = msg || ''; GATE_FORCE = true; srApplyRole(); }
 async function srAfterLogin() {
   renderShareSetup(); srPaintChecks();
   toast('Welcome, ' + SRU.name + '.');
@@ -4607,7 +4633,6 @@ function renderShareSetup() {
   $sr('sr-key').value = cfg ? cfg.key : '';
   $sr('sr-admin-user').value = srGet(SRK.admin) || '';
   $sr('sr-s1-done').checked = srGet(SRK.s1) === '1' || !!cfg;
-  const card = $sr('sr-setup-card'); if (card) card.hidden = !!(SRU && !SRU.admin);   // colleagues do not need the wizard
   srSetupState(); teamRenderCard();
 }
 function srSetupState() {
@@ -4997,26 +5022,66 @@ function teamPaintMembers() {
   if (!TEAM_MEM_LOADED) { el.textContent = 'Loading...'; return; }
   if (!TEAM_MEM.length) { el.textContent = 'No members yet.'; return; }
   el.innerHTML = TEAM_MEM.map((m) => '<div class="tm-row"><div class="tm-who"><b>' + esc(m.name) + '</b><span>' + esc(m.email) + '</span>' + (m.admin ? ' <span class="sr-pill ready">admin</span>' : '') + (m.disabled ? ' <span class="sr-pill todo">disabled in Supabase</span>' : '') + (m.me ? ' <em>(you)</em>' : '') + '</div>' +
-    '<div class="tm-acts">' + (m.me ? '' : '<button class="btn btn-secondary btn-sm" onclick="teamToggleAdmin(\'' + m.id + '\',' + (!m.admin) + ')">' + (m.admin ? 'Remove admin' : 'Make admin') + '</button><button class="btn btn-secondary btn-sm" onclick="teamRemoveMember(\'' + m.id + '\')">Remove</button>') + '</div></div>').join('');
+    '<div class="tm-acts">' + (m.me ? '' : '<button class="btn btn-secondary btn-sm" onclick="teamToggleAdmin(\'' + m.id + '\',' + (!m.admin) + ')">' + (m.admin ? 'Remove admin' : 'Make admin') + '</button><button class="btn btn-secondary btn-sm" onclick="teamResetPassword(\'' + m.id + '\')">New password</button><button class="btn btn-secondary btn-sm" onclick="teamRemoveMember(\'' + m.id + '\')">Delete</button>') + '</div></div>').join('');
 }
 async function teamLoadMembers() {
   if (!srReady() || !SRU.admin) return;
   try { TEAM_MEM = await SR.listMembers(srCfg()); TEAM_MEM_LOADED = true; }
   catch (e) { if (srAuthLost(e)) return; TEAM_MEM = []; TEAM_MEM_LOADED = true; toast(SR.friendly(e), 'err'); }
   teamPaintMembers();
+  const pf = $sr('tm-pass'); if (pf && !pf.value) teamNewPass();
 }
-async function teamAddMember() {
+function teamNewPass() { const f = $sr('tm-pass'); if (f) f.value = SR.newPassphrase(); }
+// What the admin sends to the colleague (username + first password + where to sign in)
+function teamLoginMessage(user, pw) {
+  return 'You can now use the Explorer AI Proofreader.\nOpen: ' + location.origin + location.pathname + '\nUsername: ' + user + '\nPassword: ' + pw + '\nPlease keep this private.';
+}
+function teamShowLogin(user, pw, title) {
+  const box = $sr('tm-result'); if (!box) return;
+  const msg = teamLoginMessage(user, pw);
+  box.innerHTML = '<div class="nl-card"><b>' + esc(title) + '</b>' +
+    '<div class="nl-line"><b>Username</b><code>' + esc(user) + '</code></div><div class="nl-line"><b>Password</b><code>' + esc(pw) + '</code></div>' +
+    '<div class="row" style="margin-top:8px"><button class="btn btn-primary btn-sm" id="tm-copy">Copy message for ' + esc(user) + '</button></div>' +
+    '<div class="sr-hint" style="margin-top:6px">This password is shown only now. Paste the message into your chat or email.</div></div>';
+  $sr('tm-copy').onclick = async () => { const ok2 = await srCopy(msg); toast(ok2 ? 'Message copied' : 'Copy was blocked. Select the text and copy it manually.', ok2 ? undefined : 'warn'); };
+}
+async function teamCreateLogin() {
   if (!srReady() || !SRU.admin) { toast('Only an admin can add colleagues.', 'warn'); return; }
-  const f = $sr('tm-user'), u = (f.value || '').trim();
-  if (u.length < 2) { toast('Type the username you created in Supabase, for example ben.', 'warn'); return; }
-  try { await SR.addMember(srCfg(), u, false); f.value = ''; toast('Added ' + u + '. They can sign in now.'); }
-  catch (e) { if (!srAuthLost(e)) toast(SR.friendly(e), 'err'); return; }
+  const f = $sr('tm-user'), user = (f.value || '').trim().toLowerCase().replace(/@explorer\.team$/, ''), pw = ($sr('tm-pass').value || '').trim(), adm = $sr('tm-admin').checked, btn = $sr('tm-add');
+  if (user.length < 2) { toast('Type a username, for example ben.', 'warn'); return; }
+  btn.disabled = true; btn.textContent = 'Creating...';
+  try {
+    await SR.createLogin(srCfg(), user, pw, adm);
+    teamShowLogin(user, pw, adm ? 'Admin login created' : 'Login created');
+    f.value = ''; $sr('tm-admin').checked = false; teamNewPass();
+  } catch (e) {
+    if (e.code === 'user_exists' || e.code === 'function_missing') {   // a login made earlier in Supabase (or the helper is not installed yet): put it on the team
+      try { await SR.addMember(srCfg(), user, adm); toast('That login already existed, so I added it to the team. Its password is unchanged.', 'warn', 8000); f.value = ''; }
+      catch (e2) {
+        if (srAuthLost(e2)) { /* sign-in screen shown */ }
+        else if (e.code === 'function_missing') toast('The admin helper is not installed in Supabase yet, so logins cannot be created here. For now create the login in Supabase (Authentication, Users, Add user, email ' + user + '@explorer.team, tick Auto Confirm User), then press Create login again.', 'warn', 14000);
+        else toast(SR.friendly(e2), 'err');
+      }
+    } else if (!srAuthLost(e)) toast(SR.friendly(e), 'err');
+  } finally { btn.disabled = false; btn.textContent = 'Create login'; }
   teamLoadMembers();
+}
+async function teamResetPassword(id) {
+  const m = TEAM_MEM.find((x) => x.id === id); if (!m) return;
+  if (!confirm('Make a new password for ' + m.name + '? The old password stops working at once.')) return;
+  const pw = SR.newPassphrase();
+  try { await SR.resetLogin(srCfg(), id, pw); teamShowLogin(m.email.replace(/@explorer\.team$/, ''), pw, 'New password for ' + m.name); }
+  catch (e) { if (!srAuthLost(e)) toast(e.code === 'function_missing' ? 'The admin helper is not installed in Supabase yet. For now set the password in Supabase (Authentication, Users).' : SR.friendly(e), e.code === 'function_missing' ? 'warn' : 'err', 9000); }
 }
 async function teamRemoveMember(id) {
   const m = TEAM_MEM.find((x) => x.id === id); if (!m) return;
-  if (!confirm('Remove ' + m.name + ' (' + m.email + ')? They lose access immediately.')) return;
-  try { await SR.removeMember(srCfg(), id); toast(m.name + ' removed.'); } catch (e) { if (!srAuthLost(e)) toast(SR.friendly(e), 'err'); }
+  if (!confirm('Delete the login for ' + m.name + ' (' + m.email + ')? They cannot sign in again. Reports and reviews they made stay.')) return;
+  try { await SR.removeLogin(srCfg(), id); toast(m.name + ' deleted.'); }
+  catch (e) {
+    if (e.code === 'function_missing') {      // helper not installed: take them off the team (the login stays in Supabase but is useless)
+      try { await SR.removeMember(srCfg(), id); toast(m.name + ' removed from the team. The login still exists in Supabase until the admin helper is installed.', 'warn', 9000); } catch (e2) { if (!srAuthLost(e2)) toast(SR.friendly(e2), 'err'); }
+    } else if (!srAuthLost(e)) toast(SR.friendly(e), 'err');
+  }
   teamLoadMembers();
 }
 async function teamToggleAdmin(id, on) {
@@ -5085,6 +5150,7 @@ function teamBoot() {
   const okUrl = !!p && typeof p.u === 'string' && /^(https:\/\/[^\s/]+\.[^\s/]+|http:\/\/(localhost|127\.0\.0\.1)(:\d+)?)$/i.test(p.u);
   const okKey = !!p && typeof p.k === 'string' && p.k.length >= 20 && p.k.length <= 2000 && !/\s/.test(p.k);
   if (!p || p.v !== 2 || !okUrl || !okKey) { toast('This workspace link is not valid or is from an older version. Ask your admin for a new one.', 'warn', 8000); return false; }
+  if (p.u === srCfg().url) return false;       // already this workspace: nothing to connect, the sign-in screen is enough
   TEAM_PENDING = p; teamShowJoin(); return true;
 }
 function teamShowJoin() {
@@ -5113,12 +5179,17 @@ async function teamJoin() {
 }
 
 async function srInit() {
-  srPaintChip();
-  if (!srCfg() || typeof SR === 'undefined') return;
+  ['gate-user', 'gate-pw'].forEach((id) => { const el = $sr(id); if (el) el.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') gateLogin(); }); });
+  const lu = $sr('gate-user'); if (lu && !lu.value) lu.value = srGet(SRK.last) || '';
+  SR_PENDING = typeof SR !== 'undefined' && SR.hasSession();
+  srApplyRole();
+  if (typeof SR === 'undefined') return;
   if (SR.hasSession()) {
-    if (await srSyncIdentity()) { srPaintChecks(); teamPull(false); srRefresh(false); }
-    else if (!SR.hasSession() && !TEAM_JOINING) srOpenLogin('Please sign in again.');
-  } else if (!TEAM_JOINING) srOpenLogin();
+    const ok = await srSyncIdentity();
+    SR_PENDING = false;
+    if (ok) { srPaintChecks(); teamPull(false); srRefresh(false); }
+    else { GATE_MSG = SR.hasSession() ? 'Could not reach the server. Check your connection and reload the page.' : ''; srApplyRole(); }
+  } else { SR_PENDING = false; srApplyRole(); }
   setInterval(async () => {
     if (!SRU && SR.hasSession()) await srSyncIdentity();
     if (srReady()) { srRefresh(false); teamPull(false); }

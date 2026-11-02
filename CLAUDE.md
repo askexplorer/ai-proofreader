@@ -8,7 +8,7 @@ Single-file browser app for professional AI-powered proofreading. Powered by Ant
 **Live repo:** github.com/askexplorer/ai-proofreader (remote `askexplorer`; the old `origin` = shakkeer-cloud is retired)  
 **Live site:** https://askexplorer.github.io/ai-proofreader/ (GitHub Pages, serves `master`)  
 **Branch:** master  
-**Current version:** v4.3.0
+**Current version:** v4.4.0
 
 ---
 
@@ -265,6 +265,15 @@ A real run on a long English -> German book manuscript (confidential: no client 
 
 ### Your own instructions (v4.3.0)
 One box on the Proof page, `#ai-instructions` ("Your own instructions for the AI"), shown in BOTH modes (it used to be proofread-only; the translation dialog had a separate "Notes for the AI", now removed so there is one place). `instrText()` reads it (cap 3000 chars), `instrSave/instrLoad` remember it in `localStorage.proof_custom_prompt`, `instrAdd` is the example chips. Proofreading appends it to the system prompt inside a framed block ("THE EDITOR'S OWN INSTRUCTIONS ... <<< ... >>>": follow in addition to the checks, report extra findings under the closest of the eight categories, can never change the JSON format or exact-text rules). Translation check passes it as `extra` to tc-core (unchanged). It is stored with the report (`report._instructions`, history `instructions`) and shown as "Instructions given:" under the report header.
+
+### Simple sign-in, roles and the Admin tab (v4.4.0)
+Goal: colleagues open the site, sign in, and the tool works; only the admin sets anything up.
+- **Built-in workspace**: `SR_DEFAULT` (index.html, above `srCfg`) = Explorer's Supabase URL + publishable key (both public by design), so no workspace link and no "Connect" step. A workspace saved in `localStorage` (old wizard) still wins. Old `#team=` links just show the sign-in screen when they point at the same workspace.
+- **Sign-in screen** (`#gate`, `gateLogin`, `srApplyRole`): full page, covers the app until a session is verified. `srOpenLogin(msg)` now just shows it again (expired session etc.). **Guest mode** for development/forks: open `?guest=1` (kept in `sessionStorage`): no account, own API key, old Setup screen.
+- **Roles**: `ROLE` = `out | pending | member | admin | guest`, set on `document.body.dataset.role`; elements carry `data-for="member admin"` and `srApplyRole()` toggles `hidden` (`[data-for][hidden]` is `display:none !important`). Nav "Setup" is labelled Admin / Settings / Setup. Members see: Proof, Report, Translation, History, Reviews, Settings (glossary, account). Admin additionally: API keys card ("Save for the whole team"), Team (members), Workspace setup wizard, Cost tracker. Do not add new role logic with other `hidden` toggles on the same elements.
+- **Members screen** (admin): "Create login" = username + generated first password (`SR.newPassphrase`) -> shows a copy-able message (site address, username, password). Per member: Make admin / New password / Delete. Delete removes the login completely (reports they made stay; `review_shares` keeps `created_by_name`, no FK).
+- **`supabase/functions/admin-users/index.ts`** (Edge Function, `verify_jwt=false`): actions `create | remove | reset`. It first calls `team_whoami` AS THE CALLER and refuses unless admin, then uses the service key (GoTrue admin API) only for team members; refuses self-removal and non-members; rolls back a login whose team step failed. Client: `SR.createLogin/removeLogin/resetLogin` (`SR.adminUsers`); error `function_missing` = not deployed -> the UI falls back to the old way (login made in Supabase, then "Create login" adds it to the team). **Deploy** (not done by the build tooling, it was blocked as a production deploy): `supabase functions deploy admin-users --no-verify-jwt --project-ref esslcpdxlhsxxeccfixy`, or paste the file in Supabase -> Edge Functions -> New function (name `admin-users`, JWT verification OFF). Test: `tests/admin-users.test.mjs` (loads the exact file in Node against a fake Supabase).
+- `share-core.js` is loaded as `share-core.js?v=4.4.0`: bump the query whenever it changes (GitHub Pages caches; an old library next to a new page breaks calls like `SR.createLogin`).
 
 ### Ideas not built
 Cross-chapter term glossary check, mechanical pre-pass, re-verify diff mode, InDesign Find/Change script, per-client glossary, proxy so the API key never reaches browsers.

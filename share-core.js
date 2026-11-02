@@ -60,6 +60,11 @@
     conflict:       'Someone else saved changes at the same time.',
     exists:         'A review with this id already exists. Please try again.',
     too_large:      'This is too large to store. Share only the issues that still need review.',
+    user_exists:    'That username already has a login.',
+    bad_username:   'Use 2 to 40 letters, numbers, dots, dashes or underscores, for example ben.',
+    weak_password:  'The password must be 8 to 72 characters.',
+    not_member:     'That person is not on the team.',
+    function_missing: 'The admin helper is not installed in Supabase yet.',
     server:         'The server returned an unexpected error.',
     unsupported:    'This browser cannot do secure encryption. Use an up-to-date Chrome, Edge, Safari or Firefox over https.',
   };
@@ -214,6 +219,26 @@
   async function addMember(cfg, user, admin) { return must(await arpc(cfg, 'team_member_add', { p_email: emailFor(user), p_admin: !!admin })); }
   async function removeMember(cfg, id) { must(await arpc(cfg, 'team_member_remove', { p_user: id })); return true; }
   async function setMemberAdmin(cfg, id, on) { must(await arpc(cfg, 'team_member_admin', { p_user: id, p_admin: !!on })); return true; }
+  // Create / remove / reset logins through the admin-users Edge Function (admin only; no Supabase dashboard needed)
+  const ADMIN_ERR = { exists: 'user_exists', bad_password: 'weak_password' };
+  async function adminUsers(cfg, action, args) {
+    if (!cfg || !cfg.url || !cfg.key) throw new SRError('not_configured');
+    const call = async (tok) => {
+      let res;
+      try { res = await fetch(cfg.url.replace(/\/+$/, '') + '/functions/v1/admin-users', { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: cfg.key, Authorization: 'Bearer ' + tok }, body: JSON.stringify(Object.assign({ action }, args || {})) }); }
+      catch (e) { throw new SRError('network'); }
+      let j = null; try { j = await res.json(); } catch (_) { /* not JSON */ }
+      return { status: res.status, j };
+    };
+    let r = await call(await getToken(cfg));
+    if (r.status === 401) r = await call((await refreshSession(cfg)).access_token);
+    if (r.status === 404 && !(r.j && r.j.error)) throw new SRError('function_missing');
+    if (!r.j || r.j.ok !== true) { const c = (r.j && r.j.error) || 'server'; throw new SRError(ADMIN_ERR[c] || c); }
+    return r.j;
+  }
+  const createLogin = (cfg, user, password, admin) => adminUsers(cfg, 'create', { username: user, password, admin: !!admin });
+  const removeLogin = (cfg, id) => adminUsers(cfg, 'remove', { id });
+  const resetLogin = (cfg, id, password) => adminUsers(cfg, 'reset', { id, password });
   // Is public sign-up still switched on in Supabase? (true = still open, false = closed, null = unknown)
   async function signupOpen(cfg) {
     try {
@@ -327,7 +352,7 @@
     deriveKeys, encryptJSON, decryptJSON, rpc,
     TEAM_DOMAIN, emailFor, signIn, signOut, hasSession, loadSession, clearSession, refreshSession, whoami,
     createShare, listShares, manageShare, setApplied, getTeamKeys, putTeamKeys, clearTeamKeys, testDatabase, adminSql,
-    listMembers, addMember, removeMember, setMemberAdmin, signupOpen,
+    listMembers, addMember, removeMember, setMemberAdmin, signupOpen, adminUsers, createLogin, removeLogin, resetLogin,
     openShare, saveDecisions, mergeDecisions, buildLink, parseLink,
     newPassphrase, strength, sha256hex, WORDS,
   };
