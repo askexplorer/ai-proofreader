@@ -85,6 +85,25 @@ alter table public.review_shares add column if not exists applied         jsonb 
 
 -- Lock the tables completely. No policies on purpose = deny everything;
 -- only the SECURITY DEFINER functions below can touch the data.
+-- Shared projects: every finished proofread / translation check, visible to the whole team.
+-- Only the creator or an admin can change or delete one. payload = gzip+base64 of the report JSON (no uploaded manuscript).
+create table if not exists public.projects (
+  id              uuid primary key default gen_random_uuid(),
+  kind            text not null check (kind in ('proofread', 'translation')),
+  title           text not null default '',
+  created_by      uuid,
+  created_by_name text,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now(),
+  summary         jsonb not null default '{}'::jsonb,
+  instructions    text,
+  size            int  not null default 0,
+  payload         text not null
+);
+create index if not exists projects_updated_idx on public.projects (updated_at desc);
+alter table public.projects enable row level security;
+revoke all on table public.projects from anon, authenticated;
+
 alter table public.team_admins   enable row level security;
 alter table public.team_members  enable row level security;
 alter table public.team_keys     enable row level security;
@@ -424,6 +443,62 @@ begin
   return jsonb_build_object('ok', true, 'applied', res);
 end $$;
 
+-- ── Shared projects (team members only) ──────────────────────────────────
+create or replace function public.project_save(p_id uuid, p_kind text, p_title text, p_summary jsonb, p_payload text, p_instructions text default null)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare uid uuid := public._member(); r public.projects;
+begin
+  if uid is null then return jsonb_build_object('ok', false, 'error', 'denied'); end if;
+  if p_kind is null or p_kind not in ('proofread', 'translation') or p_id is null or coalesce(p_payload, '') = '' then
+    return jsonb_build_object('ok', false, 'error', 'bad_request');
+  end if;
+  if length(p_payload) > 8000000 then return jsonb_build_object('ok', false, 'error', 'too_large'); end if;
+  select * into r from public.projects where id = p_id;
+  if found then
+    if not (r.created_by is not distinct from uid or public._is_admin()) then return jsonb_build_object('ok', false, 'error', 'forbidden'); end if;
+    update public.projects set title = left(coalesce(p_title, ''), 300), summary = coalesce(p_summary, '{}'::jsonb), payload = p_payload,
+           instructions = left(p_instructions, 3000), size = length(p_payload), updated_at = now() where id = p_id;
+  else
+    insert into public.projects(id, kind, title, created_by, created_by_name, summary, instructions, size, payload)
+      values (p_id, p_kind, left(coalesce(p_title, ''), 300), uid, public._name(uid), coalesce(p_summary, '{}'::jsonb), left(p_instructions, 3000), length(p_payload), p_payload);
+  end if;
+  return jsonb_build_object('ok', true, 'id', p_id);
+end $$;
+
+create or replace function public.project_list() returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare uid uuid := public._member();
+begin
+  if uid is null then return jsonb_build_object('ok', false, 'error', 'denied'); end if;
+  return jsonb_build_object('ok', true, 'projects', coalesce((
+    select jsonb_agg(jsonb_build_object('id', id, 'kind', kind, 'title', title, 'by', created_by_name, 'createdAt', created_at, 'updatedAt', updated_at,
+                                        'summary', summary, 'instructions', instructions, 'size', size, 'mine', (created_by is not distinct from uid)) order by updated_at desc)
+      from (select id, kind, title, created_by, created_by_name, created_at, updated_at, summary, instructions, size from public.projects order by updated_at desc limit 300) x), '[]'::jsonb));
+end $$;
+
+create or replace function public.project_get(p_id uuid) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare uid uuid := public._member(); r public.projects;
+begin
+  if uid is null then return jsonb_build_object('ok', false, 'error', 'denied'); end if;
+  select * into r from public.projects where id = p_id;
+  if not found then return jsonb_build_object('ok', false, 'error', 'not_found'); end if;
+  return jsonb_build_object('ok', true, 'project', jsonb_build_object('id', r.id, 'kind', r.kind, 'title', r.title, 'by', r.created_by_name,
+           'createdAt', r.created_at, 'updatedAt', r.updated_at, 'summary', r.summary, 'instructions', r.instructions, 'mine', (r.created_by is not distinct from uid), 'payload', r.payload));
+end $$;
+
+create or replace function public.project_delete(p_id uuid) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare uid uuid := public._member(); r public.projects;
+begin
+  if uid is null then return jsonb_build_object('ok', false, 'error', 'denied'); end if;
+  select * into r from public.projects where id = p_id;
+  if not found then return jsonb_build_object('ok', false, 'error', 'not_found'); end if;
+  if not (r.created_by is not distinct from uid or public._is_admin()) then return jsonb_build_object('ok', false, 'error', 'forbidden'); end if;
+  delete from public.projects where id = p_id;
+  return jsonb_build_object('ok', true);
+end $$;
+
 -- ── Permissions: only the public functions are callable, nothing else ────
 -- (Supabase pre-grants new functions to anon + authenticated, so those are revoked explicitly.)
 revoke all on function public._sha256(text)                          from public, anon, authenticated;
@@ -447,6 +522,10 @@ revoke all on function public.share_create(uuid, text, int, text, text, int, tex
 revoke all on function public.share_list()                           from public, anon, authenticated;
 revoke all on function public.share_manage(uuid, text, int)          from public, anon, authenticated;
 revoke all on function public.share_applied(uuid, text, boolean)    from public, anon, authenticated;
+revoke all on function public.project_save(uuid, text, text, jsonb, text, text) from public, anon, authenticated;
+revoke all on function public.project_list()                         from public, anon, authenticated;
+revoke all on function public.project_get(uuid)                      from public, anon, authenticated;
+revoke all on function public.project_delete(uuid)                   from public, anon, authenticated;
 
 -- Reviewers (no account) may only use these three:
 grant execute on function public.share_info(uuid)                    to anon, authenticated;
@@ -465,3 +544,7 @@ grant execute on function public.share_create(uuid, text, int, text, text, int, 
 grant execute on function public.share_list()                        to authenticated;
 grant execute on function public.share_manage(uuid, text, int)       to authenticated;
 grant execute on function public.share_applied(uuid, text, boolean)  to authenticated;
+grant execute on function public.project_save(uuid, text, text, jsonb, text, text) to authenticated;
+grant execute on function public.project_list()                      to authenticated;
+grant execute on function public.project_get(uuid)                   to authenticated;
+grant execute on function public.project_delete(uuid)                to authenticated;

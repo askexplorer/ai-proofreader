@@ -12,7 +12,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/docx@7.8.2/build/index.js"></script>
-  <script src="share-core.js?v=4.4.0"></script>
+  <script src="share-core.js?v=4.5.0"></script>
   <script src="tc-core.js?v=4.2.0"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -379,6 +379,10 @@
     .gate-box .sr-field { margin-bottom:12px; }
     .gate-box .gate-go { width:100%; margin-top:6px; padding:11px; font-size:14px; }
     .gate-box .gate-foot { color:var(--muted); font-size:12px; margin-top:14px; text-align:center; }
+    .proj-tools { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:12px; } .proj-tools input { flex:1; min-width:200px; max-width:340px; margin:0; }
+    .instr-chip.on { background:var(--accent); border-color:var(--accent); color:#fff; }
+    .proj-pill { font-size:10.5px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; border-radius:6px; padding:2px 7px; margin-left:8px; vertical-align:middle; border:1px solid var(--border); color:var(--muted); }
+    .proj-pill.tr { color:#a855f7; border-color:rgba(168,85,247,.45); } .proj-pill.pf { color:#3b82f6; border-color:rgba(59,130,246,.45); }
     .nl-card { background:var(--sf2); border:1px solid var(--border); border-radius:10px; padding:12px 14px; margin-top:10px; font-size:13px; }
     .nl-card .nl-line { display:flex; gap:8px; align-items:baseline; margin:3px 0; } .nl-card .nl-line b { min-width:78px; color:var(--muted); font-weight:600; }
     .nl-card .nl-line code { font-size:13.5px; user-select:all; }
@@ -475,7 +479,8 @@
   <button class="active" onclick="showTab('proof')">Proof Document</button>
   <button onclick="showTab('report')">Report</button>
   <button onclick="showTab('translation')">Translation</button>
-  <button onclick="showTab('history')">History</button>
+  <button onclick="showTab('projects')" data-for="member admin">Projects</button>
+  <button onclick="showTab('history')" id="nav-history">History</button>
   <button onclick="showTab('reviews')" data-for="member admin">Reviews<span class="nav-badge" id="reviews-badge" hidden></span></button>
   <button onclick="showTab('setup')" id="nav-setup">Setup</button>
 </nav>
@@ -825,6 +830,18 @@
 </div>
 
 <!-- ══════════ REVIEWS PAGE ══════════ -->
+<div id="projects-page" class="page">
+  <div class="sr-head">
+    <h2>Projects</h2>
+    <button class="btn btn-secondary btn-sm" onclick="projRefresh(true)">&#8635; Refresh</button>
+  </div>
+  <div class="proj-tools">
+    <input type="search" id="proj-q" class="sr-input" placeholder="Search by name or person" oninput="projSetQ(this.value)" autocomplete="off">
+    <div class="instr-chips" id="proj-chips"></div>
+  </div>
+  <div id="proj-body"></div>
+</div>
+
 <div id="reviews-page" class="page">
   <div class="sr-head">
     <h2>Reviews</h2>
@@ -858,7 +875,7 @@
     <input type="text" id="user-name-input" placeholder="e.g. Shakkeer" autocomplete="off" style="margin-top:6px">
     <p class="help">Shown as "Initiated by" on every report and review request.</p>
     <br>
-    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" data-for="guest" onclick="saveSetup()">Save</button><button class="btn btn-primary" data-for="admin" onclick="teamSaveKeys()">Save for the whole team</button><button class="btn btn-secondary" data-for="admin" onclick="teamRemoveKeys()">Remove team key</button><button class="btn btn-secondary" id="api-test-btn" onclick="testApiConnection()" title="Sends one tiny request to check that your browser can reach the AI service and that the key works">Test connection</button></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" data-for="guest" onclick="saveSetup()">Save</button><button class="btn btn-primary" data-for="admin" onclick="teamSaveKeys()">Save for the whole team</button><button class="btn btn-secondary" data-for="admin" onclick="teamRemoveKeys()">Remove team key</button><button class="btn btn-secondary" data-for="admin" onclick="testTeamKeys()" title="Sends one tiny request through the server with the keys stored for the team">Test team keys</button><button class="btn btn-secondary" id="api-test-btn" onclick="testApiConnection()" title="Sends one tiny request to check that your browser can reach the AI service and that the key works">Test connection</button></div>
     <div id="api-test-out"></div>
   </div>
   <div class="card" id="team-card" data-for="member admin">
@@ -867,6 +884,7 @@
     <div id="team-status" class="sr-hint" style="margin:0 0 8px"></div>
     <div id="team-admin" hidden>
       <div id="team-out"></div>
+      <div id="proxy-status" class="sr-hint" style="margin:0 0 10px"></div>
       <div style="margin-top:6px"><h4 style="margin:0 0 6px;font-size:13px">Team members</h4>
         <div id="team-members" class="sr-hint">Loading...</div>
         <h4 style="margin:16px 0 6px;font-size:13px">Add a colleague</h4>
@@ -977,7 +995,7 @@
 <footer class="app-footer">
   <span>© 2026 Explorer Publishing &amp; Distribution LLC · All rights reserved</span>
   <span id="cost-footer" style="font-size:10px;color:var(--muted);opacity:.65"></span>
-  <span class="app-footer-version">v4.4.0</span>
+  <span class="app-footer-version">v4.5.0</span>
 </footer>
 
 <div class="toast" id="toast"></div>
@@ -1234,11 +1252,12 @@ function setProofMode(m) {
 function runPrimary() { return proofMode === 'translation' ? tcStart() : runProofread(); }
 
 function showTab(name) {
-  ['proof','report','translation','history','reviews','setup'].forEach((t,i) => {
+  ['proof','report','translation','projects','history','reviews','setup'].forEach((t,i) => {
     document.getElementById(t+'-page').classList.toggle('active', t===name);
     document.querySelectorAll('nav button')[i].classList.toggle('active', t===name);
   });
   if (name === 'history') renderHistory();
+  if (name === 'projects') { renderProjects(); projRefresh(false); }
   if (name === 'translation') tcRenderPage();
   if (name === 'setup')   { renderCostTracker(); renderShareSetup(); }
   if (name === 'reviews') { renderReviews(); srRefresh(false); }
@@ -2612,13 +2631,7 @@ async function callApiWithRetry(payload, apiKey, ci, total, showUI) {
     skipRateWait=false;
     let res;
     try {
-      res=await fetch('https://api.anthropic.com/v1/messages',{
-        method:'POST',
-        headers:{'Content-Type':'application/json','x-api-key':apiKey,
-                 'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true',
-                 'anthropic-beta':'prompt-caching-2024-07-31'},
-        body:JSON.stringify(payload),
-      });
+      res=await aiFetch('anthropic', payload, apiKey);
     } catch (netErr) {
       // The request never got an answer: offline, VPN/firewall, blocked by an extension, DNS ... Retry a few times first.
       if (netFails<3) {
@@ -2662,16 +2675,9 @@ async function callOpenAI(payload, apiKey, ci, total, showUI) {
     skipRateWait = false;
     let res;
     try {
-      res = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify(payload),
-      });
+      res = await aiFetch('openai', payload, apiKey);
     } catch (netErr) {
-      if (netFails === 0) {                       // "Failed to fetch" from OpenAI is often a rejected key, not the network
+      if (netFails === 0 && apiKey !== AI_TEAM) {  // "Failed to fetch" from OpenAI is often a rejected key, not the network
         const st = await openaiDiagnose(apiKey);
         if (st !== 'unreachable') throw openaiKeyError(st);
       }
@@ -2702,13 +2708,8 @@ async function runProofread() {
   fixLocalKeys();
   const selectedModel = document.getElementById('model').value;
   const isOpenAIModel = selectedModel.startsWith('gpt-');
-  const apiKey = isOpenAIModel
-    ? localStorage.getItem('proof_openai_key')
-    : localStorage.getItem('proof_api_key');
-  if (!apiKey) {
-    toast(`Set your ${isOpenAIModel ? 'OpenAI' : 'Anthropic'} API key in Setup first.`, 'warn');
-    showTab('setup'); return;
-  }
+  const apiKey = aiKeyFor(isOpenAIModel);
+  if (!apiKey) { noKeyNotice(isOpenAIModel); return; }
 
   // Request OS notification permission from this user gesture (for background completion alerts)
   requestNotificationPermission();
@@ -3074,6 +3075,7 @@ Return ONLY valid JSON (no markdown, no extra text):
       if (!suppressFinalize) {
         saveToHistory(report);
         saveLastReport(report);
+        projPushProof(report);
         trackCost(report._cost || 0);
         completeProgress();
         if (showOnDone) {
@@ -4191,8 +4193,8 @@ async function retryFailedChunks() {
   const {chunks, startChunkIdx, model, systemPrompt, chunkSize} = _retryState;
   const isOpenAIModel = model.startsWith('gpt-');
   fixLocalKeys();
-  const apiKey = localStorage.getItem(isOpenAIModel ? 'proof_openai_key' : 'proof_api_key');
-  if (!apiKey) { toast(`Set your ${isOpenAIModel ? 'OpenAI' : 'Anthropic'} API key in Setup first.`,'warn'); showTab('setup'); return; }
+  const apiKey = aiKeyFor(isOpenAIModel);
+  if (!apiKey) { noKeyNotice(isOpenAIModel); return; }
   // Switch to proof page so the user sees the loading progress bar
   showTab('proof');
   setLoading(true);
@@ -4545,6 +4547,7 @@ function srApplyRole() {
   document.body.dataset.role = ROLE;
   document.querySelectorAll('[data-for]').forEach((el) => { el.hidden = !el.getAttribute('data-for').split(/\s+/).includes(ROLE); });
   const nav = $sr('nav-setup'); if (nav) nav.textContent = ROLE === 'admin' ? 'Admin' : ROLE === 'member' ? 'Settings' : 'Setup';
+  const hist = $sr('nav-history'); if (hist) hist.textContent = (ROLE === 'admin' || ROLE === 'member') ? 'My history' : 'History';
   const gate = $sr('gate'); if (!gate) return;
   const show = ROLE === 'out' || (GATE_FORCE && !SRU);
   gate.hidden = !show;
@@ -4619,6 +4622,7 @@ async function srAfterLogin() {
   toast('Welcome, ' + SRU.name + '.');
   await teamPull(true);
   srRefresh(false);
+  if (PROXY_ON) projRefresh(false);
 }
 async function srSignOut() {
   await SR.signOut(srCfg()); SRU = null; SRL = []; teamDrop();
@@ -4984,9 +4988,12 @@ const TEAM_MARK = { a: 'sr_team_a', o: 'sr_team_o' };     // '1' = this browser'
 const teamEnc = (o) => { const b = new TextEncoder().encode(JSON.stringify(o)); let s = ''; b.forEach((c) => { s += String.fromCharCode(c); }); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
 const teamDec = (t) => { const s = atob(t.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((t.length + 3) % 4)); const b = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) b[i] = s.charCodeAt(i); return JSON.parse(new TextDecoder().decode(b)); };
 // Sign-out / lost session: remove only the keys the team supplied (important on shared computers)
-function teamDrop() {
+function teamDropKeys() {
   ['a', 'o'].forEach((f) => { if (srGet(TEAM_MARK[f]) === '1') { srDel(f === 'a' ? 'proof_api_key' : 'proof_openai_key'); srDel(TEAM_MARK[f]); } });
   const a = $sr('api-key-input'), o = $sr('openai-key-input'); if (a) a.value = srGet('proof_api_key') || ''; if (o) o.value = srGet('proof_openai_key') || '';
+}
+function teamDrop() {
+  teamDropKeys();
   TEAM_ST = { loaded: false, stored: false, at: null, a: false, o: false, by: '', err: '' };
   TEAM_MEM = []; TEAM_MEM_LOADED = false;
 }
@@ -5099,6 +5106,7 @@ async function teamSaveKeys() {
     await SR.putTeamKeys(srCfg(), { a, o });
     if (fx.moved) { srSet('proof_api_key', a); if (!a) srDel('proof_api_key'); srSet('proof_openai_key', o); if (!o) srDel('proof_openai_key'); $sr('api-key-input').value = a; $sr('openai-key-input').value = o; }
     else { if (a) srSet('proof_api_key', a); if (o) srSet('proof_openai_key', o); }
+    proxyProbe();
     toast(fx.moved ? 'Team key saved. Your keys were in each other\'s boxes, so I put each one in the right box first.' : 'Team key saved. Signed-in colleagues receive it automatically.', fx.moved ? 'warn' : undefined, fx.moved ? 8000 : undefined);
   } catch (e) { if (!srAuthLost(e)) toast(SR.friendly(e), 'err'); }
   teamRenderCard();
@@ -5112,6 +5120,8 @@ async function teamRemoveKeys() {
 // Keep this browser's key in step with the team key (only keys that came from the team are touched)
 async function teamPull(announce) {
   if (!srReady()) return;
+  await proxyProbe();
+  if (PROXY_ON && !(SRU && SRU.admin)) { teamDropKeys(); return; }   // the server holds the keys: a colleague's browser never receives them
   let got;
   try { got = await SR.getTeamKeys(srCfg()); } catch (e) { if (!srAuthLost(e) && announce) toast(SR.friendly(e), 'warn'); return; }
   // The stored pair may have been saved crossed (OpenAI key in the Anthropic slot): hand out each key in its right slot
@@ -5194,6 +5204,147 @@ async function srInit() {
     if (!SRU && SR.hasSession()) await srSyncIdentity();
     if (srReady()) { srRefresh(false); teamPull(false); }
   }, 180000);
+}
+
+// ── AI calls: direct with a key in this browser, or through the team server (keys never leave it) ──
+const AI_TEAM = '@team';                  // stands in for a key when the call goes through the team server
+let PROXY_ON = false, PROXY_KEYS = { anthropic: false, openai: false };
+function aiKeyFor(openai) {
+  if (PROXY_ON && PROXY_KEYS[openai ? 'openai' : 'anthropic']) return AI_TEAM;
+  return localStorage.getItem(openai ? 'proof_openai_key' : 'proof_api_key');
+}
+function noKeyNotice(openai) {
+  const co = openai ? 'OpenAI' : 'Anthropic';
+  if (ROLE === 'member') { toast('Your admin has not set the team ' + co + ' key yet. Ask them, or pick a ' + (openai ? 'Claude' : 'GPT') + ' model.', 'warn', 8000); return; }
+  toast('Set your ' + co + ' API key in Setup first.', 'warn'); showTab('setup');
+}
+async function aiFetch(provider, payload, key) {
+  if (key !== AI_TEAM) {
+    return provider === 'openai'
+      ? fetch('https://api.openai.com/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key }, body: JSON.stringify(payload) })
+      : fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true', 'anthropic-beta': 'prompt-caching-2024-07-31' }, body: JSON.stringify(payload) });
+  }
+  const cfg = srCfg(), url = cfg.url.replace(/\/+$/, '') + '/functions/v1/ai-proxy', lost = () => { srAuthLost({ code: 'signed_out' }); return new Error('Your session has ended. Please sign in again.'); };
+  let tok; try { tok = await SR.getToken(cfg); } catch (e) { throw lost(); }
+  const send = (t) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: cfg.key, Authorization: 'Bearer ' + t }, body: JSON.stringify({ provider, payload }) });
+  let res = await send(tok);
+  if (res.status === 401) {
+    try { tok = (await SR.refreshSession(cfg)).access_token; } catch (e) { throw lost(); }
+    res = await send(tok); if (res.status === 401) throw lost();
+  }
+  if (res.status === 404) PROXY_ON = false;           // the server function was removed: fall back to delivered keys at the next pull
+  return res;
+}
+// Is the team server proxy installed, and which keys does it hold? (never returns a key)
+async function proxyProbe() {
+  if (!srReady()) { PROXY_ON = false; return; }
+  const cfg = srCfg();
+  try {
+    const tok = await SR.getToken(cfg);
+    const res = await fetch(cfg.url.replace(/\/+$/, '') + '/functions/v1/ai-proxy', { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: cfg.key, Authorization: 'Bearer ' + tok }, body: JSON.stringify({ ping: true }) });
+    const j = res.ok ? await res.json().catch(() => null) : null;
+    PROXY_ON = !!(j && j.ok === true); PROXY_KEYS = { anthropic: !!(j && j.anthropic), openai: !!(j && j.openai) };
+  } catch (_) { /* offline: keep the last known state */ }
+  const el = $sr('proxy-status');
+  if (el) el.innerHTML = PROXY_ON ? '<span style="color:#10b981">&#10003;</span> AI calls go through the team server. The keys stay on the server: colleagues never receive them.' + (PROXY_KEYS.anthropic || PROXY_KEYS.openai ? '' : ' <b>No key is stored there yet.</b>') : '<span style="opacity:.8">&#9675; The team server for AI calls is not installed, so each signed-in colleague\'s browser receives the team key. (Admin: deploy the <code>ai-proxy</code> function, see CLAUDE.md.)</span>';
+  if (PROXY_ON) teamDropKeys();
+}
+// Admin: one tiny request per stored key, sent through the server, so a swapped or rejected key is found before colleagues hit it
+async function testTeamKeys() {
+  const out = $sr('api-test-out'); out.innerHTML = '<span style="color:var(--muted)">Testing the keys stored for the team...</span>';
+  await proxyProbe();
+  if (!PROXY_ON) { out.innerHTML = '<div class="sr-check bad" style="margin-top:6px"><span>&#10007;</span><span>The team server for AI calls is not installed yet, so the stored keys cannot be tested from here. Use Test connection to check the keys typed above.</span></div>'; return; }
+  const rows = [];
+  for (const [prov, co, model] of [['anthropic', 'Anthropic', 'claude-haiku-4-5-20251001'], ['openai', 'OpenAI', 'gpt-4o-mini']]) {
+    if (!PROXY_KEYS[prov]) { rows.push({ ok: prov === 'openai', text: co + ': no team key stored' + (prov === 'openai' ? ' (fine if nobody uses GPT)' : '. Paste it above and press Save for the whole team.') }); continue; }
+    try {
+      const res = await aiFetch(prov, prov === 'openai' ? { model, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] } : { model, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }, AI_TEAM);
+      if (res.ok) { rows.push({ ok: true, text: co + ': the team key works (tested through the server).' }); continue; }
+      const e = await res.json().catch(() => ({})), msg = (e.error && e.error.message) || ('HTTP ' + res.status);
+      rows.push({ ok: res.status === 429, text: co + ': ' + (res.status === 401 ? 'the stored team key was rejected. Paste a fresh one above and press Save for the whole team.' : res.status === 429 ? 'the key is valid but rate limited right now.' : /credit|billing|quota/i.test(msg) ? 'the key is valid but the account has no credit left.' : msg) });
+    } catch (e) { rows.push({ ok: false, text: co + ': ' + (e.message || 'could not test') }); }
+  }
+  out.innerHTML = rows.map((r) => '<div class="sr-check ' + (r.ok ? 'ok' : 'bad') + '" style="margin-top:6px"><span>' + (r.ok ? '&#10003;' : '&#10007;') + '</span><span>' + esc(r.text) + '</span></div>').join('');
+}
+
+// ── Shared projects: every finished check is saved for the whole team ──
+let PROJ = [], PROJ_ST = 'idle', PROJ_ERR = '', PROJ_KIND = 'all', PROJ_Q = '', projTimer = null;
+function projFail(e) {
+  if (e && e.code === 'setup_missing') PROJ_ST = 'missing';
+  else if (e && e.code === 'too_large') toast('This report is too large to share in Projects.', 'warn', 7000);
+  else if (e && ['signed_out', 'banned', 'denied'].includes(e.code)) srAuthLost(e);
+  /* anything else (offline, forbidden because someone else made it): the local copy is unaffected, stay quiet */
+}
+async function projPushProof(report) {
+  if (!srReady() || !SR.packJSON) return;
+  try {
+    const di = liteDocInfo(report._docInfo || docInfo || {});
+    report._projectId = report._projectId || crypto.randomUUID();
+    const sc = (() => { try { return calculateScore(report); } catch (_) { return null; } })();
+    const payload = await SR.packJSON({ v: 1, kind: 'proofread', report: Object.assign({}, report, { _docInfo: di }), docInfo: di });
+    await SR.saveProject(srCfg(), { id: report._projectId, kind: 'proofread', title: di.filename || 'Pasted text', payload, instructions: report._instructions || '',
+      summary: { errors: (report.summary && report.summary.total_errors) || 0, words: report.word_count || 0, language: report.language || '', score: sc, model: report._model || null, partial: !!report._partial } });
+    PROJ_ST = 'idle'; if (document.getElementById('projects-page').classList.contains('active')) projRefresh(false);
+  } catch (e) { projFail(e); }
+}
+function projPushTC(rep) { clearTimeout(projTimer); projTimer = setTimeout(() => projSendTC(rep), 2500); }
+async function projSendTC(rep) {
+  if (!srReady() || !SR.packJSON || !rep || !rep.target) return;
+  try {
+    rep.projectId = rep.projectId || (TC_RUN && TC_RUN.projectId) || crypto.randomUUID(); if (TC_RUN && !TC_RUN.projectId) TC_RUN.projectId = rep.projectId;
+    const payload = await SR.packJSON({ v: 1, kind: 'translation', rep: tcCompact(rep) });
+    await SR.saveProject(srCfg(), { id: rep.projectId, kind: 'translation', title: rep.target.name || 'Translation check', payload, instructions: rep.instructions || '',
+      summary: { score: rep.score && rep.score.value, verdict: rep.score && rep.score.verdict, issues: rep.issues.filter((x) => x.severity !== 'Note').length, words: rep.target.words || 0, source: rep.source && rep.source.name, lang: rep.target.lang || '', finished: !!rep.finished, only: rep.only || null } });
+    PROJ_ST = 'idle'; if (document.getElementById('projects-page').classList.contains('active')) projRefresh(false);
+  } catch (e) { projFail(e); }
+}
+async function projRefresh(manual) {
+  if (!srReady()) { renderProjects(); return; }
+  if (PROJ_ST !== 'ready') { PROJ_ST = 'loading'; renderProjects(); }
+  try { PROJ = await SR.listProjects(srCfg()); PROJ_ST = 'ready'; }
+  catch (e) { if (srAuthLost(e)) return; PROJ_ST = e.code === 'setup_missing' ? 'missing' : 'error'; PROJ_ERR = SR.friendly(e); if (manual && PROJ_ST === 'error') toast(PROJ_ERR, 'err'); }
+  renderProjects();
+}
+function projSetQ(v) { PROJ_Q = String(v || '').toLowerCase().trim(); renderProjects(); }
+function projSetKind(k) { PROJ_KIND = k; renderProjects(); }
+function projSummaryLine(p) {
+  const m = p.summary || {};
+  if (p.kind === 'translation') return [(m.score != null ? 'Score ' + m.score + (m.verdict ? ' (' + m.verdict + ')' : '') : ''), (m.issues != null ? m.issues + ' issue' + (m.issues === 1 ? '' : 's') : ''), m.source ? 'against ' + m.source : '', m.finished === false ? 'not finished' : '', m.only ? 'selected chapters only' : ''].filter(Boolean).join(' · ');
+  return [(m.errors != null ? m.errors + ' error' + (m.errors === 1 ? '' : 's') : ''), (m.words ? Number(m.words).toLocaleString() + ' words' : ''), m.language || '', m.partial ? 'partial' : ''].filter(Boolean).join(' · ');
+}
+function renderProjects() {
+  const chips = $sr('proj-chips'); if (chips) chips.innerHTML = [['all', 'All'], ['proofread', 'Proofreading'], ['translation', 'Translation'], ['mine', 'Mine']].map(([k, l]) => '<button type="button" class="instr-chip' + (PROJ_KIND === k ? ' on' : '') + '" onclick="projSetKind(\'' + k + '\')">' + l + '</button>').join('');
+  const body = $sr('proj-body'); if (!body) return;
+  if (!srReady()) { body.innerHTML = '<div class="sr-empty"><h3>Sign in to see the team&apos;s projects</h3></div>'; return; }
+  if (PROJ_ST === 'missing') { body.innerHTML = '<div class="sr-empty"><h3>Projects need a one-time database update</h3><p>' + (SRU && SRU.admin ? 'Open <strong>Admin</strong>, scroll to <em>Workspace setup</em>, step 3: press <strong>Copy setup SQL</strong> and run it in Supabase (SQL Editor). It is safe to run again.' : 'Ask your admin to finish the update.') + '</p></div>'; return; }
+  if (PROJ_ST === 'loading') { body.innerHTML = '<div class="sr-hint">Loading...</div>'; return; }
+  if (PROJ_ST === 'error') { body.innerHTML = '<div class="sr-empty"><h3>Could not load the projects</h3><p>' + esc(PROJ_ERR) + '</p><button class="btn btn-secondary" onclick="projRefresh(true)">Try again</button></div>'; return; }
+  const list = PROJ.filter((p) => (PROJ_KIND === 'all' || (PROJ_KIND === 'mine' ? p.mine : p.kind === PROJ_KIND)) && (!PROJ_Q || (p.title + ' ' + (p.by || '')).toLowerCase().includes(PROJ_Q)));
+  if (!PROJ.length) { body.innerHTML = '<div class="sr-empty"><h3>No projects yet</h3><p>Every proofread and translation check you finish is saved here automatically, and everyone on the team can open it.</p><button class="btn btn-primary" onclick="showTab(\'proof\')">Start a check</button></div>'; return; }
+  if (!list.length) { body.innerHTML = '<div class="sr-hint">Nothing matches.</div>'; return; }
+  body.innerHTML = list.map((p) => {
+    const tr = p.kind === 'translation', can = p.mine || (SRU && SRU.admin);
+    const sub = [(p.mine ? 'You' : (p.by || 'Someone')) + ' &middot; ' + esc(srDate(p.updatedAt || p.createdAt, true)), esc(projSummaryLine(p))].filter(Boolean).join(' &middot; ');
+    return '<div class="sr-card"><div class="info"><div class="ttl">' + esc(p.title || 'Untitled') + '<span class="proj-pill ' + (tr ? 'tr' : 'pf') + '">' + (tr ? 'Translation' : 'Proofreading') + '</span></div><div class="sub">' + sub +
+      (p.instructions ? '<br>Instructions: ' + esc(p.instructions.length > 140 ? p.instructions.slice(0, 140) + '...' : p.instructions) : '') + '</div></div>' +
+      '<div class="acts"><button class="btn btn-primary btn-sm" onclick="projOpen(\'' + p.id + '\')">Open</button>' + (can ? '<button class="btn btn-secondary btn-sm" onclick="projDelete(\'' + p.id + '\')">Delete</button>' : '') + '</div></div>';
+  }).join('') + '<p class="sr-hint" style="margin-top:12px">Everyone on the team can see and open every project. Only the person who made one, or an admin, can delete it. Reports contain the flagged passages, not the uploaded document.</p>';
+}
+async function projOpen(id) {
+  toast('Opening...');
+  try {
+    const p = await SR.getProject(srCfg(), id), d = p.data || {};
+    if (p.kind === 'translation' && d.rep) { lastTC = d.rep; lastTC.projectId = lastTC.projectId || id; TC_RUN = null; tcRenderPage(); showTab('translation'); }
+    else if (d.report) { docInfo = { ...(d.docInfo || {}) }; lastReport = d.report; lastReport._projectId = lastReport._projectId || id; errorTriageState = {}; renderReport(lastReport); showTab('report'); }
+    else { toast('This project could not be read.', 'err'); return; }
+    toast('Opened ' + (p.title || 'project') + (p.by ? ' (by ' + p.by + ')' : '') + '.');
+  } catch (e) { if (!srAuthLost(e)) toast(e.code === 'not_found' ? 'That project no longer exists.' : SR.friendly(e), 'err'); projRefresh(false); }
+}
+async function projDelete(id) {
+  const p = PROJ.find((x) => x.id === id); if (!p) return;
+  if (!confirm('Delete "' + (p.title || 'this project') + '" for the whole team? This cannot be undone.')) return;
+  try { await SR.deleteProject(srCfg(), id); toast('Deleted.'); } catch (e) { if (!srAuthLost(e)) toast(SR.friendly(e), 'err'); }
+  projRefresh(false);
 }
 
 // ══════════════════════════════════════════════
@@ -5326,7 +5477,7 @@ function tcStructureHtml(plan, d) {
   return out.join('');
 }
 function tcSecondModelOptions(main) {
-  const hasKey = (m) => !!localStorage.getItem(m.startsWith('gpt-') ? 'proof_openai_key' : 'proof_api_key');
+  const hasKey = (m) => !!aiKeyFor(m.startsWith('gpt-'));
   const provider = (m) => (m.startsWith('gpt-') ? 'OpenAI' : 'Anthropic');
   const opts = ['<option value="">Same model (' + esc(modelDisplayName(main)) + ')</option>'];
   [...document.getElementById('model').options].map((o) => o.value).filter((m) => m !== main && hasKey(m)).forEach((m) => {
@@ -5383,7 +5534,7 @@ async function tcStart() {
   }
   const model = document.getElementById('model').value, openai = model.startsWith('gpt-');
   fixLocalKeys();
-  if (!localStorage.getItem(openai ? 'proof_openai_key' : 'proof_api_key')) { toast('Set your ' + (openai ? 'OpenAI' : 'Anthropic') + ' API key in Setup first.', 'warn'); showTab('setup'); return; }
+  if (!aiKeyFor(openai)) { noKeyNotice(openai); return; }
   const tgt = await tcLoadTarget(); if (!tgt) return;
   tcShowConfirm(tgt);
 }
@@ -5407,8 +5558,8 @@ async function tcPace(tokens, R) {
   }
 }
 async function tcCall(system, user, meta) {
-  const R = TC_RUN, second = !!(meta && meta.kind === 'meaning'), model = second && R.model2 ? R.model2 : R.model, openai = model.startsWith('gpt-'), key = localStorage.getItem(openai ? 'proof_openai_key' : 'proof_api_key');
-  if (!key) throw new Error('No API key. Set it in Setup.');
+  const R = TC_RUN, second = !!(meta && meta.kind === 'meaning'), model = second && R.model2 ? R.model2 : R.model, openai = model.startsWith('gpt-'), key = aiKeyFor(openai);
+  if (!key) throw new Error(ROLE === 'member' ? 'Your admin has not set the team ' + (openai ? 'OpenAI' : 'Anthropic') + ' key yet.' : 'No API key. Set it in Setup.');
   if (second) tcSub('Second look at meaning with ' + modelDisplayName(model) + '...');
   const estTok = Math.ceil((system.length + user.length) / 2.4);
   let lastErr = null;
@@ -5419,13 +5570,10 @@ async function tcCall(system, user, meta) {
     let res;
     try {
       res = openai
-        ? await fetch('https://api.openai.com/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
-            body: JSON.stringify({ model, temperature: 0, max_tokens: 8000, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] }) })
-        : await fetch('https://api.anthropic.com/v1/messages', { method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true', 'anthropic-beta': 'prompt-caching-2024-07-31' },
-            body: JSON.stringify({ model, temperature: 0, max_tokens: Math.min(maxTokensFor(model), 8000), system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }], messages: [{ role: 'user', content: user }] }) });
+        ? await aiFetch('openai', { model, temperature: 0, max_tokens: 8000, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] }, key)
+        : await aiFetch('anthropic', { model, temperature: 0, max_tokens: Math.min(maxTokensFor(model), 8000), system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }], messages: [{ role: 'user', content: user }] }, key);
     } catch (e) {
-      if (openai && !R.keyChecked) { const st = await openaiDiagnose(key); if (st !== 'unreachable') throw openaiKeyError(st); R.keyChecked = true; }
+      if (openai && !R.keyChecked && key !== AI_TEAM) { const st = await openaiDiagnose(key); if (st !== 'unreachable') throw openaiKeyError(st); R.keyChecked = true; }
       lastErr = new Error('Network error: ' + (e.message || e)); await tcSleep(6 * (attempt + 1), R); continue;
     }
     if (res.ok) {
@@ -5456,7 +5604,7 @@ async function tcConfirmStart() {
   const gl = getGlossary(); const extra = [notes, gl.length ? 'Terms and names that must stay exactly as written in the translation (never flag them): ' + gl.join(', ') : ''].filter(Boolean).join('\n');
   TC_BUDGET.tpm = window.TC_TEST_TPM || 45000; TC_BUDGET.ok = 0; TC_BUDGET.log = [];
   const sc = tcSecondChoice();
-  TC_RUN = { plan: P.plan, srcDoc: P.d.srcDoc, tgtDoc: P.d.tgtDoc, tgtName: P.tgt.name, srcName: TCS.name, srcLang: P.d.srcLang, tgtLang: P.d.tgtLang, model, extra, only: P.only, stop: false, error: null, tracked: 0, second: sc.second, model2: sc.second ? sc.model2 : null,
+  TC_RUN = { plan: P.plan, srcDoc: P.d.srcDoc, tgtDoc: P.d.tgtDoc, tgtName: P.tgt.name, srcName: TCS.name, srcLang: P.d.srcLang, tgtLang: P.d.tgtLang, model, extra, notes, only: P.only, stop: false, error: null, tracked: 0, second: sc.second, model2: sc.second ? sc.model2 : null,
              state: { done: {}, results: [], inTok: 0, outTok: 0, calls: 0, splits: 0, verifyCalls: 0 }, startedAt: Date.now() };
   tcCancelConfirm();
   await tcExecute();
@@ -5494,6 +5642,7 @@ function tcFinalize() {
   const triage = lastTC && lastTC.triage ? lastTC.triage : {};
   Object.assign(rep, {
     source: { name: R.srcName, lang: R.srcLang, words: R.srcDoc.words, paras: R.srcDoc.paras.length }, target: { name: R.tgtName, lang: R.tgtLang, words: R.tgtDoc.words, paras: R.tgtDoc.paras.length, pages: R.tgtDoc.pages || null },
+    instructions: R.notes || '', projectId: R.projectId || (lastTC && lastTC.projectId) || undefined,
     model: R.model, model2: R.second ? (R.model2 || R.model) : null, cost, inTok: R.state.inTok, outTok: R.state.outTok, only: R.only || null, triage, finished: !!R.state.finished,
     stopped: !!R.state.stopped, error: R.error ? String(R.error.message || R.error) : '',
   });
@@ -5520,6 +5669,7 @@ function tcCompact(rep) {
   return c;
 }
 function tcSave(rep) {
+  projPushTC(rep);
   try { localStorage.setItem('proof_last_tc', JSON.stringify({ at: Date.now(), rep: tcCompact(rep) })); } catch (e) { try { localStorage.removeItem('proof_last_tc'); } catch (_) {} }
   try {
     const hist = JSON.parse(localStorage.getItem('proof_tc_history') || '[]'), id = rep.createdAt;

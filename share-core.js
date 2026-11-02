@@ -102,6 +102,16 @@
     return JSON.parse(dec.decode(bytes));
   }
 
+  // Reports for the shared Projects list: gzip + base64 (not encrypted: members and the Supabase owner can read them, like review titles)
+  async function packJSON(obj) {
+    const bytes = enc.encode(JSON.stringify(obj));
+    return hasGzip ? 'z:' + b64e(await pipe(bytes, CompressionStream, 'gzip')) : 'j:' + b64e(bytes);
+  }
+  async function unpackJSON(str) {
+    str = String(str || ''); const data = b64d(str.slice(2));
+    return JSON.parse(dec.decode(str.slice(0, 2) === 'z:' ? await pipe(data, DecompressionStream, 'gzip') : data));
+  }
+
   // ── talking to Supabase (RPC only — the tables are not reachable) ──────
   async function rpc(cfg, fn, args, bearer) {
     if (!cfg || !cfg.url || !cfg.key) throw new SRError('not_configured');
@@ -219,6 +229,11 @@
   async function addMember(cfg, user, admin) { return must(await arpc(cfg, 'team_member_add', { p_email: emailFor(user), p_admin: !!admin })); }
   async function removeMember(cfg, id) { must(await arpc(cfg, 'team_member_remove', { p_user: id })); return true; }
   async function setMemberAdmin(cfg, id, on) { must(await arpc(cfg, 'team_member_admin', { p_user: id, p_admin: !!on })); return true; }
+  // Shared projects (every member can list and open; the creator or an admin can update and delete)
+  async function saveProject(cfg, p) { return must(await arpc(cfg, 'project_save', { p_id: p.id, p_kind: p.kind, p_title: p.title || '', p_summary: p.summary || {}, p_payload: p.payload, p_instructions: p.instructions || null })); }
+  async function listProjects(cfg) { return must(await arpc(cfg, 'project_list', {})).projects; }
+  async function getProject(cfg, id) { const p = must(await arpc(cfg, 'project_get', { p_id: id })).project; p.data = await unpackJSON(p.payload); delete p.payload; return p; }
+  async function deleteProject(cfg, id) { must(await arpc(cfg, 'project_delete', { p_id: id })); return true; }
   // Create / remove / reset logins through the admin-users Edge Function (admin only; no Supabase dashboard needed)
   const ADMIN_ERR = { exists: 'user_exists', bad_password: 'weak_password' };
   async function adminUsers(cfg, action, args) {
@@ -350,7 +365,8 @@
   global.SR = {
     KDF_ITER, SRError, friendly, isSupported, normPassword,
     deriveKeys, encryptJSON, decryptJSON, rpc,
-    TEAM_DOMAIN, emailFor, signIn, signOut, hasSession, loadSession, clearSession, refreshSession, whoami,
+    TEAM_DOMAIN, emailFor, signIn, signOut, hasSession, loadSession, clearSession, refreshSession, getToken, whoami,
+    packJSON, unpackJSON, saveProject, listProjects, getProject, deleteProject,
     createShare, listShares, manageShare, setApplied, getTeamKeys, putTeamKeys, clearTeamKeys, testDatabase, adminSql,
     listMembers, addMember, removeMember, setMemberAdmin, signupOpen, adminUsers, createLogin, removeLogin, resetLogin,
     openShare, saveDecisions, mergeDecisions, buildLink, parseLink,
