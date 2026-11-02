@@ -590,12 +590,15 @@
       .tc-act.on-fixed { background:rgba(16,185,129,.14); border-color:#10b981; color:#059669; } .tc-act.on-false { background:rgba(100,116,139,.16); border-color:#64748b; }
       .tc-cols { display:grid; grid-template-columns:1fr 1fr; }
       .tc-cols section { padding:14px 16px 16px; min-width:0; } .tc-cols section + section { border-left:1px solid var(--border); }
-      .tc-cols h5 { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:6px; }
+      .tc-cols h5 { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:6px; }
       .tc-cols section > div { font-size:15.5px; line-height:1.65; overflow-wrap:anywhere; }
       .tc-card mark.o { background:var(--mark-orig-bg); color:var(--mark-orig-fg); border-radius:4px; padding:1px 4px; } .tc-card mark.c { background:var(--mark-corr-bg); color:var(--mark-corr-fg); border-radius:4px; padding:1px 4px; font-weight:600; }
       .tc-card .none { color:var(--muted); font-style:italic; } .tc-after { color:var(--muted); font-size:12.5px; margin-top:4px; }
       .tc-card-foot { display:grid; grid-template-columns:1fr 1fr; gap:16px; padding:13px 16px 15px; background:var(--sf2); border-top:1px solid var(--border); font-size:14px; line-height:1.6; }
       .tc-card-foot b { display:block; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:3px; }
+      .tc-copy { font:inherit; font-size:12px; font-weight:600; text-transform:none; letter-spacing:0; padding:3px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--accent); cursor:pointer; }
+      .tc-copy:hover { border-color:var(--accent); } .tc-copy.done { background:rgba(16,185,129,.14); border-color:#10b981; color:#059669; }
+      .tc-card-foot b .tc-copy { margin-left:8px; }
       .wiz > summary { cursor:pointer; font-weight:600; color:var(--accent); padding:6px 0; list-style:none; font-size:14px; }
       .wiz > summary::-webkit-details-marker { display:none; }
       .wiz[open] > summary { margin-bottom:10px; }
@@ -1166,7 +1169,7 @@
 <footer class="app-footer">
   <span>© 2026 Explorer Publishing &amp; Distribution LLC · All rights reserved</span>
   <span id="cost-footer" style="font-size:10px;color:var(--muted);opacity:.65"></span>
-  <span class="app-footer-version">v5.2.0</span>
+  <span class="app-footer-version">v5.2.1</span>
 </footer>
 
 <div class="toast" id="toast"></div>
@@ -4763,8 +4766,12 @@ let SRL = [];        // the team's shared reviews, as last fetched from the serv
 const srReady = () => !!(srCfg() && SRU && typeof SR !== 'undefined' && SR.hasSession());
 const srDate = (iso, time) => { try { return new Date(iso).toLocaleString(undefined, time ? { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' } : { day:'numeric', month:'short', year:'numeric' }); } catch(_) { return ''; } };
 async function srCopy(text) {
-  try { await navigator.clipboard.writeText(text); return true; }
-  catch(_) { try { const t = document.createElement('textarea'); t.value = text; t.style.cssText = 'position:fixed;opacity:0'; document.body.appendChild(t); t.select(); const ok = document.execCommand('copy'); t.remove(); return ok; } catch(__) { return false; } }
+  try { if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); return true; } } catch (_) { /* fall through to the older way */ }
+  try {
+    const t = document.createElement('textarea'); t.value = text; t.setAttribute('readonly', ''); t.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none';
+    document.body.appendChild(t); t.focus(); t.select(); t.setSelectionRange(0, t.value.length);
+    const ok = document.execCommand('copy'); t.remove(); return !!ok;
+  } catch (_) { return false; }
 }
 const srSeen = () => { try { return JSON.parse(srGet(SRK.seen) || '{}'); } catch(_) { return {}; } };
 const srMarkSeen = (id, v) => { const m = srSeen(); m[id] = v; srSet(SRK.seen, JSON.stringify(m)); };
@@ -6057,6 +6064,15 @@ function tcFindText(x) {
   const w = x.tgtText ? words(x.tgtText) : x.insert ? words(x.tgtContext).slice(-6) : words(x.tgtContext).slice(0, 8);
   return w.slice(0, 8).join(' ');
 }
+// Copy a piece of an issue. The button itself says "Copied"; if the browser blocks copying, the text is shown to copy by hand.
+async function tcCopy(btn, kind, id) {
+  const x = lastTC && lastTC.issues.find((q) => q.id === id); if (!x) return;
+  const text = kind === 'find' ? tcFindText(x) : kind === 'fix' ? (x.fix || '') : kind === 'src' ? (x.srcContext || x.srcText || '') : (x.tgtContext || x.tgtText || '');
+  if (!text) { toast('There is nothing to copy here.', 'warn'); return; }
+  const label = btn.dataset.label || btn.textContent; btn.dataset.label = label;
+  if (await srCopy(text)) { btn.classList.add('done'); btn.textContent = 'Copied'; setTimeout(() => { btn.classList.remove('done'); btn.textContent = label; }, 1600); }
+  else window.prompt('Your browser blocked copying. Select all of the text below and copy it with Ctrl+C (Cmd+C on a Mac):', text);
+}
 async function tcCopyFind(id) {
   const x = lastTC && lastTC.issues.find((q) => q.id === id); if (!x) return;
   const ok2 = await srCopy(tcFindText(x)); toast(ok2 ? 'Copied. Press Ctrl+F (Cmd+F on a Mac) in your document and paste.' : 'Copy was blocked. Select the words and copy them manually.', ok2 ? undefined : 'warn', 6000);
@@ -6077,14 +6093,14 @@ function tcRenderRows() {
       '<header class="tc-card-head">' +
         '<span class="badge" style="background:' + c + '22;color:' + c + ';border:1px solid ' + c + '44">' + esc(x.type) + '</span><span class="sev-badge sev-' + esc(x.severity) + '">' + esc(x.severity) + '</span>' +
         '<span class="tc-loc">' + esc(loc) + (x.srcLoc ? '<small>Original: ' + esc(locFmt(x.srcLoc)) + '</small>' : '') + '</span>' +
-        (find ? '<a class="tc-find" onclick="tcCopyFind(' + x.id + ')" title="Copy these words, then press Ctrl+F (Cmd+F on a Mac) in your document">Find in document: &ldquo;<bdi>' + esc(find.length > 30 ? find.slice(0, 30) + '...' : find) + '</bdi>&rdquo;</a>' : '') +
+        (find ? '<button type="button" class="tc-copy" onclick="tcCopy(this,\'find\',' + x.id + ')" title="Copies the words to search for. Then press Ctrl+F (Cmd+F on a Mac) in your document and paste: ' + esc(find) + '">Copy search words</button>' : '') +
         '<span class="tc-by">' + by + '</span>' +
         '<span class="tc-acts"><button class="tc-act' + (st === 'fixed' ? ' on-fixed' : '') + '" onclick="tcTriage(' + x.id + ',\'fixed\')" title="Mark as fixed">&#10003; Fixed</button><button class="tc-act' + (st === 'false' ? ' on-false' : '') + '" onclick="tcTriage(' + x.id + ',\'false\')" title="This is not a real problem. It leaves the score.">&#10007; Not an issue</button></span>' +
       '</header>' +
-      '<div class="tc-cols"><section><h5>Original' + (lastTC.source && lastTC.source.lang ? ' (' + esc(lastTC.source.lang) + ')' : '') + '</h5><div dir="auto">' + src + '</div></section>' +
-        '<section><h5>Translation' + (lastTC.target && lastTC.target.lang ? ' (' + esc(lastTC.target.lang) + ')' : '') + '</h5><div dir="auto">' + tgt + '</div></section></div>' +
+      '<div class="tc-cols"><section><h5><span>Original' + (lastTC.source && lastTC.source.lang ? ' (' + esc(lastTC.source.lang) + ')' : '') + '</span>' + ((x.srcContext || x.srcText) ? '<button type="button" class="tc-copy" onclick="tcCopy(this,\'src\',' + x.id + ')">Copy</button>' : '') + '</h5><div dir="auto">' + src + '</div></section>' +
+        '<section><h5><span>Translation' + (lastTC.target && lastTC.target.lang ? ' (' + esc(lastTC.target.lang) + ')' : '') + '</span>' + ((x.tgtContext || x.tgtText) ? '<button type="button" class="tc-copy" onclick="tcCopy(this,\'tgt\',' + x.id + ')">Copy</button>' : '') + '</h5><div dir="auto">' + tgt + '</div></section></div>' +
       (x.fix || x.why || (x.also && x.also.length) ? '<footer class="tc-card-foot">' +
-        (x.fix ? '<div><b>Suggested fix</b><div dir="auto"><mark class="c">' + esc(x.fix) + '</mark></div></div>' : '') +
+        (x.fix ? '<div><b>Suggested fix <button type="button" class="tc-copy" onclick="tcCopy(this,\'fix\',' + x.id + ')">Copy</button></b><div dir="auto"><mark class="c">' + esc(x.fix) + '</mark></div></div>' : '') +
         (x.why || (x.also && x.also.length) ? '<div><b>Why</b><div>' + why + '</div>' + tcAlsoHtml(x) + '</div>' : '') + '</footer>' : '') +
       '</article>';
   }).join('');
