@@ -26,6 +26,7 @@
 
 -- ── Clean up pieces of earlier versions (passphrase-based) ───────────────
 drop function if exists public.share_create(text, uuid, text, int, text, text, int);
+drop function if exists public.share_create(uuid, text, int, text, text, int, text, text, int);   -- v5.3: now takes p_meta as well
 drop function if exists public.share_list(text);
 drop function if exists public.share_manage(text, uuid, text, int);
 drop function if exists public.team_put(text, text);
@@ -82,6 +83,9 @@ alter table public.review_shares add column if not exists title           text;
 alter table public.review_shares add column if not exists password        text;   -- visible to team members only
 alter table public.review_shares add column if not exists issue_count     int   not null default 0;
 alter table public.review_shares add column if not exists applied         jsonb not null default '{}'::jsonb;
+-- v5.3: what the Reviews list shows without opening anything (kind, languages, pages, counts by severity, project id).
+-- Plain text, same trust level as the title: members and the Supabase owner can read it. The report itself stays encrypted.
+alter table public.review_shares add column if not exists meta            jsonb not null default '{}'::jsonb;
 
 -- Lock the tables completely. No policies on purpose = deny everything;
 -- only the SECURITY DEFINER functions below can touch the data.
@@ -142,6 +146,12 @@ create or replace function public._name(uid uuid) returns text
 language sql stable security definer set search_path = public as $$
   select coalesce(nullif(u.raw_user_meta_data->>'name', ''), nullif(split_part(u.email, '@', 1), ''), 'colleague')
     from auth.users u where u.id = uid
+$$;
+
+-- A review's list details must be a small JSON object (anything else is stored as empty).
+create or replace function public._clean_meta(m jsonb) returns jsonb
+language sql immutable set search_path = public as $$
+  select case when m is not null and jsonb_typeof(m) = 'object' and length(m::text) <= 4000 then m else '{}'::jsonb end
 $$;
 
 -- Reviewer password check. Returns NULL when the proof is correct, otherwise
@@ -347,10 +357,10 @@ begin
   return jsonb_build_object('ok', true);
 end $$;
 
--- Publish a new encrypted review (any team member).
+-- Publish a new encrypted review (any team member). p_meta = list details (see review_shares.meta).
 create or replace function public.share_create(
   p_id uuid, p_salt text, p_iter int, p_auth text, p_payload text, p_days int,
-  p_title text, p_password text, p_issues int
+  p_title text, p_password text, p_issues int, p_meta jsonb default null
 ) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare uid uuid := public._member();
@@ -363,10 +373,11 @@ begin
     return jsonb_build_object('ok', false, 'error', 'bad_request');
   end if;
   insert into public.review_shares(id, salt, kdf_iter, verifier, payload, expires_at,
-                                   created_by, created_by_name, title, password, issue_count)
+                                   created_by, created_by_name, title, password, issue_count, meta)
   values (p_id, p_salt, greatest(coalesce(p_iter, 600000), 100000), public._sha256(p_auth), p_payload,
           now() + make_interval(days => least(greatest(coalesce(p_days, 30), 1), 90)),
-          uid, public._name(uid), left(coalesce(p_title, ''), 200), p_password, greatest(coalesce(p_issues, 0), 0));
+          uid, public._name(uid), left(coalesce(p_title, ''), 200), p_password, greatest(coalesce(p_issues, 0), 0),
+          public._clean_meta(p_meta));
   return jsonb_build_object('ok', true, 'id', p_id);
 exception when unique_violation then
   return jsonb_build_object('ok', false, 'error', 'exists');
@@ -387,12 +398,12 @@ begin
              'version', version, 'created_at', created_at, 'expires_at', expires_at,
              'opened_at', opened_at, 'submitted_at', submitted_at,
              'title', title, 'password', password, 'issues', issue_count,
-             'by', created_by_name, 'mine', (created_by is not distinct from uid), 'applied', applied)
+             'by', created_by_name, 'mine', (created_by is not distinct from uid), 'applied', applied, 'meta', meta)
            order by created_at desc)
       from public.review_shares), '[]'::jsonb));
 end $$;
 
--- revoke | reopen | extend | delete. Allowed for the person who shared it, or an admin.
+-- revoke | restore | reopen | extend | delete. Allowed for the person who shared it, or an admin.
 create or replace function public.share_manage(
   p_id uuid, p_action text, p_days int default 30
 ) returns jsonb
@@ -407,6 +418,11 @@ begin
   end if;
   if    p_action = 'revoke' then
     update public.review_shares set status = 'revoked' where id = p_id;
+  elsif p_action = 'restore' then      -- undo a withdrawal: same link, same password, back to where it was
+    update public.review_shares
+       set status = case when submitted_at is not null then 'submitted' when version > 0 then 'in_progress' else 'pending' end,
+           expires_at = greatest(expires_at, now() + interval '7 days')
+     where id = p_id and status = 'revoked';
   elsif p_action = 'reopen' then
     update public.review_shares
        set status = 'in_progress', submitted_at = null,
@@ -441,6 +457,38 @@ begin
    returning applied into res;
   if not found then return jsonb_build_object('ok', false, 'error', 'not_found'); end if;
   return jsonb_build_object('ok', true, 'applied', res);
+end $$;
+
+-- Open a review from the team side WITHOUT the reviewer's proof: the member already holds the password (share_list),
+-- so this adds no access. It works for withdrawn and expired reviews too, never counts as "opened by the reviewer"
+-- and never touches the reviewer's lock-out counter. Returns what the browser needs to decrypt with the stored password.
+create or replace function public.share_view(p_id uuid) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare r public.review_shares;
+begin
+  if public._member() is null then return jsonb_build_object('ok', false, 'error', 'denied'); end if;
+  select * into r from public.review_shares where id = p_id;
+  if not found then return jsonb_build_object('ok', false, 'error', 'not_found'); end if;
+  return jsonb_build_object('ok', true, 'salt', r.salt, 'iter', r.kdf_iter, 'payload', r.payload, 'decisions', r.decisions,
+                            'status', case when r.status <> 'revoked' and r.expires_at < now() then 'expired' else r.status end,
+                            'version', r.version, 'expires_at', r.expires_at, 'submitted_at', r.submitted_at);
+end $$;
+
+-- Fill in (or correct) the list details of a review. Any member may fill in details that are still empty (older reviews);
+-- changing existing details needs the person who shared it, or an admin.
+create or replace function public.share_meta(p_id uuid, p_meta jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare uid uuid := public._member(); r public.review_shares; m jsonb := public._clean_meta(p_meta);
+begin
+  if uid is null then return jsonb_build_object('ok', false, 'error', 'denied'); end if;
+  if m = '{}'::jsonb then return jsonb_build_object('ok', false, 'error', 'bad_request'); end if;
+  select * into r from public.review_shares where id = p_id;
+  if not found then return jsonb_build_object('ok', false, 'error', 'not_found'); end if;
+  if r.meta <> '{}'::jsonb and not (r.created_by is not distinct from uid or public._is_admin()) then
+    return jsonb_build_object('ok', false, 'error', 'forbidden');
+  end if;
+  update public.review_shares set meta = m where id = p_id;
+  return jsonb_build_object('ok', true);
 end $$;
 
 -- ── Shared projects (team members only) ──────────────────────────────────
@@ -505,6 +553,7 @@ revoke all on function public._sha256(text)                          from public
 revoke all on function public._member()                              from public, anon, authenticated;
 revoke all on function public._is_admin()                            from public, anon, authenticated;
 revoke all on function public._name(uuid)                            from public, anon, authenticated;
+revoke all on function public._clean_meta(jsonb)                     from public, anon, authenticated;
 revoke all on function public._share_check(uuid, text)               from public, anon, authenticated;
 
 revoke all on function public.share_info(uuid)                       from public;
@@ -518,10 +567,12 @@ revoke all on function public.team_whoami()                          from public
 revoke all on function public.team_keys_get()                        from public, anon, authenticated;
 revoke all on function public.team_keys_put(text, text)              from public, anon, authenticated;
 revoke all on function public.team_keys_clear()                      from public, anon, authenticated;
-revoke all on function public.share_create(uuid, text, int, text, text, int, text, text, int) from public, anon, authenticated;
+revoke all on function public.share_create(uuid, text, int, text, text, int, text, text, int, jsonb) from public, anon, authenticated;
 revoke all on function public.share_list()                           from public, anon, authenticated;
 revoke all on function public.share_manage(uuid, text, int)          from public, anon, authenticated;
 revoke all on function public.share_applied(uuid, text, boolean)    from public, anon, authenticated;
+revoke all on function public.share_view(uuid)                       from public, anon, authenticated;
+revoke all on function public.share_meta(uuid, jsonb)                from public, anon, authenticated;
 revoke all on function public.project_save(uuid, text, text, jsonb, text, text) from public, anon, authenticated;
 revoke all on function public.project_list()                         from public, anon, authenticated;
 revoke all on function public.project_get(uuid)                      from public, anon, authenticated;
@@ -540,10 +591,12 @@ grant execute on function public.team_whoami()                       to authenti
 grant execute on function public.team_keys_get()                     to authenticated;
 grant execute on function public.team_keys_put(text, text)           to authenticated;
 grant execute on function public.team_keys_clear()                   to authenticated;
-grant execute on function public.share_create(uuid, text, int, text, text, int, text, text, int) to authenticated;
+grant execute on function public.share_create(uuid, text, int, text, text, int, text, text, int, jsonb) to authenticated;
 grant execute on function public.share_list()                        to authenticated;
 grant execute on function public.share_manage(uuid, text, int)       to authenticated;
 grant execute on function public.share_applied(uuid, text, boolean)  to authenticated;
+grant execute on function public.share_view(uuid)                    to authenticated;
+grant execute on function public.share_meta(uuid, jsonb)             to authenticated;
 grant execute on function public.project_save(uuid, text, text, jsonb, text, text) to authenticated;
 grant execute on function public.project_list()                      to authenticated;
 grant execute on function public.project_get(uuid)                   to authenticated;

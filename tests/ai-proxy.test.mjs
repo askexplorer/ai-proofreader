@@ -106,6 +106,7 @@ const O = { provider: 'openai', payload: { model: 'gpt-4o', max_tokens: 100, mes
     [{ provider: 'openai', payload: { ...O.payload, model: 'claude-sonnet-4-6' } }, 'model from the wrong company (OpenAI)'],
     [{ provider: 'anthropic', payload: { ...A.payload, stream: true } }, 'streaming'],
     [{ provider: 'anthropic', payload: { ...A.payload, max_tokens: 64000 } }, 'huge max_tokens'],
+    [{ provider: 'openai', payload: { ...O.payload, max_tokens: 100, max_completion_tokens: 900000 } }, 'huge max_completion_tokens hidden behind a small max_tokens'],
     [{ provider: 'anthropic', payload: 'nope' }, 'payload not an object'],
     [{ provider: 'anthropic', payload: { messages: [] } }, 'no model'],
   ]) { const x = await j(await call(fk, TOK.member, body)); ok(x.s === 400 && x.b.error.type === 'bad_request', 'refused: ' + why); }

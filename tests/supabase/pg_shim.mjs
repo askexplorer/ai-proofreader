@@ -13,7 +13,7 @@ const PORT = +(process.env.PORT || 54321);
 const ANON_KEY = process.env.ANON_KEY || 'sb_publishable_testkey_1234567890';
 const TOKEN_TTL = +(process.env.TOKEN_TTL || 3600);
 const JWT_SECRET = 'shim-only-secret';
-const SQL = readFileSync(new URL('../../supabase/setup.sql', import.meta.url), 'utf8');
+const SQL = readFileSync(process.env.SQL_FILE || new URL('../../supabase/setup.sql', import.meta.url), 'utf8');
 const db = new PGlite();
 
 // What a real Supabase project already provides
@@ -42,10 +42,16 @@ const SIG = {
   team_keys_get:  {},
   team_keys_put:  { p_a: 'text', p_o: 'text' },
   team_keys_clear: {},
-  share_create:   { p_id: 'uuid', p_salt: 'text', p_iter: 'int', p_auth: 'text', p_payload: 'text', p_days: 'int', p_title: 'text', p_password: 'text', p_issues: 'int' },
+  share_create:   { p_id: 'uuid', p_salt: 'text', p_iter: 'int', p_auth: 'text', p_payload: 'text', p_days: 'int', p_title: 'text', p_password: 'text', p_issues: 'int', p_meta: 'jsonb' },
   share_list:     {},
   share_manage:   { p_id: 'uuid', p_action: 'text', p_days: 'int' },
   share_applied:  { p_id: 'uuid', p_issue: 'text', p_done: 'boolean' },
+  share_view:     { p_id: 'uuid' },
+  share_meta:     { p_id: 'uuid', p_meta: 'jsonb' },
+  project_save:   { p_id: 'uuid', p_kind: 'text', p_title: 'text', p_summary: 'jsonb', p_payload: 'text', p_instructions: 'text' },
+  project_list:   {},
+  project_get:    { p_id: 'uuid' },
+  project_delete: { p_id: 'uuid' },
   team_members_list: {},
   team_member_add: { p_email: 'text', p_admin: 'boolean' },
   team_member_remove: { p_user: 'uuid' },
@@ -136,6 +142,7 @@ http.createServer((req, res) => {
           });
         } catch (e) {
           if (/permission denied/i.test(e.message)) return send(res, role === 'anon' ? 401 : 403, { code: '42501', message: String(e.message) });
+          if (/function .* does not exist/i.test(e.message)) return send(res, 404, { code: 'PGRST202', message: 'Could not find the function public.' + m[1] + ' in the schema cache' });   // what PostgREST answers for an unknown function or argument
           throw e;
         }
         send(res, 200, out === null || out === undefined ? 'null' : out);

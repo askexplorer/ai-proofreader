@@ -66,7 +66,7 @@ export async function handle(req, env, doFetch) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload) || typeof payload.model !== 'string') return json(400, errBody('bad_request', 'The request needs a model.'));
   if (!payload.model.startsWith(provider === 'anthropic' ? 'claude-' : 'gpt-')) return json(400, errBody('bad_request', 'That model does not belong to this provider.'));
   if (payload.stream) return json(400, errBody('bad_request', 'Streaming is not supported here.'));
-  const mt = Number(payload.max_tokens || payload.max_completion_tokens || 0);
+  const mt = Math.max(Number(payload.max_tokens) || 0, Number(payload.max_completion_tokens) || 0);   // the larger of the two: a small max_tokens must not hide a huge max_completion_tokens
   if (mt > MAX_TOKENS) return json(400, errBody('bad_request', 'max_tokens is too large.'));
   const key = provider === 'anthropic' ? keys.a : keys.o;
   if (!key) return json(400, errBody('no_key', 'Your admin has not stored a team ' + (provider === 'anthropic' ? 'Anthropic' : 'OpenAI') + ' key yet.'));

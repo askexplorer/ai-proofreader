@@ -16,14 +16,16 @@ Nothing here ships to users; it only protects the code from regressions.
 | `node tests/openai-key.test.mjs` | The OpenAI key diagnosis (accepted / rejected / other / unreachable) and the key-problem error, cut out of `index.html` and run against a fake `fetch`. |
 | `node tests/tc-second.test.mjs` | Translation-check clean-up and second look, on an invented lighthouse story with planted defects and two fake models (one for the check, one for the second look): German thousands separators, window labels, twin merge, verbatim repeats, recurring word choices with the extra places found, Notes, the second look (agreement, new findings, a forgotten pair, a failing part), per-model token tracking, estimates, share/CSV output. |
 | `node tests/proof-json.test.mjs` | The proofreading reply reader cut out of `index.html`: unescaped quotes, raw line breaks, trailing commas, fences and prose around the JSON, cut-off and non-JSON replies, salvage, and that 3,000 random valid replies are never altered by the repair step. |
-| `supabase/` | The team workspace database rules (`accounts.test.mjs`, needs the stand-in running) and the shared Projects rules (`projects.test.mjs`), run on a real Postgres (PGlite) with a stand-in for Supabase Auth. |
+| `node tests/reviews-client.test.mjs` | The v5.3 review helpers in `share-core.js`: the list details (`reviewInfo`, no report text in them), `createShare` with details and its fallback on a database without the update, `viewShare` (team-side open of any status, fallback, strict mode), restore, details refusal. |
+| `node tests/page-guards.test.mjs` | Guards on `index.html` / `share.html` found by the v5.3 audit: scripts parse, no duplicate ids, every inline handler is defined, integrity hash + pinned version on every CDN script, pdf.js `isEvalSupported:false`, cache tags match, ASCII `tc-core.js`, a new translation check never reuses the previous Project id, escaped ids on the reviewer page. |
+| `supabase/` | The team workspace database rules (`accounts.test.mjs`, needs the stand-in running), the shared Projects rules (`projects.test.mjs`) and the review rules (`reviews.test.mjs`: withdraw / restore, team-side view, list details, upgrade from the pre-v5.3 database), run on a real Postgres (PGlite) with a stand-in for Supabase Auth. |
 
 The first two need only Node 18+. For the Supabase tests:
 
 ```bash
 cd tests && npm install
 node supabase/pg_shim.mjs &        # local stand-in for Supabase, port 54321
-sleep 8 && node supabase/accounts.test.mjs
+sleep 8 && node supabase/accounts.test.mjs      # needs a FRESH stand-in each run (it creates its own users and reviews)
 ```
 
 The stand-in mimics Supabase's default grants (new functions are pre-granted to `anon` and `authenticated`), which is what

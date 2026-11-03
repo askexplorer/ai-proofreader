@@ -65,6 +65,7 @@
     weak_password:  'The password must be 8 to 72 characters.',
     not_member:     'That person is not on the team.',
     function_missing: 'The admin helper is not installed in Supabase yet.',
+    bad_action:     'The database needs its latest update before it can do that. Ask the admin to re-run the setup SQL (Admin, Workspace setup, step 3).',
     server:         'The server returned an unexpected error.',
     unsupported:    'This browser cannot do secure encryption. Use an up-to-date Chrome, Edge, Safari or Firefox over https.',
   };
@@ -205,16 +206,39 @@
 
   // ── team operations (signed-in colleagues) ─────────────────────────────
   async function whoami(cfg) { return must(await arpc(cfg, 'team_whoami', {})); }
+  // meta.title = title shown in the list; meta.info = small details for the Reviews list (see reviewInfo)
   async function createShare(cfg, payload, password, days, meta) {
     if (!isSupported()) throw new SRError('unsupported');
     const id = crypto.randomUUID();
     const salt = b64e(crypto.getRandomValues(new Uint8Array(16)));
     const { key, auth } = await deriveKeys(password, salt, KDF_ITER);
     const blob = await encryptJSON(payload, key);
-    must(await arpc(cfg, 'share_create', { p_id: id, p_salt: salt, p_iter: KDF_ITER, p_auth: auth, p_payload: blob, p_days: days,
-      p_title: (meta && meta.title) || payload.title || '', p_password: password, p_issues: (payload.issues || []).length }));
+    const args = { p_id: id, p_salt: salt, p_iter: KDF_ITER, p_auth: auth, p_payload: blob, p_days: days,
+      p_title: (meta && meta.title) || payload.title || '', p_password: password, p_issues: (payload.issues || []).length };
+    const info = meta && meta.info;
+    try { must(await arpc(cfg, 'share_create', info ? Object.assign({ p_meta: info }, args) : args)); }
+    catch (e) {
+      if (!info || (e.code !== 'setup_missing' && e.code !== 'server')) throw e;   // a database that has not had the v5.3 update does not know p_meta: share without the list details
+      must(await arpc(cfg, 'share_create', args));
+    }
     return { id, bytes: blob.length };
   }
+  // What the Reviews list shows without opening the review: kind, languages, size and counts by severity.
+  // Plain text next to the title (the report itself stays encrypted).
+  function reviewInfo(payload, extra) {
+    const p = payload || {}, issues = p.issues || [], sev = {};
+    issues.forEach((i) => { const k = i.severity || 'Other'; sev[k] = (sev[k] || 0) + 1; });
+    const o = { kind: p.kind === 'translation' ? 'translation' : 'proofread', items: issues.length, severities: sev };
+    if (p.language) o.language = String(p.language).slice(0, 40);
+    if (p.sourceLanguage) o.sourceLanguage = String(p.sourceLanguage).slice(0, 40);
+    if (p.pages) o.pages = p.pages;
+    if (p.wordCount) o.words = p.wordCount;
+    const x = extra || {};
+    if (x.projectId) o.projectId = String(x.projectId).slice(0, 60);
+    if (x.found != null) o.found = x.found;                                // findings in the full report (shared items may be fewer)
+    return o;
+  }
+  async function setShareMeta(cfg, id, info) { must(await arpc(cfg, 'share_meta', { p_id: id, p_meta: info })); return true; }
   async function listShares(cfg) { return must(await arpc(cfg, 'share_list', {})).shares; }
   async function manageShare(cfg, id, action, days) { must(await arpc(cfg, 'share_manage', { p_id: id, p_action: action, p_days: days || 30 })); return true; }
   async function setApplied(cfg, id, issueId, done) { return must(await arpc(cfg, 'share_applied', { p_id: id, p_issue: String(issueId), p_done: !!done })).applied; }
@@ -288,6 +312,20 @@
     const decisions = r.decisions ? await decryptJSON(r.decisions, key) : null;
     return { payload, decisions, version: r.version, status: r.status, expires_at: r.expires_at,
              submitted_at: r.submitted_at, session: { cfg, id, key, auth } };
+  }
+  // Open a review from the team side (any status, also withdrawn or expired) with the password the team stored for it.
+  // Does not count as the reviewer opening it. Falls back to the reviewer route on a database without share_view
+  // (opts.strict = never fall back: that route marks a review as opened).
+  async function viewShare(cfg, id, password, opts) {
+    if (!isSupported()) throw new SRError('unsupported');
+    let r;
+    try { r = must(await arpc(cfg, 'share_view', { p_id: id })); }
+    catch (e) { if (e.code === 'setup_missing' && !(opts && opts.strict)) return openShare(cfg, id, password); throw e; }
+    const { key } = await deriveKeys(password, r.salt, r.iter);
+    let payload, decisions = null;
+    try { payload = await decryptJSON(r.payload, key); } catch (e) { throw new SRError('bad_password'); }
+    try { decisions = r.decisions ? await decryptJSON(r.decisions, key) : null; } catch (e) { decisions = null; }
+    return { payload, decisions, version: r.version, status: r.status, expires_at: r.expires_at, submitted_at: r.submitted_at };
   }
   async function saveDecisions(sess, decisions, submit, expected) {
     const blob = await encryptJSON(decisions, sess.key);
@@ -367,7 +405,7 @@
     deriveKeys, encryptJSON, decryptJSON, rpc,
     TEAM_DOMAIN, emailFor, signIn, signOut, hasSession, loadSession, clearSession, refreshSession, getToken, whoami,
     packJSON, unpackJSON, saveProject, listProjects, getProject, deleteProject,
-    createShare, listShares, manageShare, setApplied, getTeamKeys, putTeamKeys, clearTeamKeys, testDatabase, adminSql,
+    createShare, reviewInfo, setShareMeta, viewShare, listShares, manageShare, setApplied, getTeamKeys, putTeamKeys, clearTeamKeys, testDatabase, adminSql,
     listMembers, addMember, removeMember, setMemberAdmin, signupOpen, adminUsers, createLogin, removeLogin, resetLogin,
     openShare, saveDecisions, mergeDecisions, buildLink, parseLink,
     newPassphrase, strength, sha256hex, WORDS,

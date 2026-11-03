@@ -1162,8 +1162,10 @@ Return ONLY valid JSON: {"same":"1-4,6","differs":[{"p":5,"type":"Mistranslation
     const n = x.alsoCount || x.also.length, shown = x.also.slice(0, 12).map((a) => a.tgtLoc || a.srcLoc).filter(Boolean);
     return 'Also at: ' + shown.join('; ') + (n > shown.length ? ' and ' + (n - shown.length) + ' more' : '') + '.';
   }
-  function toShareIssues(issues, srcLang) {
-    return issues.filter((x) => x.severity !== 'Note').map((x) => ({
+  // Style notes (acceptable rewording, no points) are left out unless the sender ticks them (opts.notes).
+  function toShareIssues(issues, srcLang, opts) {
+    const notes = !!(opts && opts.notes);
+    return issues.filter((x) => x.severity !== 'Note' || notes).map((x) => ({
       id: x.id, type: x.type, severity: x.severity, page: x.page || null,
       loc: (x.tgtLoc || (x.srcLoc ? 'after source ' + x.srcLoc : '')) + (x.srcLoc && x.tgtLoc ? ' (source ' + x.srcLoc + ')' : ''),
       context: x.tgtContext || '', original: x.insert ? '' : x.tgtText, corrected: x.fix || '', explanation: (x.why + ' ' + alsoText(x)).trim(),
