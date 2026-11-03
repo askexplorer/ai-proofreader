@@ -1176,7 +1176,7 @@
 <footer class="app-footer">
   <span>© 2026 Explorer Publishing &amp; Distribution LLC · All rights reserved</span>
   <span id="cost-footer" style="font-size:10px;color:var(--muted);opacity:.65"></span>
-  <span class="app-footer-version">v5.2.3</span>
+  <span class="app-footer-version">v5.2.4</span>
 </footer>
 
 <div class="toast" id="toast"></div>
@@ -6106,7 +6106,7 @@ function tcRenderRows() {
           '<span class="tc-acts"><button class="tc-act' + (st === 'fixed' ? ' on-fixed' : '') + '" onclick="tcTriage(' + x.id + ',\'fixed\')" title="Mark as fixed">&#10003; Fixed</button><button class="tc-act' + (st === 'false' ? ' on-false' : '') + '" onclick="tcTriage(' + x.id + ',\'false\')" title="This is not a real problem. It leaves the score.">&#10007; Not an issue</button></span>' +
         '</div>' +
         '<div class="tc-h2">' +
-          (find ? '<span class="tc-findwrap" title="Search for these words with Ctrl+F (Cmd+F on a Mac) in your document><span class="tc-findlbl">Search for</span> <bdi class="tc-findtxt">&ldquo;' + esc(find.length > 40 ? find.slice(0, 40) + '...' : find) + '&rdquo;</bdi>' + tcIco('find', x.id, 'Copy these words') + '</span>' : '<span></span>') +
+          (find ? '<span class="tc-findwrap" title="Search for these words with Ctrl+F (Cmd+F on a Mac) in your document"><span class="tc-findlbl">Search for</span> <bdi class="tc-findtxt">&ldquo;' + esc(find.length > 40 ? find.slice(0, 40) + '...' : find) + '&rdquo;</bdi>' + tcIco('find', x.id, 'Copy these words') + '</span>' : '<span></span>') +
           '<span class="tc-by">Found by ' + by + '</span>' +
         '</div>' +
       '</header>' +
