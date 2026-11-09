@@ -1,0 +1,47 @@
+# Keeps the team portal's Supabase project awake and warns us when it is down.
+#
+# On 2026-11-09 the Free-plan project went to sleep ("hibernated") for about 5.5 hours and nobody could sign in.
+# Once a day this sends a few ordinary database requests through the public API, the same ones the portal makes.
+# It uses only the project's PUBLISHABLE key, which is public by design (it is also in index.html).
+# If Supabase does not answer correctly, the run FAILS and GitHub emails the repository owner: an early warning.
+#
+# Run it by hand any time: Actions -> "Keep Supabase awake" -> Run workflow.
+# GitHub switches scheduled workflows off after 60 days without any commit to the repository; a new commit switches them back on.
+name: Keep Supabase awake
+
+on:
+  schedule:
+    - cron: '17 3 * * *'      # every day at 03:17 UTC (07:17 in Dubai)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SUPABASE_URL: https://esslcpdxlhsxxeccfixy.supabase.co
+      SUPABASE_KEY: sb_publishable_3igRqU7J8q5F4lDgMqCz5Q_FdhSFdr0
+    steps:
+      - name: Database queries through the public API (3 times)
+        run: |
+          fail=0
+          for i in 1 2 3; do
+            # a sleeping project answers 503 for a while: wait and retry before giving up
+            code=$(curl -sS --max-time 60 --retry 4 --retry-delay 20 --retry-all-errors -o out.json -w '%{http_code}' \
+              -X POST "$SUPABASE_URL/rest/v1/rpc/share_info" \
+              -H "apikey: $SUPABASE_KEY" -H 'Content-Type: application/json' \
+              -d '{"p_id":"00000000-0000-0000-0000-000000000000"}') || code=000
+            echo "database query $i -> HTTP $code $(head -c 200 out.json 2>/dev/null)"
+            [ "$code" = "200" ] || fail=1
+            [ "$i" = "3" ] || sleep 20
+          done
+          exit $fail
+      - name: Sign-in service is up
+        run: |
+          code=$(curl -sS --max-time 60 --retry 4 --retry-delay 20 --retry-all-errors -o out.json -w '%{http_code}' \
+            "$SUPABASE_URL/auth/v1/settings" -H "apikey: $SUPABASE_KEY") || code=000
+          echo "auth settings -> HTTP $code"
+          [ "$code" = "200" ]
