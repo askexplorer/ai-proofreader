@@ -42,9 +42,13 @@ ok(!/getDocument\(\{data:buf\}\)/.test(INDEX), 'pdf.js: no getDocument call with
 const tag = (h, f) => (h.match(new RegExp(f.replace('.', '\\.') + '\\?v=([\\d.]+)')) || [])[1];
 ok(tag(INDEX, 'share-core.js') && tag(INDEX, 'share-core.js') === tag(SHARE, 'share-core.js'), 'share-core.js carries the same ?v= tag on both pages', tag(INDEX, 'share-core.js') + ' / ' + tag(SHARE, 'share-core.js'));
 ok(!!tag(INDEX, 'tc-core.js'), 'tc-core.js is loaded with a ?v= tag');
+ok(tag(INDEX, 'tc-core.js') === (INDEX.match(/app-footer-version">v([\d.]+)</) || [])[1], 'tc-core.js ?v= tag follows the app version (a cached old engine must not meet a new page)', tag(INDEX, 'tc-core.js'));
 
 // file hygiene from CLAUDE.md
 ok(!/[^\x00-\x7f]/.test(rd('tc-core.js')), 'tc-core.js is ASCII only');
+ok(!/[^\x00-\x7f]/.test(rd('docx-apply.js')), 'docx-apply.js is ASCII only');
+ok(tag(INDEX, 'docx-apply.js') === (INDEX.match(/app-footer-version">v([\d.]+)</) || [])[1], 'docx-apply.js ?v= tag follows the app version', tag(INDEX, 'docx-apply.js'));
+ok(INDEX.indexOf('docx-apply.js') < INDEX.indexOf('<script>', INDEX.indexOf('docx-apply.js')) && INDEX.indexOf('docx-apply.js') > 0, 'docx-apply.js is loaded before the page script that uses it');
 const jsOnly = inlineCode(INDEX).split('\n').filter((l) => !/^\s*\/\//.test(l));
 ok(!jsOnly.some((l) => /[\u2018\u2019\u201c\u201d]/.test(l.replace(/(['"`])(?:\\.|(?!\1).)*\1/g, ''))), 'no curly quotes in JS code outside strings');
 
@@ -52,9 +56,17 @@ ok(!jsOnly.some((l) => /[\u2018\u2019\u201c\u201d]/.test(l.replace(/(['"`])(?:\\
 const fin = INDEX.slice(INDEX.indexOf('function tcFinalize()'), INDEX.indexOf('function tcShowError'));
 ok(/projectId:\s*R\.projectId\b/.test(fin) && !/lastTC\s*&&\s*lastTC\.projectId/.test(fin), 'a new translation check never inherits the previous report\'s Project id (it overwrote it)');
 ok(/TC_RUN = \{[^]*?projectId:\s*crypto\.randomUUID\(\)/.test(INDEX), 'every translation run starts with its own Project id');
+// found in the 146-finding Inside report: a "not an issue" mark from an EARLIER check travelled into the next one
+ok(/sameRun\s*=[^;]*String\(lastTC\.projectId\)\s*===\s*String\(R\.projectId\)/.test(fin) && /triage\s*=\s*sameRun\s*\?\s*lastTC\.triage\s*:\s*\{\}/.test(fin), 'a new translation check starts with no triage marks (only a continued run keeps them)');
 ok(/id="i-' \+ esc\(i\.id\)/.test(SHARE) && /String\(ACTIVE\) === String\(i\.id\)/.test(SHARE), 'reviewer page: issue ids are escaped and the active card is compared as text');
 ok(/\(\+x\.severities\[k\] \|\| 0\)/.test(INDEX) && /\(\+x\.pages\)/.test(INDEX), 'Reviews list: numbers from the plain-text details are coerced before they are shown');
 ok(!/pdf\.worker/.test(INDEX.replace(/workerSrc[\s\S]*?pdf\.worker\.min\.js/, '')), 'the pdf.js worker is referenced in one place');
 
+// v5.4.1: fixes after a translator rejected most findings of a literary check
+ok(/function tcStrictPref\(\) \{ return 'facts'; \}/.test(INDEX) && !/localStorage\.setItem\('proof_tc_strict'/.test(INDEX), 'the translation check always starts at "Facts only" (the level is never remembered)');
+ok(/d === 'agree' \? \(issue\.corrected \? issue\.corrected : null\)/.test(INDEX), 'agreeing with a finding that has no wording never means "delete this text"');
+ok(/id="tc-literary"/.test(INDEX) && /literary,\s*only: P\.only/.test(INDEX) && /literary: !!R\.literary/.test(INDEX), 'the literary-text choice reaches the run and the report');
+ok(/secondSameModel: !R\.model2 \|\| R\.model2 === R\.model/.test(INDEX), 'the engine is told when the second look uses the same model');
+ok(/LEVEL_TEXT\[p\.strict\]/.test(SHARE) && /strict: tc \?/.test(INDEX), 'the reviewer page says how strict the check was');
 console.log(`${fail ? 'FAILED' : 'OK'}: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -8,5 +8,9 @@
     "shim": "node supabase/pg_shim.mjs",
     "test:supabase": "node supabase/accounts.test.mjs && node supabase/projects.test.mjs && node supabase/reviews.test.mjs"
   },
-  "devDependencies": { "@electric-sql/pglite": "^0.2.0" }
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.2.0",
+    "jszip": "^3.10.1",
+    "mammoth": "^1.6.0"
+  }
 }

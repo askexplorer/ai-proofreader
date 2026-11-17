@@ -460,7 +460,8 @@
       : lvl === 'close'
       ? 'STRICTNESS: CLOSE TRANSLATION. Report changes of meaning, including a lost qualifier or a shift of nuance that matters in this kind of text (legal, technical, official). Use Minor only when the meaning really shifts slightly, never for style.'
       : 'STRICTNESS: EVERYTHING. Report every real difference in meaning, including small ones (Minor).';
-    return normal + '\n\n' + level;
+    const lit = o.literary ? '\n\nLITERARY TEXT: this is a literary translation (a book, speech, letter or poem). The translator rewords on purpose for rhythm, register and beauty, so the following are NOT errors and must be neither reported nor suggested: a synonym or a different but equivalent word; avoiding a repeated word or pronoun (two different words for the same idea in nearby sentences is deliberate); adding a word that the context already implies, or leaving one out; a different but natural idiom or figure of speech; a different sentence structure or word order; a more elevated or a plainer register. Report only content that is missing or invented, a changed fact, name or number, and a meaning that is clearly wrong. If the translator seems to have replaced a concept on purpose with a close cultural equivalent, report it only as a Query.' : '';
+    return normal + lit + '\n\n' + level;
   }
   function systemPrompt(o) {
     const sl = o.srcLang || 'the source language', tl = o.tgtLang || 'the translation language';
@@ -487,7 +488,7 @@ ${calibration(o)}
 
 If one word-choice problem repeats in several places, report it ONCE (the clearest example) and also give "term_s" (the source word or phrase, at most 5 words, exactly as written in the source) and "term_t" (the translation's word or phrase, at most 6 words, exactly as written in the translation); the portal then finds the other places by itself. Leave term_s and term_t empty for one-off problems.
 
-For every issue give: "type", "severity", "s" (source paragraph numbers), "t" (translation paragraph numbers; for an omission use the translation paragraph the missing text belongs after, or [] if unknown), "source" (the exact source words, verbatim, at most 30 words), "target" (the exact translation words, verbatim from the [T#] text, at most 30 words; use "" for an omission), "fix" (the corrected or missing text written in ${tl}; keep it short; "" if you cannot), and "why" (one plain English sentence that starts with the problem), plus "term_s" and "term_t" (see above, or "").
+For every issue give: "type", "severity", "s" (source paragraph numbers), "t" (translation paragraph numbers; for an omission use the translation paragraph the missing text belongs after, or [] if unknown), "source" (the exact source words, verbatim, at most 30 words), "target" (the exact translation words, verbatim from the [T#] text, at most 30 words; use "" for an omission), "fix" (the corrected or missing text written in ${tl}; keep it short. Give a fix ONLY when you are sure of a natural, idiomatic wording that keeps EVERYTHING the whole source sentence says: it must not be a word-for-word copy of the source structure or a false friend (a word that exists in ${tl} but means something else), and it must not repeat a word that already stands in the same or the next sentence of the translation. If you are not sure, use "" and describe the problem in "why"), and "why" (one plain English sentence that starts with the problem), plus "term_s" and "term_t" (see above, or "").
 Quote exactly: copy "source" and "target" character for character from the text you were given.
 
 Return ONLY valid JSON, no markdown:
@@ -503,13 +504,29 @@ Return ONLY valid JSON, no markdown:
     return `You double-check possible translation defects between ${sl} (source) and ${tl} (translation). For each numbered claim decide whether it is TRUE by searching the whole text you are given.
 - For an OMISSION claim: the quoted source passage supposedly has no counterpart. Search the entire translation; if the same content appears anywhere (even reworded, merged into another paragraph or moved) the claim is false.
 - For an ADDITION claim: the quoted translation passage supposedly has no counterpart. Search the entire source; if the same content appears anywhere, the claim is false.
+- For a NUMBER claim: a figure in one text supposedly does not appear in the other. A figure can be written out in words (1,000 = mil, tausend, mille), as a decade ("the 1930s" = "los a\u00f1os treinta", "die Drei\u00dfigerjahre"), in another numeral system or with another separator. If the same quantity, year or date is expressed anywhere in the matching text in any of these forms, the claim is false. Answer "confirmed" only when the figure is really absent or really different.
 Answer "confirmed" only when you are sure the content is really absent.${strictLevel(o) !== 'all' ? ' Also answer "false_alarm" when the missing words are only one of several near-synonyms, an extra adjective or a repeated blessing or phrase, when a paragraph was merely merged or split, or when the passage is a pull quote or callout that repeats or condenses text found elsewhere.' : ''} Answer "false_alarm" when the content is present (say where in "note"). Answer "unsure" otherwise.
 Return ONLY valid JSON: {"verdicts":[{"id":1,"verdict":"confirmed|false_alarm|unsure","note":"short"}]}`;
   }
   function verifyUserPrompt(win, items, o) {
     const fmt = (arr, tag) => arr.map((p, k) => '[' + tag + (k + 1) + '] ' + p.text).join('\n');
     return `${win.label}\n\nFULL SOURCE:\n${fmt(win.src, 'S')}\n\nFULL TRANSLATION:\n${fmt(win.tgt, 'T')}\n\nCLAIMS TO CHECK:\n` +
-      items.map((it) => it.n + '. ' + it.type.toUpperCase() + ' - ' + (it.type === 'Omission' ? 'source ' + it.refs + ' has no counterpart: "' + it.text + '"' : 'translation ' + it.refs + ' has no counterpart: "' + it.text + '"')).join('\n');
+      items.map((it) => it.n + '. ' + it.type.toUpperCase() + ' - ' + (it.type === 'Number' ? it.text : it.type === 'Omission' ? 'source ' + it.refs + ' has no counterpart: "' + it.text + '"' : 'translation ' + it.refs + ' has no counterpart: "' + it.text + '"')).join('\n');
+  }
+
+  // Double-check of findings whose reason claims something is added / missing / not in the source, and of every proposed wording for a serious finding.
+  const CLAIM_RE = /\b(?:adds?|added|addition|inserts?|inserted|invents?|invented|not (?:present|found|contained|included|in the (?:source|original|translation))|absent|missing|omits?|omitted|omission|dropped|no counterpart|does not (?:appear|contain|include|translate)|nowhere|left out|leaves out|lacks?|without translating|never translated)\b/i;
+  function checkSystemPrompt(o) {
+    const sl = o.srcLang || 'the source language', tl = o.tgtLang || 'the translation language';
+    return `You double-check findings made by a translation reviewer between ${sl} (source) and ${tl} (translation). Read the FULL source and the FULL translation of this part. For every numbered finding answer two questions.
+1) "claim": is the problem the finding states really TRUE? The quoted source words are often only a FRAGMENT: read the whole source sentence and the sentences around it before judging (for example "...six decades of public service" may be followed by "have taught me", so a translated word for "lessons" is not an addition). If the finding says something is added, missing or not in the source, search the whole text. Answer "true", "false" or "unsure".
+2) "fix": if the finding proposes wording ("proposed wording"), would replacing the quoted translation words with it be good? Answer "ok" ONLY if it (a) keeps EVERYTHING the whole source sentence says, nothing lost, (b) is natural, idiomatic ${tl} and not a word-for-word copy of the source structure or a false friend (a word that exists in ${tl} but means something else), and (c) does not repeat a word that already stands in the same or the neighbouring sentence of the translation. Otherwise answer "bad". If there is no proposed wording answer "none".
+Return ONLY valid JSON: {"checks":[{"id":1,"claim":"true|false|unsure","fix":"ok|bad|none","note":"one short sentence that says what is wrong, if anything"}]}`;
+  }
+  function checkUserPrompt(win, items) {
+    const fmt = (arr, tag) => arr.map((p, k) => '[' + tag + (k + 1) + '] ' + p.text).join('\n');
+    return `${win.label}\n\nFULL SOURCE:\n${fmt(win.src, 'S')}\n\nFULL TRANSLATION:\n${fmt(win.tgt, 'T')}\n\nFINDINGS TO CHECK:\n` +
+      items.map((it) => it.n + '. [' + it.type + ', ' + it.severity + '] source words: "' + clip(it.sText, 300) + '" | translation words: "' + clip(it.tText, 300) + '" | proposed wording: "' + clip(it.fix, 300) + '" | reason: ' + clip(it.why, 300)).join('\n');
   }
 
   // The "second look at meaning": the paragraphs are already paired; the model must judge EVERY pair.
@@ -523,7 +540,7 @@ Do NOT report spelling, grammar, punctuation, style, or acceptable rewording tha
 
 ${calibration(o)}
 
-Answer with "same": the pairs that say the same thing, as a compact list such as "1-4,6,9-12", and "differs": one object for every pair that does NOT. EVERY pair number must appear exactly once, either in "same" or in "differs". For each differing pair give: "p" (the pair number), "type" (Mistranslation, Terminology, Number, Untranslated or Wording), "severity" (Major = the meaning clearly changes; Minor = small loss of nuance; Query = you suspect a problem or the translation could be misread; Note = acceptable rewording), "source" and "target" (the exact words, copied character for character, at most 30 words each), "fix" (the better wording in ${tl}, or ""), "why" (one plain English sentence that starts with the problem; never write pair labels such as P3 in it), and "term_s" and "term_t" (only when the same word-choice problem repeats: the source word or phrase, at most 5 words, and the translation's phrase, at most 6 words, exactly as written; otherwise "").
+Answer with "same": the pairs that say the same thing, as a compact list such as "1-4,6,9-12", and "differs": one object for every pair that does NOT. EVERY pair number must appear exactly once, either in "same" or in "differs". For each differing pair give: "p" (the pair number), "type" (Mistranslation, Terminology, Number, Untranslated or Wording), "severity" (Major = the meaning clearly changes; Minor = small loss of nuance; Query = you suspect a problem or the translation could be misread; Note = acceptable rewording), "source" and "target" (the exact words, copied character for character, at most 30 words each), "fix" (the better wording in ${tl}, only when you are sure it is natural, keeps everything the whole source sentence says, is not a word-for-word copy or false friend, and does not repeat a word already in the same or the next sentence; otherwise ""), "why" (one plain English sentence that starts with the problem; never write pair labels such as P3 in it), and "term_s" and "term_t" (only when the same word-choice problem repeats: the source word or phrase, at most 5 words, and the translation's phrase, at most 6 words, exactly as written; otherwise "").
 
 Return ONLY valid JSON: {"same":"1-4,6","differs":[{"p":5,"type":"Mistranslation","severity":"Minor","source":"...","target":"...","fix":"...","why":"...","term_s":"","term_t":""}]}${o.extra ? '\n\nAdditional instructions from the editor:\n' + o.extra : ''}`;
   }
@@ -608,6 +625,11 @@ Return ONLY valid JSON: {"same":"1-4,6","differs":[{"p":5,"type":"Mistranslation
   }
   // an explanation that says "acceptable" about its own finding is not a finding
   const SELF_OK = /^\s*(?:acceptable|fine|correct|ok(?:ay)?|no (?:real )?(?:problem|issue|error))\b|\b(?:acceptable here|acceptable (?:rendering|translation|choice|wording|variation)|not (?:really )?an? (?:error|problem|issue|mistake)|no (?:real )?(?:problem|issue|error) here)\b/i;
+  // ... and one that talks itself out of it further on ("... which is acceptable in meaning but loses the nuance", "borderline",
+  // "a style choice", "the factual meaning is preserved"). Only for findings that did not claim a clear change (Minor / Query).
+  const SELF_HEDGE = /\b(?:acceptable|defensible|borderline|adequately|harmless|(?:a |an )?(?:style|stylistic) choice|(?:factual )?meaning is (?:still |fully |largely )?(?:preserved|intact|unchanged))\b/i;
+  const NOT_OK = /\b(?:not|never|hardly|barely|isn't|aren't|wasn't|weren't|no longer)\s+(?:\w+\s+)?(?:acceptable|defensible|adequate\w*|harmless)\b/gi;   // "is not acceptable" is a finding, not an excuse
+  const selfExcused = (why, sev) => SELF_OK.test(why) || ((sev === 'Minor' || sev === 'Query') && SELF_HEDGE.test(String(why).replace(NOT_OK, ' ')));
 
   // Turn the model's JSON into canonical issues for one window.
   function readAnswer(win, ans) {
@@ -630,10 +652,15 @@ Return ONLY valid JSON: {"same":"1-4,6","differs":[{"p":5,"type":"Mistranslation
       if (type !== 'Omission' && !s.length && !t.length) return;                              // cannot be located: ignore
       let why = clean(it.why), sevOut = sev;
       if (!sOk || !tOk) { if (sevOut !== 'Note') sevOut = 'Query'; why = (why ? why + ' ' : '') + '(The quoted words could not be found verbatim in the text, so please check this one by hand.)'; }
-      if (sevOut !== 'Note' && (type === 'Mistranslation' || type === 'Terminology') && SELF_OK.test(why)) { type = 'Wording'; sevOut = 'Note'; }
-      if (type === 'Omission' && s.length) { const a = anchorBefore(al.groups, s[0]); t.length = 0; if (a > 0) t.push(a); }   // where it belongs comes from the alignment, not from the model's guess
+      if (sevOut !== 'Note' && (type === 'Mistranslation' || type === 'Terminology') && selfExcused(why, sevOut)) { type = 'Wording'; sevOut = 'Note'; }
+      let partial = false;
+      if (type === 'Omission' && s.length) {
+        const home = al.groups.find((g) => g.s.indexOf(s[0]) >= 0 && g.t.length);
+        if (home) { t.length = 0; home.t.forEach((k) => t.push(k)); partial = true; }                      // words missing from a paragraph that HAS a counterpart: the finding sits on that paragraph
+        else { const a = anchorBefore(al.groups, s[0]); t.length = 0; if (a > 0) t.push(a); }               // a paragraph with no counterpart: where it belongs comes from the alignment, not from the model's guess
+      }
       const terms = readTerms(it, sHay, tHay);
-      issues.push({ type, severity: sevOut, s, t, sText, tText, sOk, tOk, fix: clean(it.fix), why, origin: 'ai', termS: terms ? terms.termS : '', termT: terms ? terms.termT : '' });
+      issues.push({ type, severity: sevOut, s, t, sText, tText, sOk, tOk, fix: clean(it.fix), why, origin: 'ai', partial, termS: terms ? terms.termS : '', termT: terms ? terms.termT : '' });
     });
     return { alignment: al, issues };
   }
@@ -655,7 +682,7 @@ Return ONLY valid JSON: {"same":"1-4,6","differs":[{"p":5,"type":"Mistranslation
       if (tText) { const f = findQuote(pr.tText, tText); if (f) tText = f; else tOk = false; }
       let why = clean(it.why);
       if (!sOk || !tOk) { if (sev !== 'Note') sev = 'Query'; why = (why ? why + ' ' : '') + '(The quoted words could not be found verbatim in the text, so please check this one by hand.)'; }
-      if (sev !== 'Note' && (type === 'Mistranslation' || type === 'Terminology') && SELF_OK.test(why)) { type = 'Wording'; sev = 'Note'; }
+      if (sev !== 'Note' && (type === 'Mistranslation' || type === 'Terminology') && selfExcused(why, sev)) { type = 'Wording'; sev = 'Note'; }
       const terms = readTerms(it, pr.sText, pr.tText);
       raws.push({ type, severity: sev, s: pr.s.slice(), t: pr.t.slice(), sText, tText, sOk, tOk, fix: clean(it.fix), why, origin: 'ai2', termS: terms ? terms.termS : '', termT: terms ? terms.termT : '' });
     });
@@ -674,6 +701,19 @@ Return ONLY valid JSON: {"same":"1-4,6","differs":[{"p":5,"type":"Mistranslation
     t = t.replace(/(\d)[,\u00a0\u202f '](?=\d{3}(?!\d))/g, '$1').replace(/(\d),(\d{1,2})(?!\d)/g, '$1.$2');
     const set = new Set(); (t.match(/\d+(?:\.\d+)?/g) || []).forEach((x) => { if (x.length >= 2 || x.indexOf('.') >= 0) set.add(String(parseFloat(x))); });
     return set;
+  }
+  // The words around a number exactly as written in the text ("deploy 1,000 intelligent algorithms"): shown on the card and usable for Ctrl+F.
+  function numberSpan(text, value) {
+    const str = String(text || ''), re = /[\d\u0660-\u0669\u06f0-\u06f9](?:[\d\u0660-\u0669\u06f0-\u06f9.,\u00a0\u202f ']*[\d\u0660-\u0669\u06f0-\u06f9])?/g;
+    let m;
+    while ((m = re.exec(str))) {
+      if (!numbersIn(m[0]).has(String(value))) continue;
+      const end = m.index + m[0].length, from = Math.max(0, m.index - 28), to = Math.min(str.length, end + 28);
+      let a = from > 0 ? str.indexOf(' ', from) + 1 : 0; if (from > 0 && (a <= 0 || a > m.index)) a = from;
+      let b = to < str.length ? str.lastIndexOf(' ', to) : str.length; if (b < end) b = end;
+      return str.slice(a, b).trim();
+    }
+    return '';
   }
   const tokensOfText = (s) => new Set(norm(s).split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 1));
   function jaccard(a, b) { if (!a.size || !b.size) return 0; let i = 0; a.forEach((x) => { if (b.has(x)) i++; }); return i / (a.size + b.size - i); }
@@ -699,7 +739,7 @@ Return ONLY valid JSON: {"same":"1-4,6","differs":[{"p":5,"type":"Mistranslation
       const ns = sig(numbersIn(sText)), nt = sig(numbersIn(tText));
       const miss = [...ns].filter((x) => !nt.has(x)), extra = [...nt].filter((x) => !ns.has(x));
       if (win.num !== 0 && ((miss.length && extra.length) || miss.some((v) => +v >= 1000))) {
-        out.push({ type: 'Number', severity: 'Query', s: g.s.slice(), t: g.t.slice(), sText: '', tText: '', sOk: true, tOk: true, fix: '',
+        out.push({ type: 'Number', severity: 'Query', s: g.s.slice(), t: g.t.slice(), sText: miss.length ? numberSpan(sText, miss[0]) : '', tText: extra.length ? numberSpan(tText, extra[0]) : '', sOk: true, tOk: true, fix: '',
           why: (miss.length ? 'Number' + (miss.length > 1 ? 's' : '') + ' ' + miss.slice(0, 4).join(', ') + ' in the source ' + (miss.length > 1 ? 'are' : 'is') + ' not in the translation' : '') +
                (miss.length && extra.length ? '; ' : '') + (extra.length ? 'number' + (extra.length > 1 ? 's' : '') + ' ' + extra.slice(0, 4).join(', ') + ' in the translation ' + (extra.length > 1 ? 'are' : 'is') + ' not in the source' : '') + '.', origin: 'rule' });
       }
@@ -741,7 +781,7 @@ Return ONLY valid JSON: {"same":"1-4,6","differs":[{"p":5,"type":"Mistranslation
   Object.assign(global.TC, {
     alignByLength, windowsForPair, planWindows, tokensOf, scriptClass,
     TYPES, SEVERITIES, SEV_WEIGHT, systemPrompt, userPrompt, verifySystemPrompt, verifyUserPrompt, meaningSystemPrompt, meaningUserPrompt,
-    parseAlignment, readAnswer, readMeaning, findQuote, canonType, canonSeverity, numbersIn, jaccard, ruleChecks, scoreOf, labelPara, clip,
+    parseAlignment, readAnswer, readMeaning, findQuote, canonType, canonSeverity, numbersIn, numberSpan, jaccard, ruleChecks, scoreOf, labelPara, clip,
   });
 
   // ======================================================================
@@ -765,6 +805,7 @@ Return ONLY valid JSON: {"same":"1-4,6","differs":[{"p":5,"type":"Mistranslation
       const n = w.src.length + w.tgt.length;
       calls++; inTok += w.estTokens + 60 + (calls === 1 ? sys : 0); outTok += 150 + 9 * n + 170 * Math.max(1, Math.round(w.src.length / 8));
       calls += 0.25; inTok += 0.25 * (w.estTokens + sys); outTok += 0.25 * 220;                 // verification of omissions / additions
+      calls += 0.3; inTok += 0.3 * (w.estTokens + sys); outTok += 0.3 * 260;                    // double-check of claims and proposed wordings
       if (o.second) {                                                                           // second look at meaning: the same text again, a short answer
         const k = Math.max(1, Math.ceil(Math.max(w.src.length, w.tgt.length) / 40));
         sCalls += k; sIn += w.estTokens + 90 * k + (sCalls === k ? 1100 : 0); sOut += 90 * k + 70 * Math.max(1, Math.round(w.src.length / 10));
@@ -777,16 +818,19 @@ Return ONLY valid JSON: {"same":"1-4,6","differs":[{"p":5,"type":"Mistranslation
   // Fold the second look's findings into the first check's list: the same problem seen twice is one problem
   // (and more certain); something only the second look saw is added.
   const sharesPara = (a, b) => a.s.some((v) => b.s.indexOf(v) >= 0) || a.t.some((v) => b.t.indexOf(v) >= 0);
-  function mergeSecond(list, extra) {
+  function mergeSecond(list, extra, opts) {
     const tok = (x) => tokensOfText((x.sText || '') + ' ' + (x.tText || ''));
     extra.forEach((x) => {
       const hit = list.find((y) => y.type !== 'Omission' && y.type !== 'Addition' && (y.origin !== 'rule' || y.type === x.type) && sharesPara(y, x) &&
-        (!(x.sText || x.tText) || !(y.sText || y.tText) || jaccard(tok(y), tok(x)) >= 0.25));
+        (!(x.sText || x.tText) || !(y.sText || y.tText) || y.origin === 'rule' || jaccard(tok(y), tok(x)) >= 0.25));
       if (hit) {
         hit.second = 'agrees';
         if (hit.severity === 'Query' && hit.sOk !== false && hit.tOk !== false && x.severity !== 'Query' && x.severity !== 'Note') hit.severity = 'Minor';   // two independent looks agree
         if (!hit.termS && x.termS) { hit.termS = x.termS; hit.termT = x.termT; }
-      } else list.push(x);
+      } else {
+        if (opts && opts.independent === false && x.severity === 'Minor') { x.was = 'Minor'; x.severity = 'Note'; x.unconfirmed = true; }   // the same model looking twice confirms nothing
+        list.push(x);
+      }
     });
   }
 
@@ -829,11 +873,16 @@ Return ONLY valid JSON: {"same":"1-4,6","differs":[{"p":5,"type":"Mistranslation
     const chap = o && o.single ? '' : chapLabel(win);
     return raws.map((r) => {
       const sP = r.s.map((k) => win.src[k - 1]).filter(Boolean), tP = r.t.map((k) => win.tgt[k - 1]).filter(Boolean);
-      const insert = r.type === 'Omission' || (!tP.length && !r.tText);
+      const insert = (r.type === 'Omission' && !r.partial) || (!tP.length && !r.tText);
       const anchor = tP.length ? tP[0] : null;
       const page = (anchor && anchor.page) || ((tP.find((p) => p.page) || {}).page) || null;
       const sRange = paraRange(sP, win.srcBase), tRange = paraRange(tP, win.tgtBase);
       const pre = chap ? chap + ' ' : '';
+      const rr = (r.fix && r.tText && r.type !== 'Omission' && r.type !== 'Addition' && r.type !== 'Number') ? repeatRisk(clip(tP.map((p) => p.text).join(' '), 400), r.tText, r.fix) : '';
+      if (rr) {                                                                         // the suggested wording would repeat a word: say so, keep the finding, drop the wording
+        r.fix = ''; r.why = (r.why || '') + ' (The suggested wording was withdrawn: it would repeat the word "' + rr + '" in the same or the next sentence.)';
+        if (r.severity === 'Minor') { r.was = 'Minor'; r.severity = 'Note'; }
+      }
       return {
         type: r.type, severity: r.severity, origin: r.origin, window: win.id, chapter: win.num, chapterTitle: win.title || '',
         srcLoc: sRange ? pre + sRange : (chap || ''), tgtLoc: tRange ? (insert && r.type === 'Omission' ? 'after ' : '') + pre + tRange : (insert && r.type === 'Omission' ? 'near start of ' + (chap || 'text') : (chap || '')), page,
@@ -841,7 +890,7 @@ Return ONLY valid JSON: {"same":"1-4,6","differs":[{"p":5,"type":"Mistranslation
         tgtText: r.tText || '', tgtContext: tP.length ? clip(tP.map((p) => p.text).join(' '), 400) : '',
         fix: r.fix || '', why: relabel(r.why, win), insert: !!insert, quoteOk: r.sOk !== false && r.tOk !== false,
         verified: r.verified || null, note: relabel(r.note, win), sIdx: sP.map((p) => p.i), tIdx: tP.map((p) => p.i),
-        second: r.second || null, termS: r.termS || '', termT: r.termT || '',
+        second: r.second || null, termS: r.termS || '', termT: r.termT || '', partial: !!r.partial, was: r.was || undefined, unconfirmed: r.unconfirmed || undefined,
       };
     });
   }
@@ -852,6 +901,33 @@ Return ONLY valid JSON: {"same":"1-4,6","differs":[{"p":5,"type":"Mistranslation
   const SEV_RANK = { Critical: 4, Major: 3, Minor: 2, Query: 1, Note: 0 };
   const topSev = (a, b) => ((SEV_RANK[a] || 0) >= (SEV_RANK[b] || 0) ? a : b);
   const escRe = (x) => String(x).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // how much of the smaller word set is found in the other (0..1)
+  function containment(a, b) {
+    const ta = tokensOfText(a), tb = tokensOfText(b); if (!ta.size || !tb.size) return 0;
+    let n = 0; ta.forEach((w) => { if (tb.has(w)) n++; });
+    return n / Math.min(ta.size, tb.size);
+  }
+  // Words that say nothing about WHICH phrase a finding is about (pronouns, possessives, joining words): they must never decide that two findings are the same problem.
+  const TERM_STOP = new Set(('that this with from have been were will what which when where there these those such more than into your yours their them they about over also upon every some none much many only ' +
+    'este esta estos estas esto para como pero desde sobre entre hasta cuando donde nuestro nuestra nuestros nuestras vuestro vuestra vuestros vuestras sido tiene tienen siempre todo toda todos todas otro otra otros otras mismo misma ' +
+    'diese dieser dieses diesen dein deine deinen unser unsere unseren euer eure euren nicht werden wurde haben sein sind oder aber auch noch immer alle aller jede jeder ' +
+    'notre votre leurs cette pour dans avec sans mais sont tout tous toute toutes nous vous elle elles nosso nossa nossos nossas vosso vossa mais pelo pela nostro nostra vostro vostra della degli').split(' '));
+  // the first word (5+ letters) that the proposed wording would make appear twice in the sentence (or its neighbours) although it did not before; '' if none
+  function repeatRisk(context, original, fix) {
+    if (!context || !original || !fix) return '';
+    const c = String(context), o = String(original), at = c.toLowerCase().indexOf(o.toLowerCase()); if (at < 0) return '';
+    const sents = []; c.replace(/[^.!?\u2026]+[.!?\u2026]*\s*/g, (m, i) => { sents.push({ a: i, b: i + m.length }); return m; });
+    const k = Math.max(0, sents.findIndex((q) => at >= q.a && at < q.b)), from = sents.length ? sents[Math.max(0, k - 1)].a : 0, to = sents.length ? sents[Math.min(sents.length - 1, k + 1)].b : c.length;
+    const local = c.slice(from, to), lat = at - from;
+    const wordsFor = (t) => norm(t).split(/[^\p{L}\p{N}]+/u).filter((w) => [...w].length >= 5 && !TERM_STOP.has(w));
+    const count = (arr) => { const m = new Map(); arr.forEach((w) => m.set(w, (m.get(w) || 0) + 1)); return m; };
+    const before = count(wordsFor(local)), now = count(wordsFor(local.slice(0, lat) + String(fix) + local.slice(lat + o.length)));
+    let hit = ''; now.forEach((n, w) => { if (!hit && n >= 2 && n > (before.get(w) || 0)) hit = w; });
+    return hit;
+  }
+  const termWords = (s) => new Set([...tokensOfText(s)].filter((w) => [...w].length >= 4 && !TERM_STOP.has(w)));
+  // two named word choices are the same recurring problem when BOTH their source words and their translation words share at least half of the smaller side
+  const sameWords = (a, b) => { if (!a.size || !b.size) return false; let n = 0; a.forEach((w) => { if (b.has(w)) n++; }); return n >= 1 && n / Math.min(a.size, b.size) >= 0.5; };
   const locOf = (x) => ({ srcLoc: x.srcLoc || '', tgtLoc: x.tgtLoc || '', page: x.page || null, sIdx: x.sIdx || [], tIdx: x.tIdx || [] });
   function mergeInto(lead, others, drop) {
     lead.also = lead.also || [];
@@ -866,12 +942,38 @@ Return ONLY valid JSON: {"same":"1-4,6","differs":[{"p":5,"type":"Mistranslation
   function refineIssues(issues, plan, state) {
     const drop = new Set(); let list = issues.slice();
     // (a) a missing sentence and the "addition" sitting where it should be (a repeat in its place) are one problem seen from both sides
-    list.filter((x) => x.type === 'Omission' && x.origin === 'ai' && x.insert && x.sIdx.length).forEach((o) => {
+    list.filter((x) => x.type === 'Omission' && x.origin === 'ai' && (x.insert || x.partial) && x.sIdx.length).forEach((o) => {
       const b = o.tIdx.length ? o.tIdx[0] : -1;
       const ad = list.find((x) => x !== o && !drop.has(x) && x.type === 'Addition' && x.origin === 'ai' && x.chapter === o.chapter && x.tIdx.length && x.tIdx[0] >= b && x.tIdx[0] <= b + 2 && (!x.sIdx.length || Math.abs(x.sIdx[0] - o.sIdx[0]) <= 2));
       if (!ad) return;
       drop.add(ad); o.severity = topSev(o.severity, ad.severity); o.twin = ad.tgtLoc;
       o.why = o.why + ' The translation repeats other text here instead (' + ad.tgtLoc + ').';
+    });
+    list = list.filter((x) => !drop.has(x));
+    // (a2) words missing from a paragraph that has a counterpart, and a meaning finding on those same words, are one problem seen twice
+    list.filter((x) => x.type === 'Omission' && x.partial && x.sIdx.length).forEach((o) => {
+      if (drop.has(o)) return;
+      const tw = list.find((x) => x !== o && !drop.has(x) && x.origin !== 'rule' && x.type !== 'Omission' && x.type !== 'Addition' && x.chapter === o.chapter &&
+        x.sIdx.length && x.sIdx[0] === o.sIdx[0] && containment(o.srcText, x.srcText) >= 0.5);
+      if (!tw) return;
+      const lead = (SEV_RANK[tw.severity] || 0) > (SEV_RANK[o.severity] || 0) ? tw : o, other = lead === o ? tw : o;
+      drop.add(other); lead.severity = topSev(lead.severity, other.severity);
+      if (!lead.fix && other.fix) lead.fix = other.fix;
+      if (!lead.tgtText && other.tgtText) lead.tgtText = other.tgtText;
+      if (!lead.verified && other.verified) { lead.verified = other.verified; lead.note = lead.note || other.note; }
+      if (!lead.termS && other.termS) { lead.termS = other.termS; lead.termT = other.termT; }
+      if (other.second === 'agrees' || (lead.origin !== other.origin && (lead.origin === 'ai2' || other.origin === 'ai2'))) lead.second = 'agrees';
+    });
+    list = list.filter((x) => !drop.has(x));
+    // (a3) a whole missing sentence and a meaning finding about the same source paragraph (often: the translation repeats other text there) are one problem
+    list.filter((x) => x.type === 'Omission' && x.insert && x.sIdx.length).forEach((o) => {
+      if (drop.has(o)) return;
+      const tw = list.find((x) => x !== o && !drop.has(x) && x.origin !== 'rule' && x.type !== 'Omission' && x.type !== 'Addition' && x.type !== 'Structure' && x.chapter === o.chapter &&
+        x.sIdx.some((v) => o.sIdx.indexOf(v) >= 0) && (containment(o.srcText, x.srcText) >= 0.5 || CLAIM_RE.test(x.why || '')));
+      if (!tw) return;
+      drop.add(tw); o.severity = topSev(o.severity, tw.severity);
+      if (tw.tgtLoc && tw.tgtLoc !== o.tgtLoc) o.why = o.why + ' (Also seen as a meaning problem at ' + tw.tgtLoc + '.)';
+      if (tw.origin === 'ai2' || tw.second === 'agrees') o.second = 'agrees';
     });
     list = list.filter((x) => !drop.has(x));
     // (b) the same finding word for word (a pull-quote repeating a sentence) is one finding
@@ -884,14 +986,16 @@ Return ONLY valid JSON: {"same":"1-4,6","differs":[{"p":5,"type":"Mistranslation
     byRepeat.forEach((arr) => { if (arr.length > 1) mergeInto(arr[0], arr.slice(1), drop); });
     list = list.filter((x) => !drop.has(x));
     // (c) one word-choice problem that recurs: the model names the words; one finding, every place listed
-    const byTerm = new Map();
+    // (the model words the same choice a little differently each time: "grant you success" / "grant us all success"; so a finding joins the first group it resembles)
+    const byTerm = [];
     list.forEach((x) => {
       if (!x.termS || !x.termT) return;
-      const k = norm(x.termS) + '>' + norm(x.termT);
-      if (!byTerm.has(k)) byTerm.set(k, []); byTerm.get(k).push(x);
+      const k = norm(x.termS) + '>' + norm(x.termT), ws = termWords(x.termS), wt = termWords(x.termT);
+      const hit = byTerm.find((g) => g.key === k || (sameWords(g.ws, ws) && sameWords(g.wt, wt)));
+      if (hit) hit.items.push(x); else byTerm.push({ key: k, ws, wt, items: [x] });
     });
     let pairsAll = null;
-    byTerm.forEach((arr) => {
+    byTerm.forEach(({ items: arr }) => {
       const lead = arr.reduce((best, x) => (SEV_RANK[x.severity] > SEV_RANK[best.severity] ? x : best), arr[0]);
       const others = arr.filter((x) => x !== lead); if (others.length) mergeInto(lead, others, drop);
       if (lead.type === 'Omission' || lead.type === 'Addition' || lead.type === 'Structure' || lead.type === 'Number') return;
@@ -932,8 +1036,8 @@ Return ONLY valid JSON: {"same":"1-4,6","differs":[{"p":5,"type":"Mistranslation
   async function checkWindows(plan, srcDoc, tgtDoc, ctx, state) {
     state = state || { done: {}, results: [], inTok: 0, outTok: 0, calls: 0, splits: 0, verifyCalls: 0 };
     state.stopped = false; state.finished = false;                    // a continued run starts clean
-    const o = { srcLang: ctx.srcLang, tgtLang: ctx.tgtLang, extra: ctx.extra, sameScript: ctx.sameScript, strict: ctx.strict };
-    const system = systemPrompt(o), vsystem = verifySystemPrompt(o), msystem = meaningSystemPrompt(o);
+    const o = { srcLang: ctx.srcLang, tgtLang: ctx.tgtLang, extra: ctx.extra, sameScript: ctx.sameScript, strict: ctx.strict, literary: !!ctx.literary };
+    const system = systemPrompt(o), vsystem = verifySystemPrompt(o), msystem = meaningSystemPrompt(o), csystem = checkSystemPrompt(o);
     const maxDepth = ctx.maxDepth == null ? 3 : ctx.maxDepth;
     state.second = ctx.second ? { on: true } : null;
     state.strict = strictLevel({ strict: ctx.strict });
@@ -968,6 +1072,30 @@ Return ONLY valid JSON: {"same":"1-4,6","differs":[{"p":5,"type":"Mistranslation
         if (out.failed) break;
       }
       return out;
+    }
+
+    // Double-check: a finding whose reason says "added / missing / not in the source" (whatever its label) and every proposed wording of a serious finding
+    // is judged again against the FULL text. A false claim is dropped, an unsure one is softened, a bad wording is withdrawn (the finding stays).
+    async function checkFindings(win, list, dropped) {
+      const cand = list.filter((x) => x.origin !== 'rule' && !x._drop && ['Omission', 'Addition', 'Number', 'Structure'].indexOf(x.type) < 0 && !x.verified &&
+        (CLAIM_RE.test(x.why || '') || (x.fix && (x.severity === 'Critical' || x.severity === 'Major' || x.severity === 'Query')))).slice(0, 14);
+      if (!cand.length) return;
+      const items = cand.map((x, k) => ({ n: k + 1, type: x.type, severity: x.severity, sText: x.sText, tText: x.tText, fix: x.fix, why: x.why }));
+      try {
+        const r = await ask(csystem, checkUserPrompt(win, items), { win, kind: 'recheck' }); state.verifyCalls++;
+        const ans = parseJSONLoose(r.text);
+        (ans.checks || []).forEach((c) => {
+          const x = cand[(+c.id || 0) - 1]; if (!x) return;
+          const claim = String(c.claim || '').toLowerCase(), fx = String(c.fix || '').toLowerCase(), note = clean(c.note);
+          if (claim === 'false') { x._drop = true; x.note = note; dropped.push(x); return; }
+          if (claim === 'unsure') { x.verified = 'unsure'; x.note = note; if (x.severity === 'Critical' || x.severity === 'Major') x.severity = 'Query'; else if (x.severity === 'Minor') { x.was = 'Minor'; x.severity = 'Note'; } }
+          else if (claim === 'true' && CLAIM_RE.test(x.why || '')) { x.verified = 'confirmed'; x.note = note; }
+          if (fx === 'bad' && x.fix) {
+            x.fix = ''; x.why = (x.why || '') + ' (The suggested wording was withdrawn after a double-check' + (note ? ': ' + note : '') + ')';
+            if (x.severity === 'Minor') { x.was = x.was || 'Minor'; x.severity = 'Note'; }
+          }
+        });
+      } catch (e) { if (e && e.stop) throw e; /* a bonus: keep the findings as they are */ }
     }
 
     async function doWindow(win, depth) {
@@ -1027,10 +1155,13 @@ Return ONLY valid JSON: {"same":"1-4,6","differs":[{"p":5,"type":"Mistranslation
       const rules = collapsed ? [] : ruleChecks(win, groups, { have: raws, sameScript: ctx.sameScript });
       // second look at every omission / addition the model claimed
       const dropped = [];
-      const claims = collapsed ? [] : raws.filter((x) => x.origin === 'ai' && (x.type === 'Omission' || x.type === 'Addition') && (x.s.length || x.t.length)).slice(0, 14);
+      // (a figure the rule check could not find in the translation may simply be written out: "1,000" -> "mil", "the 1930s" -> "los anos treinta")
+      const claims = collapsed ? [] : raws.filter((x) => x.origin === 'ai' && (x.type === 'Omission' || x.type === 'Addition') && (x.s.length || x.t.length)).slice(0, 14).concat(rules.filter((x) => x.type === 'Number').slice(0, 8));
       if (claims.length) {
-        const items = claims.map((c, k) => ({ n: k + 1, type: c.type, refs: c.type === 'Omission' ? c.s.map((v) => 'S' + v).join(',') : c.t.map((v) => 'T' + v).join(','),
-          text: clip(c.type === 'Omission' ? (c.sText || c.s.map((v) => win.src[v - 1].text).join(' ')) : (c.tText || c.t.map((v) => win.tgt[v - 1].text).join(' ')), 400) }));
+        const items = claims.map((c, k) => c.type === 'Number'
+          ? { n: k + 1, type: 'Number', refs: '', text: c.why + ' (source ' + c.s.map((v) => 'S' + v).join(',') + ', translation ' + c.t.map((v) => 'T' + v).join(',') + (c.sText ? '; source words: "' + c.sText + '"' : '') + (c.tText ? '; translation words: "' + c.tText + '"' : '') + '). Is this same quantity, year or date expressed in the translation in any form?' }
+          : { n: k + 1, type: c.type, refs: c.type === 'Omission' ? c.s.map((v) => 'S' + v).join(',') : c.t.map((v) => 'T' + v).join(','),
+              text: clip(c.type === 'Omission' ? (c.sText || c.s.map((v) => win.src[v - 1].text).join(' ')) : (c.tText || c.t.map((v) => win.tgt[v - 1].text).join(' ')), 400) });
         try {
           const vr = await ask(vsystem, verifyUserPrompt(win, items, o), { win, kind: 'verify' }); state.verifyCalls++;
           const vans = parseJSONLoose(vr.text);
@@ -1043,14 +1174,15 @@ Return ONLY valid JSON: {"same":"1-4,6","differs":[{"p":5,"type":"Mistranslation
           });
         } catch (e) { if (e && e.stop) throw e; /* verification is a bonus: keep the claims unverified */ }
       }
-      const kept = raws.filter((x) => !x._drop).concat(rules);
+      const kept = raws.filter((x) => !x._drop).concat(rules.filter((x) => !x._drop));
       let meaning = null;
       if (ctx.second && !collapsed && groups.length) {
         const m = await meaningPass(win, groups);
         meaning = { pairs: m.pairs, checked: m.checked, failed: m.failed };
-        mergeSecond(kept, m.raws);
+        mergeSecond(kept, m.raws, { independent: !ctx.secondSameModel });
       }
-      return { win, ledger: { s: win.src.map((p) => p.i), t: win.tgt.map((p) => p.i), unverifiedS: unS, unverifiedT: unT }, raws: kept, groups, dropped, rule: false, collapsed, meaning };
+      if (!collapsed) await checkFindings(win, kept, dropped);
+      return { win, ledger: { s: win.src.map((p) => p.i), t: win.tgt.map((p) => p.i), unverifiedS: unS, unverifiedT: unT }, raws: kept.filter((x) => !x._drop), groups, dropped, rule: false, collapsed, meaning };
     }
     async function both(pair, depth) {
       const a = await doWindow(pair[0], depth + 1), b = await doWindow(pair[1], depth + 1);
@@ -1237,6 +1369,6 @@ Return ONLY valid JSON: {"same":"1-4,6","differs":[{"p":5,"type":"Mistranslation
     return { pageTexts, pages: pageTexts.length, how };
   }
 
-  Object.assign(global.TC, { parseJSONLoose, estimateRun, halve, checkWindows, buildReport, toShareIssues, CSV_HEAD, toCsvRows, finishIssues, alsoText, refineIssues, relabel, mergeSecond, calibration, strictLevel, STRICT_LEVELS, docxPages });
+  Object.assign(global.TC, { parseJSONLoose, estimateRun, halve, checkWindows, buildReport, toShareIssues, CSV_HEAD, toCsvRows, finishIssues, alsoText, refineIssues, relabel, mergeSecond, calibration, strictLevel, STRICT_LEVELS, docxPages, repeatRisk, checkSystemPrompt, checkUserPrompt, CLAIM_RE });
 
 })(typeof window !== 'undefined' ? window : globalThis);

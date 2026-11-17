@@ -13,7 +13,8 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/docx@7.8.2/build/index.js" integrity="sha384-zjTqOObJTD6OT6CUn8mSpDY+crIiP0cX457OjcZosSATiUFbmdXa9KRScjfLVxFH" crossorigin="anonymous"></script>
   <script src="share-core.js?v=5.3.0"></script>
-  <script src="tc-core.js?v=5.3.0"></script>
+  <script src="tc-core.js?v=5.4.0"></script>
+  <script src="docx-apply.js?v=5.4.0"></script>
   <script>try{document.documentElement.dataset.theme=localStorage.getItem('proof_theme')||'light'}catch(e){document.documentElement.dataset.theme='light'}</script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -414,6 +415,8 @@
     .sr-check { font-size:12.5px; display:flex; gap:8px; align-items:flex-start; padding:7px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface); }
     .sr-check.ok { border-color:rgba(16,185,129,.5); color:#10b981; } .sr-check.bad { border-color:rgba(239,68,68,.5); color:#f87171; }
     .sr-check small { display:block; color:var(--muted); font-weight:400; margin-top:2px; }
+    .sr-check.warn { border-color:rgba(245,158,11,.55); color:#d97706; }
+    [data-theme="light"] .sr-apply .sr-check.ok { color:var(--t-ok,#065f46); } [data-theme="light"] .sr-apply .sr-check.bad { color:var(--t-crit,#b91c1c); } [data-theme="light"] .sr-apply .sr-check.warn { color:var(--t-major,#9a3412); }
     .sr-pill { display:inline-block; font-size:11px; font-weight:800; padding:3px 10px; border-radius:99px; letter-spacing:.03em; }
     .sr-pill.ready { background:rgba(16,185,129,.15); color:#10b981; border:1px solid rgba(16,185,129,.4); }
     .sr-pill.todo  { background:rgba(245,158,11,.15); color:#f59e0b; border:1px solid rgba(245,158,11,.4); }
@@ -1213,7 +1216,7 @@
 <footer class="app-footer">
   <span>© 2026 Explorer Publishing &amp; Distribution LLC · All rights reserved</span>
   <span id="cost-footer" style="font-size:10px;color:var(--muted);opacity:.65"></span>
-  <span class="app-footer-version">v5.3.0</span>
+  <span class="app-footer-version">v5.4.0</span>
 </footer>
 
 <div class="toast" id="toast"></div>
@@ -1550,6 +1553,7 @@ function renderFileQueue() {
 // ══════════════════════════════════════════════
 async function extractText(file) {
   const ext = file.name.split('.').pop().toLowerCase();
+  docInfo.docFp = null;                                          // set below for a .docx: lets a review prove later that it is the same file
   if (ext==='txt') {
     const text = await file.text();
     populateDocInfo(text, null, null, null, 'txt', null);
@@ -1647,6 +1651,7 @@ async function extractText(file) {
     const text=raw.value.trim();
     const estPages=Math.max(1,Math.round(countWords(text)/280));
     populateDocInfo(text, estPages, imgCount||null, tableCount, 'docx', paraCount);
+    if (ext==='docx' && typeof DA!=='undefined') { try { docInfo.docFp = await DA.fingerprint(new Uint8Array(buf)); } catch(_) { docInfo.docFp = null; } }
     return text;
   }
   if (ext==='idml') {
@@ -4970,11 +4975,11 @@ function srShareData() {
   const S = SRS || {};
   if (S.kind === 'copy') {                                         // a fresh copy of a review that was already sent
     const p = S.payload || {};
-    return { r: null, di: { filename: p.title, pages: p.pages, wordCount: p.wordCount, language: p.language }, all: p.issues || [], done: [], tc: p.kind === 'translation' };
+    return { r: null, di: { filename: p.title, pages: p.pages, wordCount: p.wordCount, language: p.language, docFp: (p.doc && p.doc.fp) || null, docName: (p.doc && p.doc.name) || '' }, all: p.issues || [], done: [], tc: p.kind === 'translation' };
   }
   if (S.kind === 'translation') {
     const r = lastTC, all = r.issues.slice();                      // everything, style notes included: the sender chooses below
-    return { r, di: { filename: 'Translation check: ' + r.target.name, pages: r.target.pages, wordCount: r.target.words, language: r.target.lang }, all, done: all.filter((e) => ['false', 'fixed'].includes(tcState(e))), tc: true };
+    return { r, di: { filename: 'Translation check: ' + r.target.name, pages: r.target.pages, wordCount: r.target.words, language: r.target.lang, docFp: r.target.fp || null, docName: r.target.name }, all, done: all.filter((e) => ['false', 'fixed'].includes(tcState(e))), tc: true };
   }
   const r = lastReport, di = r._docInfo || docInfo, all = r.errors || [];
   return { r, di, all, done: all.filter((e) => ['false', 'fixed'].includes(errorTriageState[e.id])), tc: false };
@@ -5003,7 +5008,8 @@ function srShareStep1() {
   }
   const { di, all, done, tc } = srShareData();
   const present = SR_SEV_ORDER.filter((k) => all.some((e) => srSevKey(e) === k));
-  if (!SRS.sev) SRS.sev = new Set(present.filter((k) => k !== 'Note'));          // everything except style notes
+  const noisy = !!(SRS.kind === 'copy' ? (SRS.payload && SRS.payload.strict === 'all') : (srShareData().r && srShareData().r.strict === 'all'));        // a check run at "Everything": most Minor findings are wording suggestions
+  if (!SRS.sev) SRS.sev = new Set(present.filter((k) => k !== 'Note' && !(noisy && k === 'Minor')));          // everything except style notes (and, when noisy, Minor)
   if (SRS.skipDone == null) SRS.skipDone = done.length > 0;
   if (!SRS.title) SRS.title = di.filename || 'Document review';
   const row = (k) => '<label class="sr-opt"><input type="checkbox" data-sev="' + k + '"' + (SRS.sev.has(k) ? ' checked' : '') + ' onchange="srToggleSev(\'' + k + '\',this.checked)"><div><b><span class="rv-dot" style="background:' + SR_SEV_COLORS[k] + '"></span>' + esc(SR_SEV_LABEL[k] || k) + ' <span style="font-weight:500;color:var(--muted)">(' + all.filter((e) => srSevKey(e) === k).length + ')</span></b><span>' + esc(SR_SEV_HELP[k] || '') + '</span></div></label>';
@@ -5011,6 +5017,7 @@ function srShareStep1() {
     (SRS.kind === 'copy' ? '<div class="sr-check" style="margin-bottom:12px"><span>&#9432;</span><span>This sends a <b>fresh copy</b> of the review with a new link and password, for example to a different reviewer. Answers already given are not carried over.</span></div>' : '') +
     '<div class="sr-field"><label>Which findings should the reviewer get?</label>' + present.map(row).join('') +
     '<div class="sr-quick">Quick choice:<a onclick="srSevPreset(\'everything\')">Everything</a>&middot;<a onclick="srSevPreset(\'serious\')">Only the most serious</a></div>' +
+    (noisy ? '<div class="sr-check warn" style="margin:8px 0"><span>!</span><span><b>Minor is not ticked.</b><small>This check was run at "Everything", so most Minor findings are wording suggestions. Translators reject most of them and lose time. Tick Minor only if you want them answered too.</small></span></div>' : '') +
     (done.length && SRS.kind !== 'copy' ? '<label class="sr-opt"><input type="checkbox"' + (SRS.skipDone ? ' checked' : '') + ' onchange="SRS.skipDone=this.checked;srPaintTotal()"><div><b>Leave out findings I already dealt with <span style="font-weight:500;color:var(--muted)">(' + done.length + ')</span></b><span>Those you marked as fixed or as not an issue.</span></div></label>' : '') +
     '<div class="sr-total" id="sr-total"></div>' +
     '<p class="sr-hint">The reviewer can filter by severity and type on their page, so a long list is fine: they can start with the serious ones.</p></div>' +
@@ -5045,6 +5052,8 @@ async function srCreateShare() {
     v: 1, kind: tc ? 'translation' : 'proofread', title: (SRS.title || '').trim() || di.filename || 'Document review',
     language: language || di.language || '', sourceLanguage: srcLang || undefined, pages: di.pages || null, wordCount: di.wordCount || null,
     createdBy: srGet('proof_user_name') || (SRU && SRU.name) || '', createdAt: new Date().toISOString(), note: (SRS.note || '').trim(), issues,
+    doc: di.docFp ? { name: di.docName || di.filename || '', fp: di.docFp } : undefined,          // fingerprint of the Word file that was checked (see docx-apply.js)
+    strict: tc ? ((r && r.strict) || (SRS.payload && SRS.payload.strict) || undefined) : undefined, literary: tc ? !!((r && r.literary) || (SRS.payload && SRS.payload.literary)) || undefined : undefined,          // how strict the check was: the reviewer page says so
   };
   const projectId = SRS.kind === 'copy' ? SRS.projectId : SRS.kind === 'translation' ? (lastTC && lastTC.projectId) : (lastReport && lastReport._projectId);
   try {
@@ -5228,7 +5237,7 @@ async function srRefresh(manual) {
 
 // ── Feedback viewer + exports for layout ───────────────────────────────
 let SRFB = null;
-const srFinal = (issue, it) => { const d = (it && it.d) || 'none'; return d === 'agree' ? issue.corrected : d === 'edit' ? (it.t != null ? it.t : issue.corrected) : null; };
+const srFinal = (issue, it) => { const d = (it && it.d) || 'none'; return d === 'agree' ? (issue.corrected ? issue.corrected : null) : d === 'edit' ? (it.t != null ? it.t : issue.corrected) : null; };      // agreeing with a finding that has no wording confirms the problem; it never means "delete this text"
 const srAppliedMap = (id) => ((SRL.find((x) => x.id === id) || {}).applied) || {};     // issue id -> { by, at } (shared by the team)
 const srAppliedSet = (id) => new Set(Object.keys(srAppliedMap(id)));
 function srCloseFeedback() { $sr('fb-modal').classList.remove('open'); SRFB = null; }
@@ -5272,21 +5281,93 @@ function srRenderFeedback() {
     '<div class="sr-hint" style="margin-top:4px">' + (names.length ? 'Reviewer: <b>' + esc(names.join(', ')) + '</b> · ' : '') + SR_STATUS[SRFB.status] + (SRFB.submittedAt ? ' ' + srDate(SRFB.submittedAt, true) : '') + '</div></div>' +
     '<button class="btn btn-secondary btn-sm" onclick="srCloseFeedback()">Close</button></div>' +
     '<div class="sr-tally"><div><b style="color:#10b981">' + c.agree + '</b>Agreed</div><div><b style="color:#f97316">' + c.disagree + '</b>Disagreed</div><div><b style="color:#3b82f6">' + c.edit + '</b>Edited</div><div><b>' + c.comment + '</b>With comments</div><div><b>' + c.none + '</b>No answer</div></div>' +
-    srFbNotice(SRFB.status, m) +
+    srFbNotice(SRFB.status, m) + (SRFB.apply ? srApplyPanel() : '') + (SRFB.apply ? '' :
     '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">' + chip('apply', 'To apply in layout', apply.length) + chip('disagree', 'Disagreed', c.disagree) + chip('comment', 'With comments', c.comment) + chip('none', 'No answer', c.none) + chip('all', 'All', rows.length) +
-    '<span style="flex:1"></span><button class="btn btn-primary btn-sm" onclick="srExportWord(\'apply\')">Apply-list (Word)</button><button class="btn btn-secondary btn-sm" onclick="srExportCsv(\'apply\')">Apply-list (CSV)</button><button class="btn btn-secondary btn-sm" onclick="srExportCsv(\'full\')">Full feedback (CSV)</button></div>' +
+    '<span style="flex:1"></span><button class="btn btn-primary btn-sm" onclick="srApplyStart()" title="Put the agreed and edited answers, and the reviewer&#39;s comments, into your original Word file">Apply to Word file</button><button class="btn btn-secondary btn-sm" onclick="srExportWord(\'apply\')">Apply-list (Word)</button><button class="btn btn-secondary btn-sm" onclick="srExportCsv(\'apply\')">Apply-list (CSV)</button><button class="btn btn-secondary btn-sm" onclick="srExportCsv(\'full\')">Full feedback (CSV)</button></div>' +
     (apply.length ? '<div class="sr-hint" style="margin:0 0 8px">Applied in layout: <b>' + doneN + ' of ' + apply.length + '</b>. Tick items off as the designer applies them. The ticks are shared with the whole team.</div>' : '') +
     '<div style="overflow:auto;max-height:56vh;border:1px solid var(--border);border-radius:10px"><table class="sr-fbtable"><thead><tr><th style="width:34px"></th><th>Where</th><th>Current text → what to use</th><th>Answer</th><th>Comment</th></tr></thead><tbody>' +
     (shown.length ? shown.map((r) => {
       const i = r.i, ap = applied.has(String(i.id)), where = i.loc || (i.page ? 'p.' + i.page : '');
       return '<tr class="' + (ap ? 'applied' : '') + '"><td>' + (r.fin != null ? '<input type="checkbox" ' + (ap ? 'checked' : '') + ' onchange="srToggleApplied(\'' + m.id + '\',' + JSON.stringify(i.id) + ',this.checked)" title="' + esc(ap && srAppliedMap(m.id)[i.id] ? 'Applied by ' + srAppliedMap(m.id)[i.id].by : 'Applied in layout') + '">' : '') + '</td>' +
         '<td style="white-space:nowrap"><b>#' + esc(i.id) + '</b><br><span style="color:var(--muted)">' + esc(where) + '</span><br><span style="color:var(--muted);font-size:11px">' + esc(i.type || '') + '</span></td>' +
-        '<td dir="auto">' + ctxCell(r) + '<br>' + (r.fin === '' ? '<span style="color:var(--muted)">&rarr; delete this text</span>' : r.fin != null ? '→ <mark class="c">' + esc(r.fin) + '</mark>' : '<span style="color:var(--muted)">→ keep as it is</span>') + '</td>' +
+        '<td dir="auto">' + ctxCell(r) + '<br>' + (r.fin === '' ? '<span style="color:var(--muted)">&rarr; delete this text</span>' : r.fin != null ? '→ <mark class="c">' + esc(r.fin) + '</mark>' : r.d === 'agree' ? '<span style="color:var(--muted)">→ agreed that this is a problem; no wording was suggested, so fix it by hand</span>' : '<span style="color:var(--muted)">→ keep as it is</span>') + '</td>' +
         '<td>' + decPill(r.d) + '</td><td dir="auto">' + esc(r.it.c || '') + '</td></tr>';
-    }).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:26px">Nothing in this view.</td></tr>') + '</tbody></table></div>' +
+    }).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:26px">Nothing in this view.</td></tr>') + '</tbody></table></div>') +
     '<div class="modal-actions" style="margin-top:14px">' + (SRFB.status === 'submitted' && srCanManage(m) ? '<button class="btn btn-secondary" onclick="srCloseFeedback();srManage(\'' + m.id + '\',\'reopen\')">Reopen for the reviewer</button>' : '') +
     (SRFB.status === 'revoked' && srCanManage(m) ? '<button class="btn btn-secondary" onclick="srCloseFeedback();srManage(\'' + m.id + '\',\'restore\')">Restore link</button>' : '') +
     '<button class="btn btn-secondary" onclick="srCloseFeedback();srShareAgain(\'' + m.id + '\')">Share again (new link)</button><button class="btn btn-primary" onclick="srCloseFeedback()">Done</button></div>';
+}
+// ── Apply the reviewer's answers to the ORIGINAL Word file (tracked changes + comments; engine in docx-apply.js) ──
+function srApplyItems() {
+  return srRows().map((r) => ({ id: r.i.id, type: r.i.type || '', severity: r.i.severity || '', loc: r.i.loc || (r.i.page ? 'p.' + r.i.page : ''), page: r.i.page || null,
+    context: r.i.context || '', original: r.i.original || '', corrected: r.i.corrected || '', insert: !!r.i.insert, decision: r.d, final: r.fin, comment: r.it.c || '' }));
+}
+function srApplyStart() {
+  const names = (SRFB.decisions && (SRFB.decisions.reviewers || (SRFB.decisions.reviewer ? [SRFB.decisions.reviewer] : []))) || [];
+  SRFB.apply = { step: 'options', author: names.join(', ') || 'Reviewer', clean: true, hand: true };
+  srRenderFeedback();
+}
+function srApplyClose() { if (SRFB) { SRFB.apply = null; srRenderFeedback(); } }
+function srApplyChoose() {
+  const A = SRFB.apply; A.author = ($sr('apply-author').value || '').trim() || 'Reviewer'; A.clean = $sr('apply-clean').checked; A.hand = $sr('apply-hand').checked;
+  const f = $sr('fb-docx'); f.value = ''; f.click();
+}
+async function srApplyPick(inp) {
+  const f = inp.files && inp.files[0], A = SRFB && SRFB.apply; if (!f || !A) return;
+  if (!/\.docx$/i.test(f.name)) { A.step = 'error'; A.msg = 'Please choose the Word file (.docx) that was checked. ' + (/\.doc$/i.test(f.name) ? 'An old .doc file must first be saved as .docx in Word.' : 'Other kinds of file are not supported yet.'); srRenderFeedback(); return; }
+  A.step = 'working'; A.name = f.name; srRenderFeedback();
+  try {
+    const u8 = new Uint8Array(await f.arrayBuffer()), now = await DA.fingerprint(u8), saved = SRFB.payload.doc && SRFB.payload.doc.fp;
+    const res = await DA.run(u8, srApplyItems(), { author: A.author, date: SRFB.submittedAt, clean: A.clean, manualComments: A.hand });
+    if (!SRFB || SRFB.apply !== A) return;                                 // closed meanwhile
+    A.fp = DA.compareFingerprint(saved, now, SRFB.payload.wordCount); A.now = now; A.res = res; A.step = 'done'; A.force = false; A.base = f.name.replace(/\.docx$/i, '');
+  } catch (e) { A.step = 'error'; A.msg = (e && e.message) || String(e); }
+  if (SRFB && SRFB.apply === A) srRenderFeedback();
+}
+function srApplyForce() { SRFB.apply.force = true; srRenderFeedback(); }
+function srApplyDownload(kind) {
+  const A = SRFB.apply, res = A && A.res; if (!res) return;
+  if (kind === 'csv') { dlBlob(new Blob([String.fromCharCode(0xFEFF) + res.csv], { type: 'text/csv;charset=utf-8' }), A.base + '-apply-report.csv'); return; }
+  const u8 = res.files[kind]; if (!u8) return;
+  dlBlob(new Blob([u8], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }), A.base + (kind === 'tracked' ? '-reviewed.docx' : '-clean.docx'));
+  toast(kind === 'tracked' ? 'Reviewed Word file downloaded. In Word: Review > Accept > Accept All Changes.' : 'Clean copy downloaded');
+}
+function srApplyPanel() {
+  const A = SRFB.apply, box = (inner) => '<div class="sr-apply" style="border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin:6px 0 12px;background:var(--sf2)">' +
+    '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px"><b style="font-size:15px">Apply the answers to your Word file</b><span style="flex:1"></span><button class="btn btn-secondary btn-sm" onclick="srApplyClose()">Back to the list</button></div>' + inner + '</div>';
+  if (A.step === 'options') return box(
+    '<div class="sr-hint" style="margin:0 0 12px">Choose the <b>same Word file that was checked</b>. It is opened on your computer only and never uploaded. You get a copy in which every <b>agreed or edited</b> item is a tracked change (in Word: Review &gt; Accept &gt; Accept All Changes) and every <b>reviewer comment</b> is a Word comment. Anything that cannot be placed with certainty is left alone and listed for you.</div>' +
+    '<div class="sr-field"><label for="apply-author">Name shown on the changes and comments</label><input class="sr-input" id="apply-author" value="' + esc(A.author) + '"></div>' +
+    '<label class="sr-opt"><input type="checkbox" id="apply-clean"' + (A.clean ? ' checked' : '') + '><span>Also give me a clean copy with every change already accepted</span></label>' +
+    '<label class="sr-opt"><input type="checkbox" id="apply-hand"' + (A.hand ? ' checked' : '') + '><span>Add a &ldquo;do by hand&rdquo; comment in Word for items that could not be placed automatically</span></label>' +
+    '<div style="margin-top:12px"><button class="btn btn-primary" onclick="srApplyChoose()">Choose the Word file&hellip;</button></div>' +
+    '<input type="file" id="fb-docx" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden onchange="srApplyPick(this)">');
+  if (A.step === 'working') return box('<div class="sr-empty" style="padding:18px 0"><h3>Reading ' + esc(A.name) + '&hellip;</h3><p>Placing the answers and checking the result. This takes a few seconds.</p></div>');
+  if (A.step === 'error') return box('<div class="sr-check bad"><span>&#10007;</span><span><b>The file could not be used.</b><small>' + esc(A.msg) + '</small></span></div><div style="margin-top:10px"><button class="btn btn-secondary btn-sm" onclick="SRFB.apply.step=\'options\';srRenderFeedback()">Try another file</button></div>');
+  const res = A.res, t = res.totals, g = res.gate, f = A.fp, now = A.now, sd = SRFB.payload.doc;
+  const exact = f.level === 'exact', blocked = !res.receipt.ok, doubt = f.same === false || (!exact && !g.ok), allow = !blocked && (!doubt || A.force);      // a proven-identical file needs no further proof; otherwise the words must be found
+  const line = (cls, icon, txt) => '<div class="sr-check ' + cls + '"><span>' + icon + '</span><span>' + txt + '</span></div>';
+  const checks = '<div class="sr-checks" style="margin:8px 0 12px">' +
+    line('', '&#9432;', 'File: <b>' + esc(A.name) + '</b> &middot; ' + now.n.toLocaleString() + ' paragraphs &middot; ' + now.words.toLocaleString() + ' words') +
+    line(f.same === true ? 'ok' : f.same === false ? 'bad' : 'warn', f.same === true ? '&#10003;' : f.same === false ? '&#10007;' : '!', esc(f.text)) +
+    (g.quotes ? line(g.found === g.quotes ? 'ok' : (g.ok || exact ? 'warn' : 'bad'), g.found === g.quotes ? '&#10003;' : (g.ok || exact ? '!' : '&#10007;'),
+      g.found === g.quotes ? 'The exact words of <b>all ' + g.quotes + '</b> findings were found in this file.' : g.ok || exact ? 'The exact words of <b>' + g.found + ' of ' + g.quotes + '</b> findings were found in this file. The others are listed below.' : 'Only <b>' + g.found + ' of ' + g.quotes + '</b> findings were found in this file. It looks like a different version of the document.') : line('warn', '!', 'The findings carry no exact words to look for.')) +
+    (sd && sd.name && A.name.toLowerCase() !== String(sd.name).toLowerCase() ? line('warn', '!', 'The checked file was called <b>' + esc(sd.name) + '</b>; this one is <b>' + esc(A.name) + '</b>. That is fine if it is the same document.') : '') + '</div>';
+  const tile = (n, label, color) => '<div><b' + (color ? ' style="color:' + color + '"' : '') + '>' + n + '</b>' + label + '</div>';
+  const tally = '<div class="sr-tally">' + tile(t.applied + t.already, 'Applied in Word', '#10b981') + tile(res.counts.comments, 'Comments added') + tile(t.manual, 'Need you', t.manual ? '#f97316' : '') + tile(t.kept, 'Left as they are') + '</div>';
+  const need = res.ledger.filter((l) => l.outcome === 'manual');
+  const needHtml = need.length ? '<div style="margin:10px 0 4px;font-weight:700">Please do these ' + need.length + ' by hand</div><div style="overflow:auto;max-height:200px;border:1px solid var(--border);border-radius:10px"><table class="sr-fbtable"><tbody>' +
+    need.map((l) => '<tr><td style="white-space:nowrap"><b>#' + esc(l.id) + '</b><br><span style="color:var(--muted)">' + esc(l.loc || (l.page ? 'p.' + l.page : '')) + '</span></td><td dir="auto">' + (l.use !== '' || l.original ? (l.original ? '&ldquo;' + esc(l.original) + '&rdquo; ' : '') + '&rarr; <mark class="c">' + esc(l.use) + '</mark><br>' : '') + (l.comment ? '<span style="color:var(--muted)">Comment: ' + esc(l.comment) + '</span><br>' : '') + '<span style="color:var(--muted)">Why: ' + esc(l.detail) + (l.handNote ? ' (a &ldquo;do by hand&rdquo; comment was added in Word)' : '') + '</span></td></tr>').join('') + '</tbody></table></div>' : '';
+  const failed = res.receipt.checks.filter((x) => !x.ok);
+  const receipt = '<details style="margin:12px 0"' + (blocked ? ' open' : '') + '><summary style="cursor:pointer;font-weight:700;color:' + (blocked ? '#f87171' : 'var(--text)') + '">Safety checks: ' + (blocked ? failed.length + ' failed' : 'all ' + res.receipt.checks.length + ' passed') + '</summary><ul style="margin:8px 0 0 18px;font-size:12.5px;line-height:1.7">' +
+    res.receipt.checks.map((x) => '<li style="color:' + (x.ok ? 'inherit' : '#f87171') + '">' + (x.ok ? '&#10003; ' : '&#10007; ') + esc(x.name) + (x.detail ? ' <span style="color:var(--muted)">(' + esc(x.detail) + ')</span>' : '') + '</li>').join('') + '</ul></details>';
+  let act = '';
+  if (blocked) act = line('bad', '&#10007;', '<b>The result did not pass its own checks, so nothing is offered for download.</b><small>Please tell the person who looks after this tool. Your original file was not changed.</small>');
+  else if (!res.files.tracked) act = '<div class="sr-hint">There is nothing to change in the Word file: no answer to apply and no comment to add.</div><div style="margin-top:8px"><button class="btn btn-secondary btn-sm" onclick="srApplyDownload(\'csv\')">Download the report (CSV)</button></div>';
+  else if (!allow) act = line('warn', '!', '<b>This does not look like exactly the file that was checked.</b><small>Applying answers to another version can place changes where they do not belong. Only continue if you know why the file differs.</small>') + '<div style="margin-top:8px"><button class="btn btn-secondary btn-sm" onclick="srApplyForce()">Use this file anyway</button> <button class="btn btn-secondary btn-sm" onclick="SRFB.apply.step=\'options\';srRenderFeedback()">Choose another file</button></div>';
+  else act = '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" onclick="srApplyDownload(\'tracked\')">Download the reviewed Word file</button>' + (res.files.clean ? '<button class="btn btn-secondary" onclick="srApplyDownload(\'clean\')">Download the clean copy</button>' : '') + '<button class="btn btn-secondary" onclick="srApplyDownload(\'csv\')">Download the report (CSV)</button></div>' +
+    '<div class="sr-hint">In Word open the reviewed file and choose <b>Review &gt; Accept &gt; Accept All Changes</b>, or go through the changes one by one. Reviewer comments appear in the margin. The report lists what happened to every finding.</div>';
+  return box(checks + tally + receipt + needHtml + '<div style="margin-top:12px">' + act + '</div>');
 }
 async function srToggleApplied(id, issueId, on) {
   const m = SRL.find((x) => x.id === id); if (!m) return;
@@ -5846,7 +5927,7 @@ async function tcLoadTarget() {
   const paras = wp ? TC.parasFromPages(wp.pageTexts) : paged ? TC.parasFromPages(docInfo.pageTexts) : TC.parasFromText(lastExtractedText);
   if (!paras.length) { toast('No text found in the translation.', 'err'); return null; }
   const st = TC.docStats(paras);
-  return { name: docInfo.filename || 'Pasted text', ext: docInfo.ext, paras, words: st.words, chars: st.chars, pages: wp ? wp.pages : paged ? docInfo.pages : null, pageSource: wp ? 'word' : paged ? 'file' : null,
+  return { name: docInfo.filename || 'Pasted text', ext: docInfo.ext, paras, words: st.words, chars: st.chars, pages: wp ? wp.pages : paged ? docInfo.pages : null, pageSource: wp ? 'word' : paged ? 'file' : null, docFp: docInfo.docFp || null,
            lang: tcLangName('language', docInfo.language) || docInfo.language || '' };
 }
 
@@ -5882,9 +5963,11 @@ function tcStructureHtml(plan, d) {
 function tcSecondModelOptions(main) {
   const hasKey = (m) => !!aiKeyFor(m.startsWith('gpt-'));
   const provider = (m) => (m.startsWith('gpt-') ? 'OpenAI' : 'Anthropic');
-  const opts = ['<option value="">Same model (' + esc(modelDisplayName(main)) + ')</option>'];
-  [...document.getElementById('model').options].map((o) => o.value).filter((m) => m !== main && hasKey(m)).forEach((m) => {
-    opts.push('<option value="' + esc(m) + '">' + esc(modelDisplayName(m)) + (provider(m) !== provider(main) ? ' (both texts also go to ' + provider(m) + ')' : '') + '</option>');
+  const others = [...document.getElementById('model').options].map((o) => o.value).filter((m) => m !== main && hasKey(m));
+  const pick = others.find((m) => provider(m) !== provider(main)) || null;          // another company's model is the only truly independent second opinion: preselect it when a key is saved
+  const opts = ['<option value=""' + (pick ? '' : ' selected') + '>Same model (' + esc(modelDisplayName(main)) + '): not independent</option>'];
+  others.forEach((m) => {
+    opts.push('<option value="' + esc(m) + '"' + (m === pick ? ' selected' : '') + '>' + esc(modelDisplayName(m)) + (provider(m) !== provider(main) ? ' (both texts also go to ' + provider(m) + ')' : '') + '</option>');
   });
   return opts.join('');
 }
@@ -5910,7 +5993,8 @@ function tcRecalc() {
   document.getElementById('tc-est').innerHTML = (plan.windows.length ? '<b>' + plan.windows.length + ' parts</b> to check &middot; about ' + calls + ' model calls' + (sec ? ' (' + sec.calls + ' of them for the second look)' : '') + ' &middot; roughly ' + inTok.toLocaleString() + ' tokens in, ' + outTok.toLocaleString() + ' out<br>Estimated cost with <b>' + esc(modelDisplayName(model)) + '</b>' + (sec && sc.model2 ? ' + <b>' + esc(modelDisplayName(sc.model2)) + '</b>' : '') + ': <b>' + usd + '</b> &middot; time: ' + (mins < 1.5 ? 'about a minute' : 'about ' + Math.round(mins) + ' minutes') + '<br><span style="color:var(--muted)">Estimates only; long documents may take longer if your API key has a low rate limit (the portal slows down automatically).</span>' : '<span style="color:#f97316">No chapters match that list.</span>');
   document.getElementById('tc-go').disabled = !plan.windows.length;
 }
-function tcStrictPref() { try { const v = localStorage.getItem('proof_tc_strict'); return ['facts', 'close', 'all'].includes(v) ? v : 'facts'; } catch (_) { return 'facts'; } }
+function tcStrictHint() { const w = document.getElementById('tc-all-warn'), v = (document.querySelector('input[name="tc-strict"]:checked') || {}).value; if (w) w.style.display = v === 'all' ? 'flex' : 'none'; }
+function tcStrictPref() { return 'facts'; }          // never remembered: "Everything" used to stick from one run to the next and flooded a literary review with wording suggestions
 function tcShowConfirm(tgt) {
   const d = tcDocs(tgt); TC_PENDING = { tgt, d, plan: null, only: null };
   const plan = TC.planWindows(d.srcDoc, d.tgtDoc, {});
@@ -5927,9 +6011,11 @@ function tcShowConfirm(tgt) {
     '<div class="sr-field" style="margin-top:12px"><label>How strict should the check be?</label>' +
       [['facts', 'Facts only', ' (recommended)', 'Reports changed or missing facts, names, numbers and claims. Ignores rewording, condensing, pull quotes, repeated phrases and different paragraph breaks. Best for books, speeches and letters.'],
        ['close', 'Close translation', '', 'Also reports changes of meaning and lost qualifiers. For legal, technical or official texts.'],
-       ['all', 'Everything', '', 'Also reports small differences. Expect many findings.']].map((o) => '<label class="sr-opt" style="display:flex;gap:9px;align-items:flex-start;cursor:pointer;margin:5px 0"><input type="radio" name="tc-strict" value="' + o[0] + '"' + (tcStrictPref() === o[0] ? ' checked' : '') + ' style="margin-top:3px;width:auto"><span><b>' + o[1] + '</b>' + o[2] + '<br><span class="sr-hint" style="margin:0;font-weight:400">' + o[3] + '</span></span></label>').join('') + '</div>' +
+       ['all', 'Everything', '', 'Also reports small differences. Expect many findings.']].map((o) => '<label class="sr-opt" style="display:flex;gap:9px;align-items:flex-start;cursor:pointer;margin:5px 0"><input type="radio" name="tc-strict" value="' + o[0] + '"' + (tcStrictPref() === o[0] ? ' checked' : '') + ' onchange="tcStrictHint()" style="margin-top:3px;width:auto"><span><b>' + o[1] + '</b>' + o[2] + '<br><span class="sr-hint" style="margin:0;font-weight:400">' + o[3] + '</span></span></label>').join('') + '</div>' +
+    '<div id="tc-all-warn" class="sr-check warn" style="display:none;margin:4px 0 8px"><span>!</span><span><b>"Everything" lists every small difference.</b><small>For a book, speech or letter most of them are normal translation choices that the translator will reject. Facts only is the better start; you can always re-run with more detail.</small></span></div>' +
+    '<div class="sr-field" style="margin-top:2px"><label class="sr-opt" style="display:flex;gap:9px;align-items:flex-start;cursor:pointer"><input type="checkbox" id="tc-literary" checked style="margin-top:3px"><span><b>This is a literary text (book, speech, letters, poems)</b><br><span style="color:var(--muted);font-weight:400;font-size:12px;line-height:1.5">Tells the AI that synonyms, avoiding a repeated word, adding a word the context implies and other deliberate choices of the translator are not errors, and that it must not suggest wordings that repeat a word or copy the source structure. Untick for legal or technical texts.</span></span></label></div>' +
     '<div class="sr-field" style="margin-top:2px"><label class="sr-opt" style="display:flex;gap:9px;align-items:flex-start;cursor:pointer"><input type="checkbox" id="tc-second" checked onchange="tcRecalc()" style="margin-top:3px"><span><b>Second look at meaning (recommended)</b><br><span style="color:var(--muted);font-weight:400;font-size:12px;line-height:1.5">Every matched passage is judged a second time, looking only at meaning: who acts, the direction of a duty or trust, advising versus deciding, a lost qualifier, an unclear reference. It finds problems the first check misses and confirms the ones it found. It costs about as much again.</span></span></label>' +
-    '<div id="tc-second-model-wrap" style="margin:6px 0 0 26px"><label style="font-size:11px;color:var(--muted)">Use this model for the second look</label><select class="sr-input" id="tc-model2" onchange="tcRecalc()">' + tcSecondModelOptions(document.getElementById('model').value) + '</select><div class="sr-hint" style="margin-top:3px">A different model often notices different things. Choosing one from another company sends both texts to that company as well.</div></div></div>' +
+    '<div id="tc-second-model-wrap" style="margin:6px 0 0 26px"><label style="font-size:11px;color:var(--muted)">Use this model for the second look</label><select class="sr-input" id="tc-model2" onchange="tcRecalc()">' + tcSecondModelOptions(document.getElementById('model').value) + '</select><div class="sr-hint" style="margin-top:3px">A model from another company is an independent second opinion. The same model looking twice confirms nothing, so its small (Minor) findings are then kept out of the main list. Choosing another company sends both texts to that company as well.</div></div></div>' +
     '<div id="tc-est" class="sr-hint" style="font-size:12.5px;line-height:1.7;margin-top:2px"></div>' +
     '<p class="sr-hint" id="tc-send-note">Both texts are sent to ' + (document.getElementById('model').value.startsWith('gpt-') ? 'OpenAI' : 'Anthropic') + ' for analysis, exactly like proofreading. Every paragraph on both sides must be accounted for; anything that cannot be matched is reported, never skipped.</p>' +
     '<div class="modal-actions"><button class="btn btn-secondary" onclick="tcCancelConfirm()">Cancel</button><button class="btn btn-primary" id="tc-go" onclick="tcConfirmStart()">Start check</button></div>';
@@ -6012,11 +6098,11 @@ async function tcCall(system, user, meta) {
 async function tcConfirmStart() {
   const P = TC_PENDING; if (!P || !P.plan || !P.plan.windows.length) return;
   const model = document.getElementById('model').value, notes = instrText(), strict = (document.querySelector('input[name="tc-strict"]:checked') || {}).value || 'facts';
-  try { localStorage.setItem('proof_tc_strict', strict); } catch (_) {}
   const gl = getGlossary(); const extra = [notes, gl.length ? 'Terms and names that must stay exactly as written in the translation (never flag them): ' + gl.join(', ') : ''].filter(Boolean).join('\n');
   TC_BUDGET.tpm = window.TC_TEST_TPM || 45000; TC_BUDGET.ok = 0; TC_BUDGET.log = [];
   const sc = tcSecondChoice();
-  TC_RUN = { plan: P.plan, srcDoc: P.d.srcDoc, tgtDoc: P.d.tgtDoc, tgtName: P.tgt.name, srcName: TCS.name, srcLang: P.d.srcLang, tgtLang: P.d.tgtLang, model, extra, notes, strict, only: P.only, stop: false, error: null, tracked: 0, second: sc.second, model2: sc.second ? sc.model2 : null,
+  const literary = !!(document.getElementById('tc-literary') || {}).checked;
+  TC_RUN = { plan: P.plan, srcDoc: P.d.srcDoc, tgtDoc: P.d.tgtDoc, tgtName: P.tgt.name, tgtFp: P.tgt.docFp || null, srcName: TCS.name, srcLang: P.d.srcLang, tgtLang: P.d.tgtLang, model, extra, notes, strict, literary, only: P.only, stop: false, error: null, tracked: 0, second: sc.second, model2: sc.second ? sc.model2 : null,
              projectId: crypto.randomUUID(),            // its own Project in the shared list; Continue keeps it
              state: { done: {}, results: [], inTok: 0, outTok: 0, calls: 0, splits: 0, verifyCalls: 0 }, startedAt: Date.now() };
   tcCancelConfirm();
@@ -6028,7 +6114,7 @@ async function tcExecute() {
   setLoading(true); document.getElementById('loading-stop').style.display = 'inline-block'; document.getElementById('loading-stop').textContent = 'Stop and show results so far';
   const t0 = Date.now(), doneAtStart = Object.keys(R.state.done).length;
   const ctx = {
-    callModel: tcCall, callModelSecond: tcCall, second: !!R.second, srcLang: R.srcLang, tgtLang: R.tgtLang, extra: R.extra, strict: R.strict, shouldStop: () => R.stop,
+    callModel: tcCall, callModelSecond: tcCall, second: !!R.second, secondSameModel: !R.model2 || R.model2 === R.model, literary: !!R.literary, srcLang: R.srcLang, tgtLang: R.tgtLang, extra: R.extra, strict: R.strict, shouldStop: () => R.stop,
     onProgress: (p) => {
       const n = Object.keys(R.state.done).length - doneAtStart, per = n > 0 ? (Date.now() - t0) / n : 0, left = per ? Math.round(per * (p.total - p.index) / 1000) : 0;
       tcTitle('Checking ' + p.win.label + '  (' + (p.index + 1) + ' of ' + p.total + ')');
@@ -6052,10 +6138,11 @@ function tcFinalize() {
   const rep = TC.buildReport(R.plan, R.srcDoc, R.tgtDoc, R.state, {});
   const sIn = R.state.sInTok || 0, sOut = R.state.sOutTok || 0;                  // the second look may use another model (another price)
   const cost = calcCost(R.model, R.state.inTok - sIn, R.state.outTok - sOut) + calcCost(R.model2 || R.model, sIn, sOut); trackCost(cost - R.tracked); R.tracked = cost;
-  const triage = lastTC && lastTC.triage ? lastTC.triage : {};
+  const sameRun = !!(lastTC && lastTC.triage && String(lastTC.projectId) === String(R.projectId));        // only a CONTINUED run keeps its marks; a new check starts clean (marks from the report on screen used to travel into it)
+  const triage = sameRun ? lastTC.triage : {};
   Object.assign(rep, {
-    source: { name: R.srcName, lang: R.srcLang, words: R.srcDoc.words, paras: R.srcDoc.paras.length }, target: { name: R.tgtName, lang: R.tgtLang, words: R.tgtDoc.words, paras: R.tgtDoc.paras.length, pages: R.tgtDoc.pages || null },
-    instructions: R.notes || '', strict: R.strict || 'facts', projectId: R.projectId,                     // never the previous report's id: that made every new check overwrite the last one in Projects
+    source: { name: R.srcName, lang: R.srcLang, words: R.srcDoc.words, paras: R.srcDoc.paras.length }, target: { name: R.tgtName, lang: R.tgtLang, words: R.tgtDoc.words, paras: R.tgtDoc.paras.length, pages: R.tgtDoc.pages || null, fp: R.tgtFp || null },
+    instructions: R.notes || '', strict: R.strict || 'facts', literary: !!R.literary, projectId: R.projectId,                     // never the previous report's id: that made every new check overwrite the last one in Projects
     model: R.model, model2: R.second ? (R.model2 || R.model) : null, cost, inTok: R.state.inTok, outTok: R.state.outTok, only: R.only || null, triage, finished: !!R.state.finished,
     stopped: !!R.state.stopped, error: R.error ? String(R.error.message || R.error) : '',
   });

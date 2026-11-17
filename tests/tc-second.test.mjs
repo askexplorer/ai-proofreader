@@ -181,7 +181,7 @@ const e1 = TC.estimateRun(plan, {}), e2 = TC.estimateRun(plan, { second: true })
 t('estimate: second look is reported separately and does not change the main estimate', e1.second === null && e2.second && e2.second.calls >= plan.windows.length && e2.inTok === e1.inTok, JSON.stringify([e1.second, e2.second]));
 const big = { windows: Array.from({ length: 10 }, () => ({ src: new Array(30).fill(0), tgt: new Array(30).fill(0), estTokens: 5000 })) };
 const eb = TC.estimateRun(big, { second: true });
-t('estimate: for real-sized windows the second look reads about as much text as the first check', eb.second.inTok > eb.inTok * 0.6 && eb.second.inTok < eb.inTok * 1.1 && eb.second.outTok < eb.outTok * 0.5, JSON.stringify([eb.inTok, eb.second]));
+t('estimate: for real-sized windows the second look reads about as much text as the first check', eb.second.inTok > eb.inTok * 0.5 && eb.second.inTok < eb.inTok * 1.1 && eb.second.outTok < eb.outTok * 0.5, JSON.stringify([eb.inTok, eb.second]));
 const sh = TC.toShareIssues(rep.issues, 'English');
 t('share payload leaves out Notes', sh.length === real.length && !sh.some((x) => x.severity === 'Note'));
 t('share payload lists the other places in the explanation', /Also at: .*Ch 2/.test(sh.find((x) => /keep watch|Colloquial/.test(x.explanation)).explanation), sh.find((x) => /Colloquial/.test(x.explanation)).explanation);

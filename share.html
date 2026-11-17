@@ -402,7 +402,8 @@ function startReview(r) {
   if (p.createdBy) bits.push('<span>From ' + esc(p.createdBy) + '</span>');
   if (r.expires_at) bits.push('<span>Link valid until ' + new Date(r.expires_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) + '</span>');
   $('docbar').innerHTML = '<h1>' + esc(p.title || 'Document review') + '</h1><div class="meta">' + bits.join('') + '</div>' +
-    (p.note ? '<div class="note-box"><b>Note from the editor</b>' + esc(p.note) + '</div>' : '');
+    (p.note ? '<div class="note-box"><b>Note from the editor</b>' + esc(p.note) + '</div>' : '') +
+    (LEVEL_TEXT[p.strict] ? '<div class="note-box" style="background:var(--sf2);border-color:var(--border)"><b style="color:var(--muted)">About this list</b>' + esc(LEVEL_TEXT[p.strict]) + (p.literary ? ' The suggested wordings are only proposals: you know the language and the book, so use Disagree or Edit freely.' : '') + '</div>' : '');
   buildFilters();
   render();
   updateProgress();
@@ -501,7 +502,7 @@ function cardHtml(i) {
     (i.source && i.source.text ? '<div class="col src"><span class="cl">' + esc(i.source.label || 'Source') + '</span><div class="ctx" dir="auto">' + esc(i.source.text) + '</div></div>' : '') +
     (i.explanation ? '<p class="why"><b>Why:</b> ' + esc(i.explanation) + '</p>' : '') +
     '<div class="decide">' +
-    '<button class="dbtn agree" data-a="agree" ' + pressed('agree') + '>' + ICON.agree + ' Agree <small>use the suggestion</small></button>' +
+    '<button class="dbtn agree" data-a="agree" ' + pressed('agree') + '>' + ICON.agree + ' Agree <small>' + (i.corrected ? 'use the suggestion' : 'the problem is real') + '</small></button>' +
     '<button class="dbtn disagree" data-a="disagree" ' + pressed('disagree') + '>' + ICON.disagree + ' Disagree <small>keep as it is</small></button>' +
     '<button class="dbtn edit" data-a="edit" ' + pressed('edit') + '>' + ICON.edit + ' Edit <small>write your own fix</small></button>' +
     '<button class="cbtn' + (it.c ? ' has' : '') + '" data-a="comment">' + ICON.comment + (it.c ? ' Comment added' : ' Add a comment') + '</button></div>' +
@@ -531,6 +532,12 @@ function updateProgress() {
 
 // ── decisions ──
 function touch(id) { const it = D.items[id] || (D.items[id] = {}); it.at = Date.now(); D.updatedAt = it.at; return it; }
+// how strict the check was (set by the sender's check, shown so the reviewer knows what kind of list this is)
+const LEVEL_TEXT = {
+  facts: 'This list contains only content problems: facts, names, numbers or meaning that differ from the original, and text that is missing or added. Wording and style choices are deliberately not reported.',
+  close: 'This list contains changes of meaning, including lost qualifiers, and text that is missing or added. Wording and style choices are not reported.',
+  all: 'This list is exhaustive: it also contains small differences and wording suggestions. Please start with the Critical, Major and Query items; the Minor ones are optional.',
+};
 function setDecision(id, d) {
   const issue = ISSUES().find((x) => String(x.id) === String(id)); const it = touch(id);
   it.d = it.d === d ? null : d;                                    // click again = undo

@@ -78,7 +78,7 @@ ok(facts.rep.issues.every((x) => !/Ch \d/.test(x.tgtLoc + x.srcLoc)), 'a text wi
 ok(facts.rep.issues.some((x) => /¶|para/i.test(x.tgtLoc) || /\d/.test(x.tgtLoc)), 'locations still say which paragraph');
 const two = (t) => 'Chapter 1\n\n' + t + '\n\nChapter 2\n\n' + t + '\n\nChapter 3\n\n' + t;   // 3+ headings are needed before a text counts as having chapters
 const multi = await run('all', two(EN), two(DE));
-ok(multi.rep.issues.some((x) => /Ch 2/.test(x.tgtLoc)), 'a text with real chapters keeps its chapter labels');
+ok(multi.rep.issues.some((x) => /Ch 2/.test(x.tgtLoc) || (x.also || []).some((a) => /Ch 2/.test(a.tgtLoc))), 'a text with real chapters keeps its chapter labels (the three identical chapters share one finding with "also at")');
 
 // --- length outliers: far fewer, mild ones are only Notes
 {
