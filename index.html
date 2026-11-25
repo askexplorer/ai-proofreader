@@ -13,8 +13,8 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/docx@7.8.2/build/index.js" integrity="sha384-zjTqOObJTD6OT6CUn8mSpDY+crIiP0cX457OjcZosSATiUFbmdXa9KRScjfLVxFH" crossorigin="anonymous"></script>
   <script src="share-core.js?v=5.3.0"></script>
-  <script src="tc-core.js?v=5.4.0"></script>
-  <script src="docx-apply.js?v=5.4.0"></script>
+  <script src="tc-core.js?v=5.4.1"></script>
+  <script src="docx-apply.js?v=5.4.1"></script>
   <script>try{document.documentElement.dataset.theme=localStorage.getItem('proof_theme')||'light'}catch(e){document.documentElement.dataset.theme='light'}</script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1216,7 +1216,7 @@
 <footer class="app-footer">
   <span>© 2026 Explorer Publishing &amp; Distribution LLC · All rights reserved</span>
   <span id="cost-footer" style="font-size:10px;color:var(--muted);opacity:.65"></span>
-  <span class="app-footer-version">v5.4.0</span>
+  <span class="app-footer-version">v5.4.1</span>
 </footer>
 
 <div class="toast" id="toast"></div>
@@ -5354,10 +5354,13 @@ function srApplyPanel() {
       g.found === g.quotes ? 'The exact words of <b>all ' + g.quotes + '</b> findings were found in this file.' : g.ok || exact ? 'The exact words of <b>' + g.found + ' of ' + g.quotes + '</b> findings were found in this file. The others are listed below.' : 'Only <b>' + g.found + ' of ' + g.quotes + '</b> findings were found in this file. It looks like a different version of the document.') : line('warn', '!', 'The findings carry no exact words to look for.')) +
     (sd && sd.name && A.name.toLowerCase() !== String(sd.name).toLowerCase() ? line('warn', '!', 'The checked file was called <b>' + esc(sd.name) + '</b>; this one is <b>' + esc(A.name) + '</b>. That is fine if it is the same document.') : '') + '</div>';
   const tile = (n, label, color) => '<div><b' + (color ? ' style="color:' + color + '"' : '') + '>' + n + '</b>' + label + '</div>';
-  const tally = '<div class="sr-tally">' + tile(t.applied + t.already, 'Applied in Word', '#10b981') + tile(res.counts.comments, 'Comments added') + tile(t.manual, 'Need you', t.manual ? '#f97316' : '') + tile(t.kept, 'Left as they are') + '</div>';
+  const flagged = res.ledger.filter((l) => l.flag);
+  const tally = '<div class="sr-tally">' + tile(t.applied + t.already, 'Applied in Word', '#10b981') + tile(res.counts.comments, 'Comments added') + tile(t.manual, 'Need you', t.manual ? '#f97316' : '') + tile(flagged.length, 'To check in Word', flagged.length ? '#d97706' : '') + tile(t.kept, 'Left as they are') + '</div>';
   const need = res.ledger.filter((l) => l.outcome === 'manual');
   const needHtml = need.length ? '<div style="margin:10px 0 4px;font-weight:700">Please do these ' + need.length + ' by hand</div><div style="overflow:auto;max-height:200px;border:1px solid var(--border);border-radius:10px"><table class="sr-fbtable"><tbody>' +
     need.map((l) => '<tr><td style="white-space:nowrap"><b>#' + esc(l.id) + '</b><br><span style="color:var(--muted)">' + esc(l.loc || (l.page ? 'p.' + l.page : '')) + '</span></td><td dir="auto">' + (l.use !== '' || l.original ? (l.original ? '&ldquo;' + esc(l.original) + '&rdquo; ' : '') + '&rarr; <mark class="c">' + esc(l.use) + '</mark><br>' : '') + (l.comment ? '<span style="color:var(--muted)">Comment: ' + esc(l.comment) + '</span><br>' : '') + '<span style="color:var(--muted)">Why: ' + esc(l.detail) + (l.handNote ? ' (a &ldquo;do by hand&rdquo; comment was added in Word)' : '') + '</span></td></tr>').join('') + '</tbody></table></div>' : '';
+  const checkHtml = flagged.length ? '<div style="margin:12px 0 4px;font-weight:700">Please look at these ' + flagged.length + ' changes in Word <span style="font-weight:400;color:var(--muted)">(each has a CHECK comment; reject the tracked change if it is wrong)</span></div><div style="overflow:auto;max-height:220px;border:1px solid var(--border);border-radius:10px"><table class="sr-fbtable"><tbody>' +
+    flagged.map((l) => '<tr><td style="white-space:nowrap"><b>#' + esc(l.id) + '</b><br><span style="color:var(--muted)">' + esc(l.loc || (l.page ? 'p.' + l.page : '')) + '</span></td><td dir="auto">' + (l.original ? '&ldquo;' + esc(l.original.slice(0, 160)) + '&rdquo; ' : '') + '&rarr; <mark class="c">' + esc(String(l.use).slice(0, 220)) + '</mark><br><span style="color:var(--muted)">Why check: ' + esc(l.flag) + '</span></td></tr>').join('') + '</tbody></table></div>' : '';
   const failed = res.receipt.checks.filter((x) => !x.ok);
   const receipt = '<details style="margin:12px 0"' + (blocked ? ' open' : '') + '><summary style="cursor:pointer;font-weight:700;color:' + (blocked ? '#f87171' : 'var(--text)') + '">Safety checks: ' + (blocked ? failed.length + ' failed' : 'all ' + res.receipt.checks.length + ' passed') + '</summary><ul style="margin:8px 0 0 18px;font-size:12.5px;line-height:1.7">' +
     res.receipt.checks.map((x) => '<li style="color:' + (x.ok ? 'inherit' : '#f87171') + '">' + (x.ok ? '&#10003; ' : '&#10007; ') + esc(x.name) + (x.detail ? ' <span style="color:var(--muted)">(' + esc(x.detail) + ')</span>' : '') + '</li>').join('') + '</ul></details>';
@@ -5366,8 +5369,8 @@ function srApplyPanel() {
   else if (!res.files.tracked) act = '<div class="sr-hint">There is nothing to change in the Word file: no answer to apply and no comment to add.</div><div style="margin-top:8px"><button class="btn btn-secondary btn-sm" onclick="srApplyDownload(\'csv\')">Download the report (CSV)</button></div>';
   else if (!allow) act = line('warn', '!', '<b>This does not look like exactly the file that was checked.</b><small>Applying answers to another version can place changes where they do not belong. Only continue if you know why the file differs.</small>') + '<div style="margin-top:8px"><button class="btn btn-secondary btn-sm" onclick="srApplyForce()">Use this file anyway</button> <button class="btn btn-secondary btn-sm" onclick="SRFB.apply.step=\'options\';srRenderFeedback()">Choose another file</button></div>';
   else act = '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" onclick="srApplyDownload(\'tracked\')">Download the reviewed Word file</button>' + (res.files.clean ? '<button class="btn btn-secondary" onclick="srApplyDownload(\'clean\')">Download the clean copy</button>' : '') + '<button class="btn btn-secondary" onclick="srApplyDownload(\'csv\')">Download the report (CSV)</button></div>' +
-    '<div class="sr-hint">In Word open the reviewed file and choose <b>Review &gt; Accept &gt; Accept All Changes</b>, or go through the changes one by one. Reviewer comments appear in the margin. The report lists what happened to every finding.</div>';
-  return box(checks + tally + receipt + needHtml + '<div style="margin-top:12px">' + act + '</div>');
+    '<div class="sr-hint">In Word open the reviewed file and choose <b>Review &gt; Accept &gt; Accept All Changes</b>, or go through the changes one by one. Reviewer comments appear in the margin, and changes marked CHECK deserve a second look. The report lists what happened to every finding.</div>';
+  return box(checks + tally + receipt + needHtml + checkHtml + '<div style="margin-top:12px">' + act + '</div>');
 }
 async function srToggleApplied(id, issueId, on) {
   const m = SRL.find((x) => x.id === id); if (!m) return;

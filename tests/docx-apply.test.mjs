@@ -9,7 +9,7 @@ import mammoth from 'mammoth';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 if (!globalThis.crypto) globalThis.crypto = (await import('node:crypto')).webcrypto;
-new Function(readFileSync(path.join(root, 'docx-apply.js'), 'utf8'))();
+new Function(readFileSync(process.env.DA_PATH || path.join(root, 'docx-apply.js'), 'utf8'))();
 const DA = globalThis.DA; DA.setZip(JSZip);
 let pass = 0, fail = 0;
 const ok = (c, n, x) => { if (c) pass++; else { fail++; console.log('FAIL  ' + n + (x ? '  ' + x : '')); } };
@@ -124,7 +124,7 @@ const ledgerOf = (res, id) => res.ledger.find((l) => l.id === id);
     P(R('Some '), '<w:ins w:id="50" w:author="Old" w:date="2025-01-01T00:00:00Z">' + R('new bit') + '</w:ins>', R(' text.')) + P(R('Keep '), '<w:del w:id="51" w:author="Old" w:date="2025-01-01T00:00:00Z"><w:r><w:delText>old </w:delText></w:r></w:del>', R('this.')) +
     P(R('The keeper climbed the stairs every evening before dusk.')) + P(R('Where the stairs end.'));
   const docx = await mkdocx(body);
-  const tab = it('Name: Harold', 'agree', 'Name: Harry', { context: 'Name: Harold' });
+  const tab = it('Name: Harold', 'agree', 'Name - Harold', { context: 'Name: Harold' });                       // the change itself crosses the tab (a tab is only a space to the checker, so changing Harold alone would be fine)
   const link = it('click here', 'agree', 'press here');
   const ins = it('new bit', 'agree', 'fresh bit');
   const del = it('Keep this.', 'agree', 'Hold that.');
@@ -270,6 +270,58 @@ const ledgerOf = (res, id) => res.ledger.find((l) => l.id === id);
   ok(t === 'Every child walks to school safe, calm, fearless and with all they need to be well.He came back early, tired.She waited.It ended early.', 'full stop: never doubled, never lost', t);
   ok(res.receipt.ok && /full stop that already follows/.test(ledgerOf(res, a.id).detail) && ledgerOf(res, c.id).outcome === 'already', 'full stop: the report says what happened and a no-op is "already as suggested"', JSON.stringify([ledgerOf(res, a.id).detail, ledgerOf(res, c.id).outcome]));
   ok(await text(res.files.tracked, 'rejected') === 'Every child walks to school safe, calm and without fear.He came home late, tired.She waited.It ended late.', 'full stop: rejecting gives the original');
+}
+
+// ------------------------------------------------------------------ 11d. the checker's form of the text: NFC and no zero-width marks (found with a real Hindi file: 242 characters differ under NFC)
+{
+  const E = 'é', EC = 'é';                                               // "e" + combining acute vs the composed e-acute (NFC)
+  const NN = 'ऩ', NNC = 'ऩ';                                             // Devanagari NA + nukta vs the composed letter (NFC)
+  const body = P(R('The Caf' + E + ' au lait is nice.')) + P(R('Start ' + NN + 'ab and the rest of this line.')) + P(R('A w​o​rd hidden inside.')) + P(R('Caf' + E + ' noir.'));
+  const docx = await mkdocx(body);
+  const a = it('Caf' + EC + ' au lait', 'edit', 'Caf' + EC + ' noir');                    // the finding is in NFC, the file is not
+  const b = it('Start ' + NNC + 'ab and', 'agree', 'Start ' + NNC + 'xy and');
+  const c = it('word hidden', 'edit', 'term hidden');                                     // zero-width marks inside the word
+  const d = it('Caf' + EC + ' noir.', 'edit', 'Caf' + EC + ' noir.');                      // differs from the file only in the form of one letter: nothing to change
+  const res = await run(docx, [a, b, c, d]);
+  const t = await text(res.files.tracked, 'accepted');
+  ok(res.receipt.ok && res.totals.applied === 3 && ledgerOf(res, d.id).outcome === 'already', 'NFC: findings written in NFC are found in a file that stores the letters decomposed', JSON.stringify(res.totals) + JSON.stringify(res.receipt.checks.filter((x) => !x.ok)));
+  ok(t.includes('The Caf' + E + ' noir is nice.') && t.includes('Start ' + NNC + 'xy and the rest') && t.includes('A term hidden inside.') && t.includes('Caf' + E + ' noir.'), 'NFC: only the words that change are touched (a replaced word carries the reviewer\'s characters); the file keeps its own characters elsewhere', JSON.stringify(t));
+  ok(res.gate.found === 4 && res.gate.ok, 'NFC: the right-file check counts them as found', JSON.stringify(res.gate));
+  // the reviewer's own characters (a zero-width non-joiner) go into the file untouched
+  const z = await run(await mkdocx(P(R('Say old now.'))), [it('old', 'edit', 'ne‌w')]);
+  ok((await text(z.files.tracked, 'accepted')) === 'Say ne‌w now.', 'NFC: zero-width marks the reviewer typed are kept in the new words');
+  // fingerprints of reviews made before the fix must still match
+  const fp = await DA.fingerprint(docx), oldFold = (s) => { let o = '', sp = false; for (const ch of s) { if (/[​‌‍⁠﻿­]/.test(ch)) continue; if (/\s/.test(ch)) { if (!sp) o += ' '; sp = true; continue; } sp = false; o += ch; } return o; };
+  const texts = ['The Caf' + E + ' au lait is nice.', 'Start ' + NN + 'ab and the rest of this line.', 'A word hidden inside.', 'Caf' + E + ' noir.'].map(oldFold);
+  const want = Array.from(new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(texts.join('\n'))))).map((x) => x.toString(16).padStart(2, '0')).join('');
+  ok(fp.sha === want && fp.n === 4, 'fingerprint: unchanged by the NFC fix, so fingerprints stored by v5.4.0 still match', fp.sha + ' vs ' + want);
+}
+
+// ------------------------------------------------------------------ 11e. changes that deserve a second look still go in, with a CHECK comment
+{
+  const body = P(R('The keeper climbed the old stone stairs every single evening before dusk.')) + P(R('The storm ended at dawn and the light went out slowly.')) + P(R('Signed, Harold.')) + P(R('Some text.')) + P(R('Signed, Harold.')) + P(R('More text.')) + P(R('Signed, Harold.')) + P(R('The sea was calm and the keeper slept well.'));
+  const docx = await mkdocx(body);
+  const big = it('The keeper climbed the old stone stairs every single evening before dusk.', 'agree', 'Nobody ever visited the harbour during winter months at all.');
+  const dup = it('', 'agree', 'The light went out slowly after the storm.', { type: 'Omission', insert: true, context: 'The storm ended at dawn and the light went out slowly.' });
+  const sig = it('', 'agree', 'A completely different missing paragraph about the harbour.', { type: 'Omission', insert: true, context: 'Signed, Harold.', page: null });
+  const fine = it('calm', 'agree', 'quiet');
+  const res = await run(docx, [big, dup, sig, fine]);
+  ok(res.receipt.ok && ledgerOf(res, big.id).outcome === 'applied' && /almost none of its words/.test(ledgerOf(res, big.id).flag), 'check: a change that shares almost no words with the passage is applied AND flagged', JSON.stringify(res.ledger.map((l) => [l.id, l.outcome, l.flag])));
+  ok(/already appears in the paragraph it follows/.test(ledgerOf(res, dup.id).flag), 'check: an inserted paragraph whose sentences already stand next to it is flagged as a possible duplicate', ledgerOf(res, dup.id).flag);
+  ok(ledgerOf(res, sig.id).outcome === 'manual' || /occurs 3 times/.test(ledgerOf(res, sig.id).flag), 'check: an insertion after a short line that repeats is flagged (or left alone when the place cannot be settled)', JSON.stringify(ledgerOf(res, sig.id)));
+  ok(ledgerOf(res, fine.id).outcome === 'applied' && !ledgerOf(res, fine.id).flag, 'check: an ordinary change carries no flag');
+  const cx = await (await JSZip.loadAsync(res.files.tracked)).file('word/comments.xml').async('string');
+  ok(/CHECK \(#\d+, Agreed\): it replaces this passage/.test(cx) && /CHECK \(#\d+, Agreed\): part of this text already appears/.test(cx), 'check: the CHECK comments are in the Word file', cx.slice(0, 160));
+  ok(res.csv.split('\r\n')[0].includes('Check this') && /shares almost none/.test(res.csv), 'check: the report CSV has a "Check this" column');
+}
+
+// ------------------------------------------------------------------ 11f. the new words take the format that most of the replaced words had
+{
+  const body = P(R('The ', BOLD), R('quick brown fox jumps over', '<w:i/>'), R(' the dog.'));
+  const docx = await mkdocx(body);
+  const res = await run(docx, [it('The quick brown fox', 'agree', 'A slow gray fox')]);
+  const x = await docXml(res.files.tracked);
+  ok(res.receipt.ok && /<w:ins [^>]*><w:r><w:rPr><w:i\/><\/w:rPr><w:t xml:space="preserve">A slow gray fox/.test(x) || /<w:ins [^>]*><w:r><w:rPr><w:i\/><\/w:rPr><w:t xml:space="preserve">[^<]*slow/.test(x), 'format: the new words are italic like most of the replaced words, not bold like the first fragment', x.slice(x.indexOf('<w:ins'), x.indexOf('<w:ins') + 220));
 }
 
 // ------------------------------------------------------------------ 12. random paragraphs: random run splits, bookmarks, page markers, edits and comments, checked against plain string replacement

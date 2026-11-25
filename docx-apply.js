@@ -132,22 +132,46 @@
   const INVIS = /[\u00ad\u200b\u200c\u200d\u2060\ufeff\u200e\u200f\u202a-\u202e\u2066-\u2069]/;
   // Folded text for comparing: whitespace collapsed, invisible characters dropped; level 1 also unifies quotes, dashes and the ellipsis.
   // rs/re map every folded character back to its raw offsets in the paragraph.
+  // Folded text for comparing. It does what the CHECKER did to the text before it quoted it (the quotes in the findings are in this form):
+  // invisible and zero-width characters dropped, then Unicode NFC (Devanagari, Arabic and accented text is often stored decomposed in Word),
+  // then whitespace collapsed. Level 1 also unifies quotes, dashes and the ellipsis.
+  // rs/re map every folded character back to its raw offsets in the paragraph (a composed character maps to the whole group it came from).
+  const MARK = /\p{M}/u, JAMO = /[\u1100-\u11ff\ua960-\ua97f\ud7b0-\ud7ff]/, HANGUL = /[\uac00-\ud7a3]/;
   function fold(raw, lvl) {
-    const s = [], rs = [], re = []; let prevSp = false;
-    for (let i = 0; i < raw.length; i++) {
-      let ch = raw[i];
-      if (INVIS.test(ch)) continue;
-      if (/\s/.test(ch)) { if (prevSp) { re[re.length - 1] = i + 1; continue; } s.push(' '); rs.push(i); re.push(i + 1); prevSp = true; continue; }
-      prevSp = false;
-      if (lvl > 0) {
-        if (/[\u2018\u2019\u201a\u201b\u2032\u02bc]/.test(ch)) ch = "'";
-        else if (/[\u201c\u201d\u201e\u201f\u2033]/.test(ch)) ch = '"';
-        else if (/[\u2010-\u2015\u2212]/.test(ch)) ch = '-';
-        else if (ch === '\u2026') { s.push('.', '.', '.'); rs.push(i, i, i); re.push(i + 1, i + 1, i + 1); continue; }
+    const cps = []; let off = 0;
+    for (const c of raw) { const a = off; off += c.length; if (!INVIS.test(c)) cps.push({ c, a, b: off }); }
+    const s = [], rs = [], re = []; let prevSp = false, i = 0;
+    while (i < cps.length) {
+      const first = cps[i], space = /\s/.test(first.c); let j = i + 1;
+      if (!space) while (j < cps.length && (MARK.test(cps[j].c) || (JAMO.test(cps[j].c) && (JAMO.test(first.c) || HANGUL.test(first.c))))) j++;   // a base character and the marks that belong to it
+      const a = first.a, b = cps[j - 1].b;
+      if (space) { i = j; if (prevSp) { re[re.length - 1] = b; continue; } s.push(' '); rs.push(a); re.push(b); prevSp = true; continue; }
+      let t = ''; for (let k = i; k < j; k++) t += cps[k].c;
+      i = j; prevSp = false;
+      let n = t; try { n = t.normalize('NFC'); } catch (_) { /* very old engine */ }
+      for (const c0 of n) {
+        let ch = c0;
+        if (lvl > 0) {
+          if (/[\u2018\u2019\u201a\u201b\u2032\u02bc]/.test(ch)) ch = "'";
+          else if (/[\u201c\u201d\u201e\u201f\u2033]/.test(ch)) ch = '"';
+          else if (/[\u2010-\u2015\u2212]/.test(ch)) ch = '-';
+          else if (ch === '\u2026') ch = '...';
+        }
+        for (let k = 0; k < ch.length; k++) { s.push(ch[k]); rs.push(a); re.push(b); }
       }
-      s.push(ch); rs.push(i); re.push(i + 1);
     }
     return { s: s.join(''), rs, re };
+  }
+  // The OLD folding (no NFC). Fingerprints stored with reviews made before v5.4.1 were made with it, so fingerprints keep using it.
+  function foldPlain(raw) {
+    const s = []; let prevSp = false;
+    for (let i = 0; i < raw.length; i++) {
+      const ch = raw[i];
+      if (INVIS.test(ch)) continue;
+      if (/\s/.test(ch)) { if (prevSp) continue; s.push(' '); prevSp = true; continue; }
+      prevSp = false; s.push(ch);
+    }
+    return { s: s.join('') };
   }
   const pfp = (p, lvl) => p.fp[lvl] || (p.fp[lvl] = fold(p.text, lvl));
   const hitsOf = (hay, nd) => { const o = []; let i = hay.indexOf(nd); while (i >= 0) { o.push(i); i = hay.indexOf(nd, i + 1); } return o; };
@@ -169,7 +193,7 @@
       let cands = [], partial = [];
       model.paras.forEach((p, pi) => {
         if (p.skip || !p.text) return; const f = pfp(p, lvl);
-        hitsOf(f.s, nd).forEach((i) => { const c = { pi, fs: i, fe: i + nd.length, f }; (boundaryOk(f.s, i, i + nd.length, trunc === 'head' || trunc === 'both', trunc === 'tail' || trunc === 'both') ? cands : partial).push(c); });
+        hitsOf(f.s, nd).forEach((i) => { const c = { pi, fs: i, fe: i + nd.length, f, lvl }; (boundaryOk(f.s, i, i + nd.length, trunc === 'head' || trunc === 'both', trunc === 'tail' || trunc === 'both') ? cands : partial).push(c); });
       });
       if (!cands.length) { if (partial.length && !sawPartial) sawPartial = partial; continue; }
       if (cands.length > 1 && cF.length >= nd.length) {
@@ -177,11 +201,11 @@
         if (keep.length) cands = keep;
       }
       if (cands.length > 1 && item.page) { const k = cands.filter((c) => model.paras[c.pi].page === +item.page); if (k.length) cands = k; }
-      const hit = (c) => ({ pi: c.pi, ms: c.f.rs[c.fs], me: c.f.re[c.fe - 1] });
+      const hit = (c) => ({ pi: c.pi, ms: c.f.rs[c.fs], me: c.f.re[c.fe - 1], fs: c.fs, fe: c.fe, lvl: c.lvl });
       if (cands.length === 1) return { status: 'one', hit: hit(cands[0]), trunc };
       return { status: 'many', count: cands.length };
     }
-    if (sawPartial && sawPartial.length === 1) { const c = sawPartial[0]; return { status: 'partial', hit: { pi: c.pi, ms: c.f.rs[c.fs], me: c.f.re[c.fe - 1] }, trunc }; }
+    if (sawPartial && sawPartial.length === 1) { const c = sawPartial[0]; return { status: 'partial', hit: { pi: c.pi, ms: c.f.rs[c.fs], me: c.f.re[c.fe - 1], fs: c.fs, fe: c.fe, lvl: c.lvl }, trunc }; }
     return { status: 'none' };
   }
 
@@ -212,6 +236,24 @@
     while (b > 0 && !(boundary(oldS, oldS.length - b) && boundary(newS, newS.length - b))) b--;
     return { a, b, del: oldS.slice(a, oldS.length - b), ins: newS.slice(a, newS.length - b) };
   }
+  const toks = (x) => String(x).toLowerCase().match(/[\p{L}\p{M}\p{N}]+/gu) || [];
+  const overlap = (a, b) => { const A = new Set(toks(a)), B = new Set(toks(b)); if (!A.size || !B.size) return 1; let n = 0; A.forEach((w) => { if (B.has(w)) n++; }); return n / Math.min(A.size, B.size); };
+  // a change that deserves a second look in Word (the suggestion may be misplaced or wrong): it still goes in, as a tracked change with a CHECK comment
+  function bigChange(oldF, newF) {
+    const o = toks(oldF).length, n = toks(newF).length;
+    if (o >= 6 && overlap(oldF, newF) < 0.2) return 'it replaces this passage with text that shares almost none of its words (the suggested text may belong somewhere else)';
+    if (n >= 25 && n > 3 * Math.max(o, 3)) return 'it adds far more text than it replaces';
+    return '';
+  }
+  function insertFlags(model, pi, text) {
+    const out = [], near = [model.paras[pi]]; for (let k = pi + 1; k < model.paras.length && near.length < 3; k++) if (!model.paras[k].skip && model.paras[k].text.trim()) near.push(model.paras[k]);
+    const sentences = String(text).split(/(?<=[.!?\u0964\u06d4\u3002])\s+/).filter((t) => toks(t).length >= 5);
+    const had = sentences.some((t) => near.some((q) => overlap(t, q.text) >= 0.75));
+    if (had) out.push('part of this text already appears in the paragraph it follows or the next one, so it may be a duplicate');
+    const a = model.paras[pi], key = fold(a.text, 0).s.trim();
+    if (key && key.length < 40) { let n = 0; model.paras.forEach((q) => { if (!q.skip && q.text && fold(q.text, 0).s.trim() === key) n++; }); if (n >= 3) out.push('it follows a short line ("' + key + '") that occurs ' + n + ' times in the document, so check that this is the right place'); }
+    return out;
+  }
   // can the range [ds,de) of this paragraph be replaced safely? (only plain text inside; nothing like a tab, field, image, link)
   function rangeBlock(p, ds, de) {
     for (const n of p.nodes) {
@@ -232,7 +274,7 @@
 
   // items: [{id,type,severity,loc,page,context,original,corrected,insert,decision,final,comment}]; final = text to use (null = leave as it is, '' = delete)
   function plan(model, items, opts) {
-    const R = items.map((it) => ({ it, id: it.id, answer: ANS[it.decision] || 'No answer', fin: it.final == null ? null : clean(it.final), comment: clean(it.comment).trim(), outcome: '', detail: '', loc: null, edit: null, note: null }));
+    const R = items.map((it) => ({ it, id: it.id, flags: [], answer: ANS[it.decision] || 'No answer', fin: it.final == null ? null : clean(it.final), comment: clean(it.comment).trim(), outcome: '', detail: '', loc: null, edit: null, note: null }));
     const edits = [], comments = [], inserts = [];
     const manual = (r, why) => { r.outcome = 'manual'; r.detail = why; };
     R.forEach((r) => {
@@ -251,7 +293,7 @@
           return;
         }
         if (!where || where.pi == null) return manual(r, where && where.count > 1 ? 'the sentence it follows appears ' + where.count + ' times' : 'could not find the sentence it should follow');
-        inserts.push({ r, pi: where.pi, text: r.fin, comment: r.comment });
+        inserts.push({ r, pi: where.pi, text: r.fin, comment: r.comment, flags: insertFlags(model, where.pi, r.fin) });
         r.outcome = 'applied'; r.detail = 'new paragraph inserted after the sentence it follows (check the position)'; return;
       }
       const loc = locate(model, it); r.loc = loc;
@@ -273,15 +315,23 @@
       else if (loc.trunc) why = 'the finding quotes only part of the passage ("...")';
       let ed = null;
       if (!why) {
-        const p = model.paras[loc.hit.pi], oldRaw = p.text.slice(loc.hit.ms, loc.hit.me);
-        if (oldRaw === r.fin) { r.outcome = 'already'; r.detail = 'the text already reads as suggested'; if (r.comment) { const h = loc.hit; if (!cutBlock(p, h.ms) && !cutBlock(p, h.me)) comments.push({ r, pi: h.pi, cs: h.ms, ce: h.me, text }); } return; }
-        const d = trimDiff(oldRaw, r.fin), ds = loc.hit.ms + d.a, de = loc.hit.me - d.b;
+        const h = loc.hit, p = model.paras[h.pi], f = pfp(p, h.lvl), oldF = f.s.slice(h.fs, h.fe), nf = fold(r.fin, h.lvl);
+        const already = () => { r.outcome = 'already'; r.detail = 'the text already reads as suggested'; if (r.comment && !cutBlock(p, h.ms) && !cutBlock(p, h.me)) comments.push({ r, pi: h.pi, cs: h.ms, ce: h.me, text }); };
+        if (oldF === nf.s) { already(); return; }
+        // compared the way the checker saw the text (NFC, no zero-width marks), then mapped back to the exact characters of the file
+        const d = trimDiff(oldF, nf.s);
+        const ds = d.a === 0 ? h.ms : f.re[h.fs + d.a - 1], de = d.b === 0 ? h.me : f.rs[h.fe - d.b];
+        const n0 = d.a === 0 ? 0 : nf.re[d.a - 1], n1 = d.b === 0 ? r.fin.length : nf.rs[nf.s.length - d.b];
+        let insTxt = n1 > n0 ? r.fin.slice(n0, n1) : '', stopDropped = false;
         // a reviewer often types the sentence's full stop into the new words while the document already has it right after the replaced words: never double it
-        let insTxt = d.ins, stopDropped = false;
-        if (insTxt && /[.,;:!?\u2026]$/.test(insTxt) && p.text[de] === insTxt[insTxt.length - 1]) { insTxt = insTxt.slice(0, -1); stopDropped = true; }
-        if (ds === de && insTxt === '') { r.outcome = 'already'; r.detail = 'the text already reads as suggested'; if (r.comment) { const h = loc.hit; if (!cutBlock(p, h.ms) && !cutBlock(p, h.me)) comments.push({ r, pi: h.pi, cs: h.ms, ce: h.me, text }); } return; }
-        const bl = rangeBlock(p, ds, de); if (bl) why = bl; else if (cutBlock(p, ds) || cutBlock(p, de) || cutBlock(p, loc.hit.ms) || cutBlock(p, loc.hit.me)) why = 'it is inside a link, field or earlier tracked change';
-        else ed = { r, pi: loc.hit.pi, ms: loc.hit.ms, me: loc.hit.me, ds, de, text: insTxt, comment: text, stopDropped };
+        if (insTxt && /[.,;:!?\u2026\u0964\u06d4\u3002]$/.test(insTxt) && p.text[de] === insTxt[insTxt.length - 1]) { insTxt = insTxt.slice(0, -1); stopDropped = true; }
+        if (de < ds) why = 'the change could not be placed safely';
+        else if (ds === de && insTxt === '') { already(); return; }
+        else {
+          const bl = rangeBlock(p, ds, de);
+          if (bl) why = bl; else if (cutBlock(p, ds) || cutBlock(p, de) || cutBlock(p, h.ms) || cutBlock(p, h.me)) why = 'it is inside a link, field or earlier tracked change';
+          else ed = { r, pi: h.pi, ms: h.ms, me: h.me, ds, de, text: insTxt, comment: text, stopDropped, flag: bigChange(oldF, nf.s) };
+        }
       }
       if (why) {                                                               // keep the file untouched, but leave a visible note where we can
         manual(r, why);
@@ -308,7 +358,11 @@
     // comments that belong to a change (only the reviewer's words); the change itself is anchored over the quoted words
     live.forEach((e) => { if (e.comment) comments.push({ r: e.r, pi: e.pi, cs: e.ms, ce: e.me, text: e.comment, edit: e }); });
     edits.filter((e) => e.dup && e.comment).forEach((e) => comments.push({ r: e.r, pi: e.pi, cs: e.ms, ce: e.me, text: e.comment }));
-    inserts.forEach((x) => { if (x.comment) x.commentText = 'Reviewer comment (#' + x.r.id + ', ' + x.r.answer + '): ' + x.comment; });
+    live.forEach((e) => { if (e.flag) { e.r.flags.push(e.flag); comments.push({ r: e.r, pi: e.pi, cs: e.ms, ce: e.me, check: true, text: 'CHECK (#' + e.r.id + ', ' + e.r.answer + '): ' + e.flag + '.' }); } });
+    inserts.forEach((x) => {
+      x.flags.forEach((f) => x.r.flags.push(f));
+      x.commentText = [x.comment ? 'Reviewer comment (#' + x.r.id + ', ' + x.r.answer + '): ' + x.comment : '', x.flags.length ? 'CHECK (#' + x.r.id + ', ' + x.r.answer + '): ' + x.flags.join('; ') + '.' : ''].filter(Boolean).join('\n');
+    });
     return { R, edits: live, comments, inserts };
   }
 
@@ -368,9 +422,13 @@
         }
       }
     };
+    const domRPr = (e) => {                                                 // the format that most of the replaced characters had
+      const m = new Map(); pieces.forEach((pc) => { if (pc.kind === 'run' && pc.a1 > pc.a0 && pc.a0 >= e.ds && pc.a1 <= e.de) m.set(pc.run.rPr, (m.get(pc.run.rPr) || 0) + (pc.a1 - pc.a0)); });
+      let best = delRPr, n = -1; m.forEach((v, k) => { if (v > n) { n = v; best = k; } }); return best;
+    };
     const closeDel = () => {
       if (!curDel) return; if (ctx.tracked) out += '</w:del>';
-      if (lastEnd === curDel.de) out += insXml(curDel, delRPr);
+      if (lastEnd === curDel.de) out += insXml(curDel, domRPr(curDel));
       curDel = null;
     };
     pieces.forEach((pc) => {
@@ -433,7 +491,7 @@
   }
   async function fingerprintXml(xml) {
     const model = readDoc(xml), texts = []; let words = 0;
-    model.paras.forEach((p) => { if (p.skip) return; const f = fold(p.text, 0).s.trim(); if (f) { texts.push(f); words += f.split(' ').length; } });
+    model.paras.forEach((p) => { if (p.skip) return; const f = foldPlain(p.text).s.trim(); if (f) { texts.push(f); words += f.split(' ').length; } });
     return { v: 1, n: texts.length, words, sha: await sha256hex(texts.join('\n')) };
   }
   DA.fingerprint = async function (u8) {
@@ -492,7 +550,7 @@
     const oldComments = zip.file('word/comments.xml') ? await zip.file('word/comments.xml').async('string') : '';
     let maxId = 0; (xml + oldComments).replace(/w:id="(\d+)"/g, (m, d) => { if (+d > maxId) maxId = +d; return m; });
     let idc = maxId + 1; P.comments.forEach((c) => { c.id = idc++; });
-    P.inserts.forEach((x) => { if (x.comment) { x.cm = { id: idc++, text: x.commentText, ins: true }; P.comments.push(x.cm); x.cm.pi = -1; } });
+    P.inserts.forEach((x) => { if (x.commentText) { x.cm = { id: idc++, text: x.commentText, ins: true }; P.comments.push(x.cm); x.cm.pi = -1; } });
     const base = idc;
     const mkCtx = (tracked) => { let n = base; return { tracked, author, date, nextId: () => n++ }; };
     const commentList = P.comments.slice().sort((a, b) => a.id - b.id);
@@ -520,7 +578,7 @@
     const receipt = hasChange ? await verify({ zip, model, xml, P, out, trackedXml, cleanXml, newRels, newCt, rels, ctypes, relAdd, ctAdd, cx, oldComments, u8 }) : { ok: true, checks: [{ name: 'Nothing to change in the file', ok: true, detail: '' }] };
     // ---- ledger (one line per finding)
     const ledger = P.R.map((r) => ({ id: r.id, type: r.it.type || '', severity: r.it.severity || '', loc: r.it.loc || '', page: r.it.page || '', answer: r.answer, outcome: r.outcome, detail: r.detail,
-      original: r.it.insert ? '' : clean(r.it.original), use: r.fin == null ? '' : r.fin, comment: r.comment, handNote: !!r.note }));
+      original: r.it.insert ? '' : clean(r.it.original), use: r.fin == null ? '' : r.fin, comment: r.comment, handNote: !!r.note, flag: r.flags.join('; ') }));
     const tot = { sent: ledger.length, applied: 0, already: 0, commented: 0, kept: 0, manual: 0 }; ledger.forEach((l) => { tot[l.outcome] = (tot[l.outcome] || 0) + 1; });
     const toApply = P.R.filter((r) => r.fin != null && r.fin !== undefined).length;
     const accounted = tot.applied + tot.already + P.R.filter((r) => r.outcome === 'manual' && r.fin != null).length === toApply && ledger.every((l) => l.outcome);
@@ -590,9 +648,9 @@
   }
 
   function ledgerCsv(ledger) {
-    const head = ['#', 'Location', 'Page', 'Type', 'Reviewer answer', 'Result', 'Detail', 'Current text', 'Replace with', 'Reviewer comment'];
+    const head = ['#', 'Location', 'Page', 'Type', 'Reviewer answer', 'Result', 'Detail', 'Check this', 'Current text', 'Replace with', 'Reviewer comment'];
     const RES = { applied: 'Applied in Word', already: 'Already as suggested', commented: 'Comment added', kept: 'Left as it is', manual: 'NEEDS YOU' };
-    return [head].concat(ledger.map((l) => [l.id, l.loc, l.page, l.type, l.answer, RES[l.outcome] || l.outcome, l.detail, l.original, l.use, l.comment]))
+    return [head].concat(ledger.map((l) => [l.id, l.loc, l.page, l.type, l.answer, RES[l.outcome] || l.outcome, l.detail, l.flag || '', l.original, l.use, l.comment]))
       .map((r) => r.map((v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"').join(',')).join('\r\n');
   }
 

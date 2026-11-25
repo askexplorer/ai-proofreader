@@ -155,6 +155,7 @@
     .extra { margin-top:12px; display:grid; gap:10px; }
     .extra .fl { margin-bottom:5px; }
     .readonly .dbtn, .readonly .cbtn { pointer-events:none; opacity:.8; }
+    .readonly .dbtn:not([aria-pressed="true"]) { opacity:.3; }
     .readonly textarea { pointer-events:none; opacity:.85; }
     .more { display:block; margin:6px auto 0; }
 
@@ -238,6 +239,7 @@
 <main id="v-review" hidden>
   <div class="wrap">
     <section class="card docbar" id="docbar"></section>
+    <section id="subbox" hidden style="margin:0 0 16px"></section>
     <div class="toolbar">
       <div class="progress"><div class="track" role="progressbar" aria-label="Review progress" aria-valuemin="0" aria-valuemax="100" id="track"><div class="fill" id="fill"></div></div><div class="lbl" id="plabel"></div></div>
       <div class="filters" id="filters"></div>
@@ -261,9 +263,9 @@
     <p id="done-text">Your review has been sent to the editor.</p>
     <ul class="drawer-list" id="done-tally"></ul>
     <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:18px">
-      <button class="btn btn-ghost" id="btn-viewmine">View my answers</button>
+      <button class="btn btn-primary" id="btn-viewmine">View what I submitted</button>
     </div>
-    <p style="font-size:12.5px;margin:18px 0 0">Need to change something? Ask the editor to reopen your review. You can close this page now.</p>
+    <p style="font-size:12.5px;margin:18px 0 0">You can open this link again with the same password at any time to see exactly what you sent, with your comments. Need to change something? Ask the editor to reopen your review.</p>
   </div>
 </main>
 
@@ -318,7 +320,7 @@ const TYPE_COLORS = { Typos:'#ff6b35', Spelling:'#ef4444', Grammar:'#f97316', Pu
 // ── state ──
 const link = SR.parseLink(window.location);
 const ID = link.id, CFG = link.cfg;
-let SESS = null, PAYLOAD = null, VER = 0, SUBMITTED = false;
+let SESS = null, PAYLOAD = null, VER = 0, SUBMITTED = false, SUB_AT = null;
 let D = { v: 1, reviewer: '', reviewers: [], items: {}, updatedAt: 0 };
 let NAME = '', FILTER = 'all', TYPE = 'all', SEV = 'all', SORT = 'doc', QUERY = '', SHOWN = 40, ACTIVE = null, READONLY = false;
 const SEV_ORDER = ['Critical', 'Major', 'Moderate', 'Query', 'Minor', 'Note', 'Other'];      // most serious first
@@ -364,7 +366,7 @@ $('lock-form').onsubmit = async (e) => {
   lockMsg('info', 'Unlocking. This can take a few seconds the first time.');
   try {
     const r = await SR.openShare(CFG, ID, pw);
-    SESS = r.session; PAYLOAD = r.payload; VER = r.version; SUBMITTED = r.status === 'submitted';
+    SESS = r.session; PAYLOAD = r.payload; VER = r.version; SUBMITTED = r.status === 'submitted'; SUB_AT = r.submitted_at || null;
     if (r.decisions) D = r.decisions;
     D.items = D.items || {}; D.reviewers = Array.from(new Set((D.reviewers || (D.reviewer ? [D.reviewer] : [])).concat([NAME])));
     D.reviewer = NAME;
@@ -408,7 +410,7 @@ function startReview(r) {
   render();
   updateProgress();
   setSave('ok', READONLY ? 'Submitted' : 'All changes saved');
-  if (SUBMITTED) return showDone(true);
+  if (SUBMITTED) return enterSubmittedView();
   show('v-review');
   if (!lsGet('sr_seen_' + ID)) openWelcome(true);
 }
@@ -642,20 +644,44 @@ $('s-go').onclick = async () => {
   let r = await save(true);
   for (let n = 0; !r.ok && r.busy && n < 5; n++) { await new Promise((ok) => setTimeout(ok, 700)); r = await save(true); }
   b.disabled = false; b.textContent = 'Yes, submit to editor';
-  if (r.ok) { SUBMITTED = true; READONLY = true; $('ov-submit').hidden = true; showDone(false); }
+  if (r.ok) { SUBMITTED = true; READONLY = true; SUB_AT = new Date().toISOString(); $('ov-submit').hidden = true; showDone(false); }
   else $('s-warn').innerHTML = '<div class="msg err">Could not send right now: ' + esc(r.err ? SR.friendly(r.err) : 'please try again') + '. Your answers are safe on this device. Try again in a moment.</div>';
 };
 
 function showDone(already) {
   const c = counts();
   $('done-title').textContent = already ? 'This review was submitted' : 'Thank you, ' + (NAME || 'reviewer') + '!';
-  $('done-text').textContent = already ? 'Your answers were already sent to the editor. They are shown below in read-only form.' : 'Your review has been sent to the editor.';
+  $('done-text').textContent = already ? 'Your answers were already sent to the editor. Use the button below to look at them.' : 'Your review has been sent to the editor.';
   $('done-tally').innerHTML =
     '<li>' + ICON.agree + ' ' + c.agree + ' agreed</li><li>' + ICON.disagree + ' ' + c.disagree + ' disagreed</li><li>' + ICON.edit + ' ' + c.edit + ' edited</li>' +
     '<li>' + ICON.comment + ' ' + c.comment + ' with comments</li>' + (c.none ? '<li>' + c.none + ' not reviewed</li>' : '');
   show('v-done');
 }
-$('btn-viewmine').onclick = () => { READONLY = true; FILTER = 'all'; SHOWN = 40; render(); show('v-review'); $('btn-submit').hidden = true; setSave('ok', 'Submitted. Read-only'); };
+// ── after submitting: a read-only copy of what was sent (answers, edited text, comments), reachable any time with the same link and password ──
+function enterSubmittedView() {
+  READONLY = true; FILTER = 'all'; SHOWN = 40; render(); updateProgress(); show('v-review'); $('btn-submit').hidden = true;
+  paintSubmitted(); setSave('ok', 'Submitted. Read-only');
+}
+function paintSubmitted() {
+  const b = $('subbox'); if (!b) return;
+  const when = SUB_AT ? new Date(SUB_AT).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '', c = counts();
+  b.hidden = false;
+  b.innerHTML = '<div class="note-box" style="margin:0;background:rgba(16,185,129,.1);border-color:rgba(16,185,129,.45)"><b style="color:var(--ok)">Submitted' + (when ? ' on ' + esc(when) : '') + ' &middot; read-only copy</b>' +
+    'These are the answers you sent to the editor: ' + c.agree + ' agreed, ' + c.disagree + ' disagreed, ' + c.edit + ' edited, ' + c.comment + ' with comments' + (c.none ? ', ' + c.none + ' not reviewed' : '') + '. You can open this link again with the same password whenever you want to check what you sent. To change something, ask the editor to reopen your review.' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn btn-ghost" id="btn-dl">Download my answers (CSV)</button></div></div>';
+  $('btn-dl').onclick = downloadMine;
+}
+function downloadMine() {
+  const rows = [['#', 'Location', 'Type', 'Severity', 'Current text', 'Suggested', 'Your answer', 'Your final text', 'Your comment']];
+  ISSUES().forEach((i) => {
+    const it = D.items[i.id] || {}, ans = { agree: 'Agreed', disagree: 'Disagreed', edit: 'Edited' }[it.d] || 'No answer';
+    rows.push([i.id, i.loc || (i.page ? 'p.' + i.page : ''), i.type || '', i.severity || '', i.insert ? '(missing in the translation)' : (i.original || ''), i.corrected || '', ans, it.d === 'edit' ? (it.t != null ? it.t : (i.corrected || '')) : '', it.c || '']);
+  });
+  const csv = String.fromCharCode(0xFEFF) + rows.map((r) => r.map((v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"').join(',')).join('\r\n');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = ((PAYLOAD.title || 'review').replace(/[^\p{L}\p{N}]+/gu, '_').replace(/^_+|_+$/g, '').slice(0, 60) || 'review') + '-my-answers.csv'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+$('btn-viewmine').onclick = enterSubmittedView;
 </script>
 </body>
 </html>

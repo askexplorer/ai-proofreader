@@ -68,5 +68,12 @@ ok(/d === 'agree' \? \(issue\.corrected \? issue\.corrected : null\)/.test(INDEX
 ok(/id="tc-literary"/.test(INDEX) && /literary,\s*only: P\.only/.test(INDEX) && /literary: !!R\.literary/.test(INDEX), 'the literary-text choice reaches the run and the report');
 ok(/secondSameModel: !R\.model2 \|\| R\.model2 === R\.model/.test(INDEX), 'the engine is told when the second look uses the same model');
 ok(/LEVEL_TEXT\[p\.strict\]/.test(SHARE) && /strict: tc \?/.test(INDEX), 'the reviewer page says how strict the check was');
+// v5.4.1: reviewers can look at what they submitted; Apply to Word flags suspicious changes
+const startFn = SHARE.slice(SHARE.indexOf('function startReview(r)'), SHARE.indexOf('function openWelcome'));
+ok(/if \(SUBMITTED\) return enterSubmittedView\(\);/.test(startFn) && !/showDone\(true\)/.test(startFn), 'reviewer page: a submitted link opens straight into the read-only copy (not a thank-you card with a hidden way in)');
+ok(/id="subbox"/.test(SHARE) && /function paintSubmitted\(\)/.test(SHARE) && /function downloadMine\(\)/.test(SHARE) && /\$\('btn-viewmine'\)\.onclick = enterSubmittedView/.test(SHARE), 'reviewer page: banner, "Download my answers" and the button after submitting are wired');
+ok(/View what I submitted/.test(SHARE) && !/They are shown below in read-only form/.test(SHARE), 'reviewer page: the done card no longer promises answers it does not show');
+ok(/'To check in Word'/.test(INDEX) && /Why check: /.test(INDEX), 'Apply to Word: flagged changes have their own tile and list');
+ok(/^\s*function foldPlain\(raw\)/m.test(rd('docx-apply.js')) && /foldPlain\(p\.text\)/.test(rd('docx-apply.js')), 'docx-apply.js: fingerprints keep the old folding so reviews made before the NFC fix still match');
 console.log(`${fail ? 'FAILED' : 'OK'}: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
